@@ -1,0 +1,43 @@
+steps:
+  # Build the backend container
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'us-central1-docker.pkg.dev/$PROJECT_ID/sdp-repo/sdp-backend:latest', '-f', 'Dockerfile.backend', '.']
+
+  # Push the backend container
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'us-central1-docker.pkg.dev/$PROJECT_ID/sdp-repo/sdp-backend:latest']
+
+  # Deploy to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'sdp-backend'
+      - '--image'
+      - 'us-central1-docker.pkg.dev/$PROJECT_ID/sdp-repo/sdp-backend:latest'
+      - '--region'
+      - 'us-central1'
+      - '--platform'
+      - 'managed'
+      - '--allow-unauthenticated'
+      - '--memory'
+      - '1Gi'
+      - '--cpu'
+      - '1'
+      - '--min-instances'
+      - '0'
+      - '--max-instances'
+      - '10'
+      - '--timeout'
+      - '300'
+      - '--set-env-vars'
+      - 'DEMO_MODE=true,DEBUG=false,DATABASE_URL=postgresql://postgres:sdp-demo-2024@/system_design_db?host=/cloudsql/$PROJECT_ID:us-central1:sdp-db,ANTHROPIC_API_KEY=demo-key'
+      - '--add-cloudsql-instances'
+      - '$PROJECT_ID:us-central1:sdp-db'
+
+images:
+  - 'us-central1-docker.pkg.dev/$PROJECT_ID/sdp-repo/sdp-backend:latest'
+
+options:
+  logging: CLOUD_LOGGING_ONLY

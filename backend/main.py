@@ -20,8 +20,21 @@ async def lifespan(app: FastAPI):
     Application lifespan handler.
     Creates database tables on startup.
     """
-    # Create all tables
-    Base.metadata.create_all(bind=engine)
+    # Create all tables - retry on failure
+    import time
+    max_retries = 5
+    for i in range(max_retries):
+        try:
+            Base.metadata.create_all(bind=engine)
+            print(f"Database tables created successfully")
+            break
+        except Exception as e:
+            if i < max_retries - 1:
+                print(f"Database connection failed (attempt {i+1}/{max_retries}): {e}")
+                time.sleep(2)
+            else:
+                print(f"Failed to connect to database after {max_retries} attempts: {e}")
+                # Continue anyway - tables might already exist
     yield
     # Cleanup on shutdown (if needed)
 
@@ -80,10 +93,12 @@ async def health_check():
 
 
 if __name__ == "__main__":
+    import os
     import uvicorn
+    port = int(os.getenv("PORT", "8080"))
     uvicorn.run(
         "backend.main:app",
         host="0.0.0.0",
-        port=8000,
+        port=port,
         reload=settings.debug,
     )
