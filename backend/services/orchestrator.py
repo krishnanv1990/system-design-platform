@@ -25,10 +25,11 @@ from backend.config import get_settings
 settings = get_settings()
 
 # Deployment mode options:
+# - "demo" (validation only, no actual deployment - for demos without GCP infra)
 # - "warm_pool" (sub-second, pre-provisioned infrastructure + warm containers)
 # - "fast" (Cloud Run, 10-30 seconds)
 # - "terraform" (full infra, 10-15 minutes)
-DEPLOYMENT_MODE = "warm_pool"
+DEPLOYMENT_MODE = "demo" if settings.demo_mode else "warm_pool"
 
 
 class SubmissionOrchestrator:
@@ -71,8 +72,10 @@ class SubmissionOrchestrator:
                 return
 
             # Stage 2 & 3: Generate and Deploy Infrastructure
-            # Use warm pool (fastest), fast deployment, or legacy Terraform
-            if DEPLOYMENT_MODE == "warm_pool":
+            # Use demo (skip deployment), warm pool, fast deployment, or legacy Terraform
+            if DEPLOYMENT_MODE == "demo":
+                await SubmissionOrchestrator._demo_deploy(db, submission, problem)
+            elif DEPLOYMENT_MODE == "warm_pool":
                 await SubmissionOrchestrator._warm_pool_deploy(db, submission, problem)
             elif DEPLOYMENT_MODE == "fast":
                 await SubmissionOrchestrator._fast_deploy(db, submission, problem)
@@ -134,6 +137,47 @@ class SubmissionOrchestrator:
             submission.status = SubmissionStatus.GENERATING_INFRA.value
 
         db.commit()
+
+    @staticmethod
+    async def _demo_deploy(
+        db: Session,
+        submission: Submission,
+        problem: Problem,
+    ) -> None:
+        """
+        Demo mode deployment - skips actual infrastructure deployment.
+        Uses AI to generate code and simulates deployment for demonstration purposes.
+        """
+        submission.status = SubmissionStatus.DEPLOYING.value
+        db.commit()
+
+        # Generate API code using AI (this still works in demo mode)
+        from backend.services.ai_service import AIService
+        ai_service = AIService()
+
+        try:
+            api_code = await ai_service.generate_api_code(
+                problem_description=problem.description,
+                design_text=submission.design_text or "",
+                api_spec=submission.api_spec_input,
+            )
+
+            # Store generated code but skip actual deployment
+            submission.deployment_id = f"demo-{submission.id}"
+            submission.validation_feedback = submission.validation_feedback or {}
+            submission.validation_feedback["generated_code"] = api_code[:2000]  # Store preview
+            submission.validation_feedback["deployment_mode"] = "demo"
+            submission.validation_feedback["deployment_note"] = (
+                "Demo mode: Infrastructure deployment skipped. "
+                "In production, this would deploy to GCP and run actual tests."
+            )
+            submission.status = SubmissionStatus.DEPLOYED.value
+            db.commit()
+
+        except Exception as e:
+            submission.status = SubmissionStatus.DEPLOY_FAILED.value
+            submission.error_message = f"Demo deployment error: {str(e)}"
+            db.commit()
 
     @staticmethod
     async def _warm_pool_deploy(
@@ -362,6 +406,36 @@ class SubmissionOrchestrator:
         """Run all tests against deployed infrastructure."""
         submission.status = SubmissionStatus.TESTING.value
         db.commit()
+
+        # In demo mode, generate mock test results
+        if DEPLOYMENT_MODE == "demo":
+            mock_results = [
+                {"test_type": "functional", "test_name": "health_check", "status": "passed", "duration_ms": 45, "details": {"response_code": 200}},
+                {"test_type": "functional", "test_name": "create_resource", "status": "passed", "duration_ms": 120, "details": {"response_code": 201}},
+                {"test_type": "functional", "test_name": "get_resource", "status": "passed", "duration_ms": 35, "details": {"response_code": 200}},
+                {"test_type": "functional", "test_name": "update_resource", "status": "passed", "duration_ms": 85, "details": {"response_code": 200}},
+                {"test_type": "functional", "test_name": "delete_resource", "status": "passed", "duration_ms": 55, "details": {"response_code": 204}},
+                {"test_type": "performance", "test_name": "load_test_100_users", "status": "passed", "duration_ms": 5000, "details": {"rps": 450, "p99_latency_ms": 120, "error_rate": 0.01}},
+                {"test_type": "performance", "test_name": "stress_test", "status": "passed", "duration_ms": 10000, "details": {"max_rps": 1200, "breaking_point": "none"}},
+                {"test_type": "chaos", "test_name": "network_latency_injection", "status": "passed", "duration_ms": 15000, "details": {"injected_latency_ms": 500, "service_recovered": True}, "chaos_scenario": "network_delay"},
+                {"test_type": "chaos", "test_name": "pod_failure", "status": "passed", "duration_ms": 20000, "details": {"pods_killed": 1, "recovery_time_ms": 3500}, "chaos_scenario": "pod_kill"},
+                {"test_type": "chaos", "test_name": "database_latency", "status": "passed", "duration_ms": 12000, "details": {"degraded_gracefully": True}, "chaos_scenario": "db_slowdown"},
+            ]
+
+            for result in mock_results:
+                test_result = TestResult(
+                    submission_id=submission.id,
+                    test_type=result["test_type"],
+                    test_name=result["test_name"],
+                    status=result["status"],
+                    details=result.get("details"),
+                    duration_ms=result.get("duration_ms"),
+                    chaos_scenario=result.get("chaos_scenario"),
+                )
+                db.add(test_result)
+
+            db.commit()
+            return
 
         test_runner = TestRunner()
 
