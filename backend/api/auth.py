@@ -92,13 +92,13 @@ async def google_callback(code: str, db: Session = Depends(get_db)):
         # Create JWT token
         jwt_token = create_access_token(data={"sub": user.id})
 
-        # Redirect to frontend with token
-        redirect_url = f"{settings.frontend_url}/auth/callback?token={jwt_token}"
+        # Redirect to frontend with token (using hash router format)
+        redirect_url = f"{settings.frontend_url}/#/auth/callback?token={jwt_token}"
         return RedirectResponse(url=redirect_url)
 
     except Exception as e:
-        # Redirect to frontend with error
-        redirect_url = f"{settings.frontend_url}/auth/callback?error={str(e)}"
+        # Redirect to frontend with error (using hash router format)
+        redirect_url = f"{settings.frontend_url}/#/auth/callback?error={str(e)}"
         return RedirectResponse(url=redirect_url)
 
 
