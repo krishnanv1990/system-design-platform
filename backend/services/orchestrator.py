@@ -390,16 +390,17 @@ CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
                 65
             )
 
-            # Make service publicly accessible
-            from google.iam.v1 import policy_pb2, iam_policy_pb2
-            policy = run_client.get_iam_policy(resource=result.name)
-            policy.bindings.append(
-                policy_pb2.Binding(
-                    role="roles/run.invoker",
-                    members=["allUsers"],
-                )
-            )
-            run_client.set_iam_policy(resource=result.name, policy=policy)
+            # Make service publicly accessible using gcloud CLI
+            import subprocess
+            subprocess.run([
+                "gcloud", "run", "services", "add-iam-policy-binding",
+                service_name,
+                "--region", region,
+                "--member", "allUsers",
+                "--role", "roles/run.invoker",
+                "--project", project_id,
+                "--quiet"
+            ], check=True, capture_output=True)
 
             # Store deployment info
             submission.deployment_id = service_name
