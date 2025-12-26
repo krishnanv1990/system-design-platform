@@ -413,7 +413,7 @@ CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
                 "deployment_mode": "cloud_run",
             }
             submission.validation_feedback["generated_code"] = api_code[:2000]
-            submission.status = SubmissionStatus.DEPLOYED.value
+            # Don't set status here - let _run_tests set it to TESTING
             db.commit()
 
             # Register with cleanup scheduler (1 hour timeout)
