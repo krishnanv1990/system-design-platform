@@ -32,7 +32,9 @@ steps:
       - '--timeout'
       - '300'
       - '--update-env-vars'
-      - 'DEBUG=false,DATABASE_URL=postgresql://postgres:sdp-demo-2024@/system_design_db?host=/cloudsql/$PROJECT_ID:us-central1:sdp-db'
+      - 'DEBUG=false'
+      - '--update-secrets'
+      - 'DATABASE_URL=sdp-database-url:latest'
       - '--add-cloudsql-instances'
       - '$PROJECT_ID:us-central1:sdp-db'
 
