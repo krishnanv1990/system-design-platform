@@ -16,14 +16,18 @@ from backend.models.test_result import TestResult
 from backend.services.validation_service import ValidationService
 from backend.services.terraform_service import TerraformService
 from backend.services.deployment_service import FastDeploymentService, DeploymentStrategy
+from backend.services.warm_pool_service import WarmPoolService, ServiceType
 from backend.services.test_runner import TestRunner
 from backend.services.gcp_service import GCPService
 from backend.config import get_settings
 
 settings = get_settings()
 
-# Deployment mode: "fast" (Cloud Run, seconds) or "terraform" (full infra, minutes)
-DEPLOYMENT_MODE = "fast"
+# Deployment mode options:
+# - "warm_pool" (sub-second, pre-provisioned infrastructure + warm containers)
+# - "fast" (Cloud Run, 10-30 seconds)
+# - "terraform" (full infra, 10-15 minutes)
+DEPLOYMENT_MODE = "warm_pool"
 
 
 class SubmissionOrchestrator:
@@ -66,8 +70,10 @@ class SubmissionOrchestrator:
                 return
 
             # Stage 2 & 3: Generate and Deploy Infrastructure
-            # Use fast deployment (Cloud Run) or legacy Terraform based on mode
-            if DEPLOYMENT_MODE == "fast":
+            # Use warm pool (fastest), fast deployment, or legacy Terraform
+            if DEPLOYMENT_MODE == "warm_pool":
+                await SubmissionOrchestrator._warm_pool_deploy(db, submission, problem)
+            elif DEPLOYMENT_MODE == "fast":
                 await SubmissionOrchestrator._fast_deploy(db, submission, problem)
             else:
                 await SubmissionOrchestrator._generate_infrastructure(db, submission, problem)
@@ -127,6 +133,71 @@ class SubmissionOrchestrator:
             submission.status = SubmissionStatus.GENERATING_INFRA.value
 
         db.commit()
+
+    @staticmethod
+    async def _warm_pool_deploy(
+        db: Session,
+        submission: Submission,
+        problem: Problem,
+    ) -> None:
+        """
+        Fastest deployment using warm container pool with pre-provisioned infrastructure.
+        Sub-second deployment for candidate API code.
+        """
+        submission.status = SubmissionStatus.DEPLOYING.value
+        db.commit()
+
+        warm_pool = WarmPoolService()
+
+        # Determine required services from problem tags
+        required_services = [ServiceType.POSTGRES]  # Default
+        if problem.tags:
+            if "cache" in problem.tags or "redis" in problem.tags:
+                required_services.append(ServiceType.REDIS)
+            if "nosql" in problem.tags or "cassandra" in problem.tags:
+                required_services.append(ServiceType.CASSANDRA)
+            if "messaging" in problem.tags or "kafka" in problem.tags:
+                required_services.append(ServiceType.KAFKA)
+            if "search" in problem.tags or "elasticsearch" in problem.tags:
+                required_services.append(ServiceType.ELASTICSEARCH)
+
+        # Generate candidate API code from their design
+        from backend.services.ai_service import AIService
+        ai_service = AIService()
+
+        try:
+            api_code = await ai_service.generate_api_code(
+                problem_description=problem.description,
+                design_text=submission.design_text or "",
+                api_spec=submission.api_spec_input,
+                required_services=[s.value for s in required_services],
+            )
+
+            result = await warm_pool.deploy_candidate_api(
+                submission_id=submission.id,
+                api_code=api_code,
+                required_services=required_services,
+                api_spec=submission.api_spec_input,
+            )
+
+            if result["success"]:
+                submission.deployment_id = result.get("container_id", f"warm-{submission.id}")
+                submission.validation_feedback = submission.validation_feedback or {}
+                submission.validation_feedback["deployment"] = {
+                    "endpoint_url": result.get("endpoint_url"),
+                    "deployment_time_seconds": result.get("deployment_time_seconds"),
+                    "strategy": "warm_pool",
+                    "services": result.get("services"),
+                    "namespace": result.get("namespace"),
+                }
+                db.commit()
+            else:
+                raise Exception(result.get("error", "Warm pool deployment failed"))
+
+        except Exception as e:
+            submission.status = SubmissionStatus.DEPLOY_FAILED.value
+            submission.error_message = f"Warm pool deployment failed: {str(e)}"
+            db.commit()
 
     @staticmethod
     async def _fast_deploy(

@@ -189,3 +189,77 @@ Deployed Endpoint: {endpoint_url}
             }
 
         return result
+
+    async def generate_api_code(
+        self,
+        problem_description: str,
+        design_text: str,
+        api_spec: Optional[Dict[str, Any]] = None,
+        required_services: Optional[list] = None,
+    ) -> str:
+        """
+        Generate FastAPI code from a candidate's design.
+
+        Args:
+            problem_description: The problem being solved
+            design_text: Candidate's design description
+            api_spec: API specification
+            required_services: List of required infrastructure services
+
+        Returns:
+            Generated Python FastAPI code
+        """
+        services_str = ", ".join(required_services or ["postgres"])
+
+        context = f"""
+Problem: {problem_description}
+
+Candidate's Design:
+{design_text}
+
+Required Infrastructure Services: {services_str}
+"""
+        if api_spec:
+            context += f"\nAPI Specification:\n{json.dumps(api_spec, indent=2)}"
+
+        system_prompt = """You are an expert Python developer generating FastAPI code.
+
+Generate a complete, working FastAPI application based on the candidate's system design.
+
+Requirements:
+1. Use FastAPI with async/await
+2. Include proper error handling
+3. Use environment variables for service connections (they will be injected):
+   - DATABASE_URL for PostgreSQL
+   - REDIS_URL for Redis
+   - KAFKA_BROKERS for Kafka
+   - CASSANDRA_URL for Cassandra
+   - MONGODB_URL for MongoDB
+   - ELASTICSEARCH_URL for Elasticsearch
+4. Include a /health endpoint that returns {"status": "healthy"}
+5. Implement the core API endpoints from the design
+6. Use proper type hints and Pydantic models
+7. Keep the code self-contained in a single file
+
+Return ONLY the Python code, no explanations or markdown code blocks."""
+
+        message = self.client.messages.create(
+            model=self.model,
+            max_tokens=8192,
+            system=system_prompt,
+            messages=[
+                {"role": "user", "content": context}
+            ]
+        )
+
+        code = message.content[0].text
+
+        # Clean up any markdown code blocks if present
+        if code.startswith("```python"):
+            code = code[9:]
+        if code.startswith("```"):
+            code = code[3:]
+        if code.endswith("```"):
+            code = code[:-3]
+
+        return code.strip()
