@@ -284,23 +284,163 @@ Deployed Endpoint: {endpoint_url}
         """
         # Return mock API code in demo mode
         if self.demo_mode:
-            return '''# Demo Mode - API Code Generation Simulated
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-import os
+            return '''"""
+Demo Mode URL Shortener API
+Auto-generated implementation for testing purposes.
+"""
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import RedirectResponse
+from pydantic import BaseModel, Field, validator
+from typing import Dict, Optional, Any
+from datetime import datetime
+import hashlib
+import random
+import string
 
-app = FastAPI(title="Demo API")
+app = FastAPI(title="URL Shortener API", version="1.0.0")
 
+# In-memory storage
+urls_db: Dict[str, Dict[str, Any]] = {}
+stats_db: Dict[str, int] = {}
+
+# Pydantic models
 class HealthResponse(BaseModel):
     status: str
 
+class URLCreate(BaseModel):
+    original_url: str = Field(..., min_length=1, max_length=2048)
+    custom_code: Optional[str] = Field(None, min_length=3, max_length=20)
+    expires_in_hours: Optional[int] = Field(None, ge=1, le=8760)
+
+    @validator("original_url")
+    def validate_url(cls, v):
+        if not v.startswith(("http://", "https://")):
+            raise ValueError("URL must start with http:// or https://")
+        return v
+
+class URLResponse(BaseModel):
+    short_code: str
+    short_url: str
+    original_url: str
+    created_at: str
+
+class URLInfo(BaseModel):
+    short_code: str
+    original_url: str
+    created_at: str
+    click_count: int
+
+# Helper functions
+def generate_short_code(length: int = 6) -> str:
+    chars = string.ascii_letters + string.digits
+    return "".join(random.choices(chars, k=length))
+
+# Health endpoints (REQUIRED)
 @app.get("/health", response_model=HealthResponse)
-async def health():
+async def health_check():
     return {"status": "healthy"}
 
 @app.get("/")
 async def root():
-    return {"message": "Demo API - In production, Claude AI would generate a complete implementation"}
+    return {"service": "URL Shortener API", "status": "running", "version": "1.0.0"}
+
+# URL Shortener API endpoints
+@app.post("/api/v1/urls", response_model=URLResponse, status_code=201)
+async def create_short_url(data: URLCreate):
+    try:
+        # Generate or use custom short code
+        if data.custom_code:
+            if data.custom_code in urls_db:
+                raise HTTPException(status_code=409, detail="Custom code already exists")
+            short_code = data.custom_code
+        else:
+            short_code = generate_short_code()
+            while short_code in urls_db:
+                short_code = generate_short_code()
+
+        # Store URL data
+        urls_db[short_code] = {
+            "original_url": data.original_url,
+            "created_at": datetime.utcnow().isoformat(),
+            "expires_in_hours": data.expires_in_hours,
+        }
+        stats_db[short_code] = 0
+
+        return URLResponse(
+            short_code=short_code,
+            short_url=f"/{short_code}",
+            original_url=data.original_url,
+            created_at=urls_db[short_code]["created_at"],
+        )
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@app.get("/api/v1/urls/{short_code}", response_model=URLInfo)
+async def get_url_info(short_code: str):
+    try:
+        if short_code not in urls_db:
+            raise HTTPException(status_code=404, detail="Short URL not found")
+
+        url_data = urls_db[short_code]
+        return URLInfo(
+            short_code=short_code,
+            original_url=url_data["original_url"],
+            created_at=url_data["created_at"],
+            click_count=stats_db.get(short_code, 0),
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@app.get("/api/v1/urls/{short_code}/stats")
+async def get_url_stats(short_code: str):
+    try:
+        if short_code not in urls_db:
+            raise HTTPException(status_code=404, detail="Short URL not found")
+
+        return {
+            "short_code": short_code,
+            "click_count": stats_db.get(short_code, 0),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@app.delete("/api/v1/urls/{short_code}", status_code=204)
+async def delete_url(short_code: str):
+    try:
+        if short_code not in urls_db:
+            raise HTTPException(status_code=404, detail="Short URL not found")
+
+        del urls_db[short_code]
+        stats_db.pop(short_code, None)
+        return None
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@app.get("/{short_code}")
+async def redirect_to_url(short_code: str):
+    try:
+        if short_code not in urls_db:
+            raise HTTPException(status_code=404, detail="Short URL not found")
+
+        # Increment click count
+        stats_db[short_code] = stats_db.get(short_code, 0) + 1
+
+        # Redirect to original URL
+        return RedirectResponse(url=urls_db[short_code]["original_url"], status_code=307)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Internal server error")
 '''
 
         services_str = ", ".join(required_services or ["postgres"])
@@ -316,25 +456,119 @@ Required Infrastructure Services: {services_str}
         if api_spec:
             context += f"\nAPI Specification:\n{json.dumps(api_spec, indent=2)}"
 
-        system_prompt = """You are an expert Python developer generating FastAPI code.
+        system_prompt = """You are an expert Python developer generating production-ready FastAPI code.
 
 Generate a complete, working FastAPI application based on the candidate's system design.
 
-CRITICAL Requirements:
-1. Use FastAPI with async/await
-2. Include proper error handling
-3. USE IN-MEMORY STORAGE ONLY - use Python dictionaries for data storage
-   - Do NOT import or use asyncpg, databases, sqlalchemy, redis, or any database libraries
-   - Do NOT try to connect to any external services on startup
-   - Store all data in simple Python dictionaries (e.g., urls_db = {}, users_db = {})
-   - This is for demonstration/testing purposes
-4. Include a /health endpoint that returns {"status": "healthy"}
-5. Implement the core API endpoints from the design
-6. Use proper type hints and Pydantic models
-7. Keep the code self-contained in a single file
-8. The app MUST start successfully without any external dependencies
+CRITICAL Requirements - YOUR CODE MUST FOLLOW ALL OF THESE:
 
-Return ONLY the Python code, no explanations or markdown code blocks."""
+1. IMPORTS - Only use these standard/allowed imports:
+   ```
+   from fastapi import FastAPI, HTTPException, Query, Path, Body, Depends
+   from fastapi.responses import JSONResponse, RedirectResponse
+   from pydantic import BaseModel, Field, validator
+   from typing import Optional, List, Dict, Any
+   from datetime import datetime
+   import hashlib
+   import uuid
+   import random
+   import string
+   import re
+   ```
+   DO NOT import: asyncpg, databases, sqlalchemy, redis, aioredis, motor, pymongo, psycopg2, mysql, kafka, elasticsearch, or ANY database/external service libraries
+
+2. STORAGE - Use in-memory Python dictionaries ONLY:
+   ```python
+   # Global in-memory storage
+   data_store: Dict[str, Any] = {}
+   ```
+   NO database connections, NO external services, NO environment variable lookups for connections
+
+3. REQUIRED ENDPOINTS - You MUST include these EXACTLY:
+   ```python
+   @app.get("/health")
+   async def health_check():
+       return {"status": "healthy"}
+
+   @app.get("/")
+   async def root():
+       return {"service": "API", "status": "running"}
+   ```
+
+4. ERROR HANDLING - Wrap all endpoint logic in try/except:
+   ```python
+   @app.post("/api/v1/resource")
+   async def create_resource(data: ResourceCreate):
+       try:
+           # Implementation
+           return result
+       except ValueError as e:
+           raise HTTPException(status_code=400, detail=str(e))
+       except KeyError as e:
+           raise HTTPException(status_code=404, detail=f"Not found: {e}")
+       except Exception as e:
+           raise HTTPException(status_code=500, detail="Internal server error")
+   ```
+
+5. INPUT VALIDATION - Use Pydantic models with validators:
+   ```python
+   class CreateRequest(BaseModel):
+       url: str = Field(..., min_length=1, max_length=2048)
+
+       @validator('url')
+       def validate_url(cls, v):
+           if not v.startswith(('http://', 'https://')):
+               raise ValueError('URL must start with http:// or https://')
+           return v
+   ```
+
+6. CODE STRUCTURE - Follow this exact structure:
+   ```python
+   from fastapi import FastAPI, HTTPException
+   from pydantic import BaseModel, Field
+   from typing import Dict, Optional
+   # ... other safe imports
+
+   app = FastAPI(title="Service Name")
+
+   # In-memory storage
+   storage: Dict[str, Any] = {}
+
+   # Pydantic models
+   class ItemCreate(BaseModel):
+       ...
+
+   # Health endpoints (REQUIRED)
+   @app.get("/health")
+   async def health():
+       return {"status": "healthy"}
+
+   @app.get("/")
+   async def root():
+       return {"status": "running"}
+
+   # API endpoints
+   @app.post("/api/v1/items")
+   async def create_item(...):
+       try:
+           ...
+       except Exception as e:
+           raise HTTPException(status_code=500, detail=str(e))
+   ```
+
+7. NO STARTUP LOGIC - Do not include:
+   - @app.on_event("startup") that connects to services
+   - Global code that makes network calls
+   - Code that reads files or environment variables for connections
+
+8. DEFENSIVE CODING:
+   - Check if keys exist before accessing: `storage.get(key)` not `storage[key]`
+   - Validate input lengths and formats
+   - Return proper HTTP status codes (200, 201, 400, 404, 500)
+   - Never expose internal errors to clients
+
+Return ONLY the Python code. No markdown, no explanations, no code blocks with ```.
+The code must be syntactically valid and immediately runnable."""
 
         message = self.client.messages.create(
             model=self.model,

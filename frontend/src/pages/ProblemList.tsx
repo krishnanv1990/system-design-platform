@@ -3,21 +3,50 @@
  * Shows all available system design problems
  */
 
-import { useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
-import { problemsApi } from '../api/client'
-import { ProblemListItem } from '../types'
+import { useState, useEffect } from "react"
+import { Link } from "react-router-dom"
+import { Search } from "lucide-react"
+import { problemsApi } from "@/api/client"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { Skeleton } from "@/components/ui/skeleton"
+import type { ProblemListItem } from "@/types"
 
-const difficultyColors = {
-  easy: 'bg-green-100 text-green-800',
-  medium: 'bg-yellow-100 text-yellow-800',
-  hard: 'bg-red-100 text-red-800',
+const difficultyVariant: Record<string, "success" | "warning" | "destructive"> = {
+  easy: "success",
+  medium: "warning",
+  hard: "destructive",
+}
+
+function ProblemListSkeleton() {
+  return (
+    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      {[1, 2, 3, 4, 5, 6].map((i) => (
+        <Card key={i}>
+          <CardHeader className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Skeleton className="h-6 w-3/4" />
+              <Skeleton className="h-5 w-16" />
+            </div>
+          </CardHeader>
+          <CardContent>
+            <Skeleton className="h-4 w-full mb-2" />
+            <Skeleton className="h-4 w-2/3" />
+            <div className="mt-4 flex gap-2">
+              <Skeleton className="h-5 w-16" />
+              <Skeleton className="h-5 w-20" />
+            </div>
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  )
 }
 
 export default function ProblemList() {
   const [problems, setProblems] = useState<ProblemListItem[]>([])
   const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState<string>('')
+  const [filter, setFilter] = useState<string>("")
 
   useEffect(() => {
     const loadProblems = async () => {
@@ -25,7 +54,7 @@ export default function ProblemList() {
         const data = await problemsApi.list()
         setProblems(data)
       } catch (error) {
-        console.error('Failed to load problems:', error)
+        console.error("Failed to load problems:", error)
       } finally {
         setLoading(false)
       }
@@ -39,78 +68,68 @@ export default function ProblemList() {
       p.description.toLowerCase().includes(filter.toLowerCase())
   )
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
-      </div>
-    )
-  }
-
   return (
     <div>
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">System Design Problems</h1>
-        <p className="mt-1 text-sm text-gray-500">
+        <h1 className="text-2xl font-bold">System Design Problems</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
           Choose a problem to practice your system design skills
         </p>
       </div>
 
       {/* Search */}
       <div className="mb-6">
-        <input
-          type="text"
-          placeholder="Search problems..."
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          className="w-full max-w-md px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
-        />
+        <div className="relative max-w-md">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <input
+            type="text"
+            placeholder="Search problems..."
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            className="w-full pl-10 pr-4 py-2 border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+          />
+        </div>
       </div>
 
       {/* Problem list */}
-      {filteredProblems.length === 0 ? (
+      {loading ? (
+        <ProblemListSkeleton />
+      ) : filteredProblems.length === 0 ? (
         <div className="text-center py-12">
-          <p className="text-gray-500">
+          <p className="text-muted-foreground">
             {problems.length === 0
-              ? 'No problems available yet.'
-              : 'No problems match your search.'}
+              ? "No problems available yet."
+              : "No problems match your search."}
           </p>
         </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {filteredProblems.map((problem) => (
-            <Link
-              key={problem.id}
-              to={`/problems/${problem.id}`}
-              className="block p-6 bg-white rounded-lg border border-gray-200 hover:border-primary-300 hover:shadow-md transition-all"
-            >
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="text-lg font-semibold text-gray-900">
-                  {problem.title}
-                </h3>
-                <span
-                  className={`px-2 py-1 text-xs font-medium rounded-full ${
-                    difficultyColors[problem.difficulty]
-                  }`}
-                >
-                  {problem.difficulty}
-                </span>
-              </div>
-              <p className="text-sm text-gray-600 line-clamp-2">
-                {problem.description}
-              </p>
-              {problem.tags && problem.tags.length > 0 && (
-                <div className="mt-3 flex flex-wrap gap-1">
-                  {problem.tags.map((tag) => (
-                    <span
-                      key={tag}
-                      className="px-2 py-0.5 text-xs bg-gray-100 text-gray-600 rounded"
-                    >
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-              )}
+            <Link key={problem.id} to={`/problems/${problem.id}`}>
+              <Card className="h-full transition-all hover:border-primary/50 hover:shadow-md">
+                <CardHeader className="pb-2">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-lg">{problem.title}</CardTitle>
+                    <Badge variant={difficultyVariant[problem.difficulty]}>
+                      {problem.difficulty}
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-muted-foreground line-clamp-2">
+                    {problem.description}
+                  </p>
+                  {problem.tags && problem.tags.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-1">
+                      {problem.tags.map((tag) => (
+                        <Badge key={tag} variant="secondary" className="text-xs">
+                          {tag}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
             </Link>
           ))}
         </div>

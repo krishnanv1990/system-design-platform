@@ -4,8 +4,8 @@ Coordinates validation, deployment, and testing of candidate solutions.
 """
 
 import asyncio
-from typing import Optional
-from datetime import datetime
+from typing import Optional, Dict, Any
+from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
 
@@ -228,27 +228,202 @@ class SubmissionOrchestrator:
             main_py.write_text(api_code)
 
             requirements = workspace / "requirements.txt"
+            # Minimal requirements - no database libraries to prevent import errors
             requirements.write_text("""fastapi==0.109.0
 uvicorn[standard]==0.27.0
-asyncpg==0.29.0
 pydantic==2.6.0
 httpx==0.27.0
-redis==5.0.1
-sqlalchemy[asyncio]==2.0.25
-python-dotenv==1.0.1
+python-multipart==0.0.6
 aiofiles==23.2.1
 """)
 
             dockerfile = workspace / "Dockerfile"
             dockerfile.write_text("""FROM python:3.11-slim
+
+# Set environment variables for Python
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONFAULTHANDLER=1
+
 WORKDIR /app
+
+# Install dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
 COPY main.py .
+COPY startup_wrapper.py .
+
 EXPOSE 8080
 ENV PORT=8080
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
+
+# Use startup wrapper for better error handling
+CMD ["python", "startup_wrapper.py"]
 """)
+
+            # Create startup wrapper with error handling
+            startup_wrapper = workspace / "startup_wrapper.py"
+            startup_wrapper.write_text('''#!/usr/bin/env python3
+"""
+Startup wrapper for candidate applications.
+Provides robust error handling, health checks, and graceful degradation.
+"""
+
+import sys
+import os
+import traceback
+import signal
+import resource
+import logging
+from typing import Any
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
+logger = logging.getLogger(__name__)
+
+# Set memory limit (512MB)
+MEMORY_LIMIT_MB = 512
+try:
+    soft, hard = resource.getrlimit(resource.RLIMIT_AS)
+    resource.setrlimit(resource.RLIMIT_AS, (MEMORY_LIMIT_MB * 1024 * 1024, hard))
+except Exception as e:
+    logger.warning(f"Could not set memory limit: {e}")
+
+# Timeout handler
+def timeout_handler(signum, frame):
+    logger.error("Request timeout - operation took too long")
+    raise TimeoutError("Operation timed out")
+
+# Register signal handlers
+signal.signal(signal.SIGALRM, timeout_handler)
+
+def create_fallback_app():
+    """Create a minimal fallback app if main app fails to load."""
+    from fastapi import FastAPI
+    from fastapi.responses import JSONResponse
+
+    app = FastAPI(title="Fallback API")
+
+    startup_error = os.environ.get("STARTUP_ERROR", "Unknown error")
+
+    @app.get("/health")
+    async def health():
+        return {"status": "degraded", "error": "Main application failed to start"}
+
+    @app.get("/")
+    async def root():
+        return {"status": "error", "message": startup_error}
+
+    @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
+    async def catch_all(path: str):
+        return JSONResponse(
+            status_code=503,
+            content={
+                "error": "service_unavailable",
+                "message": "Main application failed to start",
+                "startup_error": startup_error
+            }
+        )
+
+    return app
+
+def validate_app(app: Any) -> bool:
+    """Validate that the app has required endpoints."""
+    try:
+        routes = [route.path for route in app.routes]
+        if "/health" not in routes:
+            logger.warning("App missing /health endpoint - will add fallback")
+            return False
+        return True
+    except Exception as e:
+        logger.error(f"Error validating app: {e}")
+        return False
+
+def add_health_endpoint(app: Any) -> Any:
+    """Add a health endpoint if missing."""
+    try:
+        @app.get("/health")
+        async def health():
+            return {"status": "healthy"}
+        logger.info("Added missing /health endpoint")
+    except Exception as e:
+        logger.error(f"Failed to add health endpoint: {e}")
+    return app
+
+def main():
+    """Main entry point with comprehensive error handling."""
+    import uvicorn
+
+    app = None
+
+    try:
+        logger.info("Starting application...")
+
+        # Try to import the main application
+        try:
+            # First, validate the syntax
+            with open("main.py", "r") as f:
+                code = f.read()
+            compile(code, "main.py", "exec")
+            logger.info("Syntax validation passed")
+        except SyntaxError as e:
+            error_msg = f"Syntax error in main.py: {e}"
+            logger.error(error_msg)
+            os.environ["STARTUP_ERROR"] = error_msg
+            app = create_fallback_app()
+
+        if app is None:
+            try:
+                from main import app as main_app
+                app = main_app
+                logger.info("Main application imported successfully")
+
+                # Validate and fix the app
+                if not validate_app(app):
+                    app = add_health_endpoint(app)
+
+            except ImportError as e:
+                error_msg = f"Import error: {e}"
+                logger.error(error_msg)
+                logger.error(traceback.format_exc())
+                os.environ["STARTUP_ERROR"] = error_msg
+                app = create_fallback_app()
+            except Exception as e:
+                error_msg = f"Failed to load application: {e}"
+                logger.error(error_msg)
+                logger.error(traceback.format_exc())
+                os.environ["STARTUP_ERROR"] = error_msg
+                app = create_fallback_app()
+
+        # Start the server
+        port = int(os.environ.get("PORT", 8080))
+        logger.info(f"Starting server on port {port}")
+
+        uvicorn.run(
+            app,
+            host="0.0.0.0",
+            port=port,
+            log_level="info",
+            access_log=True,
+            timeout_keep_alive=30,
+        )
+
+    except MemoryError:
+        logger.critical("Out of memory error!")
+        sys.exit(137)
+    except Exception as e:
+        logger.critical(f"Fatal error: {e}")
+        logger.critical(traceback.format_exc())
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()
+''')
 
             # Create tarball
             tar_buffer = io.BytesIO()
@@ -781,3 +956,184 @@ CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
 
         finally:
             db.close()
+
+    @staticmethod
+    async def diagnose_deployment(submission_id: int) -> Dict[str, Any]:
+        """
+        Diagnose deployment issues by checking Cloud Run service status and logs.
+
+        Args:
+            submission_id: Submission ID to diagnose
+
+        Returns:
+            Diagnostic information including service status, recent logs, and identified issues
+        """
+        from google.cloud import logging as cloud_logging
+        from google.cloud import run_v2
+        import httpx
+
+        db = SessionLocal()
+        diagnosis = {
+            "submission_id": submission_id,
+            "service_status": None,
+            "health_check": None,
+            "recent_logs": [],
+            "identified_issues": [],
+            "recommendations": [],
+        }
+
+        try:
+            submission = db.query(Submission).filter(Submission.id == submission_id).first()
+            if not submission:
+                diagnosis["identified_issues"].append("Submission not found")
+                return diagnosis
+
+            settings = get_settings()
+            service_name = f"candidate-{submission.namespace}"
+
+            # Check Cloud Run service status
+            try:
+                client = run_v2.ServicesClient()
+                service_path = f"projects/{settings.gcp_project_id}/locations/{settings.gcp_region}/services/{service_name}"
+                service = client.get_service(name=service_path)
+
+                diagnosis["service_status"] = {
+                    "name": service.name,
+                    "uri": service.uri,
+                    "latest_ready_revision": service.latest_ready_revision,
+                    "conditions": [
+                        {"type": c.type_, "status": c.state.name, "message": c.message}
+                        for c in service.conditions
+                    ],
+                }
+
+                # Check for unhealthy conditions
+                for condition in service.conditions:
+                    if condition.state.name != "CONDITION_SUCCEEDED":
+                        diagnosis["identified_issues"].append(
+                            f"Service condition '{condition.type_}' is {condition.state.name}: {condition.message}"
+                        )
+            except Exception as e:
+                diagnosis["identified_issues"].append(f"Failed to get service status: {str(e)}")
+
+            # Query Cloud Logging for recent errors
+            try:
+                logging_client = cloud_logging.Client(project=settings.gcp_project_id)
+
+                # Query for errors in the last hour
+                filter_str = f'''
+                    resource.type="cloud_run_revision"
+                    resource.labels.service_name="{service_name}"
+                    severity>=ERROR
+                    timestamp>="{(datetime.utcnow() - timedelta(hours=1)).isoformat()}Z"
+                '''
+
+                entries = list(logging_client.list_entries(filter_=filter_str, max_results=20))
+
+                for entry in entries:
+                    log_entry = {
+                        "timestamp": str(entry.timestamp),
+                        "severity": entry.severity,
+                        "message": entry.payload if isinstance(entry.payload, str) else str(entry.payload),
+                    }
+                    diagnosis["recent_logs"].append(log_entry)
+
+                    # Analyze error patterns
+                    msg = log_entry["message"].lower()
+                    if "modulenotfounderror" in msg or "importerror" in msg:
+                        diagnosis["identified_issues"].append("Import error - missing dependency")
+                        diagnosis["recommendations"].append("Check requirements.txt includes all needed packages")
+                    elif "syntaxerror" in msg:
+                        diagnosis["identified_issues"].append("Syntax error in generated code")
+                        diagnosis["recommendations"].append("Review generated code for syntax issues")
+                    elif "connection refused" in msg or "could not connect" in msg:
+                        diagnosis["identified_issues"].append("Database/service connection error")
+                        diagnosis["recommendations"].append("Ensure code uses in-memory storage, not external DB")
+                    elif "memory" in msg or "oom" in msg:
+                        diagnosis["identified_issues"].append("Out of memory error")
+                        diagnosis["recommendations"].append("Increase Cloud Run memory limit")
+                    elif "timeout" in msg:
+                        diagnosis["identified_issues"].append("Request timeout")
+                        diagnosis["recommendations"].append("Check for infinite loops or slow operations")
+
+            except Exception as e:
+                diagnosis["identified_issues"].append(f"Failed to query logs: {str(e)}")
+
+            # Perform health check if service URL is available
+            if submission.endpoint_url:
+                diagnosis["health_check"] = await SubmissionOrchestrator.get_service_health(
+                    submission_id, submission.endpoint_url
+                )
+
+        finally:
+            db.close()
+
+        return diagnosis
+
+    @staticmethod
+    async def get_service_health(submission_id: int, endpoint_url: str) -> Dict[str, Any]:
+        """
+        Perform health checks on the deployed service.
+
+        Args:
+            submission_id: Submission ID
+            endpoint_url: Service endpoint URL
+
+        Returns:
+            Health check results
+        """
+        import httpx
+
+        health_result = {
+            "endpoint_url": endpoint_url,
+            "health_endpoint": None,
+            "root_endpoint": None,
+            "latency_ms": None,
+            "issues": [],
+        }
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            # Check /health endpoint
+            try:
+                start = datetime.utcnow()
+                response = await client.get(f"{endpoint_url}/health")
+                latency = (datetime.utcnow() - start).total_seconds() * 1000
+
+                health_result["health_endpoint"] = {
+                    "status_code": response.status_code,
+                    "response": response.json() if response.headers.get("content-type", "").startswith("application/json") else response.text[:500],
+                    "latency_ms": round(latency, 2),
+                }
+                health_result["latency_ms"] = round(latency, 2)
+
+                if response.status_code != 200:
+                    health_result["issues"].append(f"/health returned {response.status_code}, expected 200")
+                else:
+                    try:
+                        data = response.json()
+                        if data.get("status") != "healthy":
+                            health_result["issues"].append(f"/health status is '{data.get('status')}', expected 'healthy'")
+                    except:
+                        health_result["issues"].append("/health did not return valid JSON")
+
+            except httpx.TimeoutException:
+                health_result["health_endpoint"] = {"error": "Timeout after 30 seconds"}
+                health_result["issues"].append("/health endpoint timed out - service may be unresponsive")
+            except httpx.ConnectError as e:
+                health_result["health_endpoint"] = {"error": f"Connection failed: {str(e)}"}
+                health_result["issues"].append("Cannot connect to service - may not be running")
+            except Exception as e:
+                health_result["health_endpoint"] = {"error": str(e)}
+                health_result["issues"].append(f"/health check failed: {str(e)}")
+
+            # Check root endpoint
+            try:
+                response = await client.get(endpoint_url)
+                health_result["root_endpoint"] = {
+                    "status_code": response.status_code,
+                    "response": response.json() if response.headers.get("content-type", "").startswith("application/json") else response.text[:500],
+                }
+            except Exception as e:
+                health_result["root_endpoint"] = {"error": str(e)}
+
+        return health_result

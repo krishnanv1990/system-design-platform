@@ -13,8 +13,9 @@ from pathlib import Path
 from datetime import datetime
 import re
 
-from backend.models.test_result import TestType, TestStatus
+from backend.models.test_result import TestType, TestStatus, AnalysisStatus
 from backend.services.ai_service import AIService
+from backend.services.error_analyzer import error_analyzer
 from backend.config import get_settings
 
 settings = get_settings()
@@ -57,7 +58,7 @@ class TestRunner:
             progress_callback: Optional callback(step, detail, pct) for progress updates
 
         Returns:
-            List of test results
+            List of test results with error analysis for failures
         """
         results = []
 
@@ -121,6 +122,29 @@ class TestRunner:
         )
         results.extend(chaos_results)
 
+        # Analyze failed tests
+        failed_results = [r for r in results if r.get("status") in ["failed", "error"]]
+        if failed_results and progress_callback:
+            progress_callback(
+                "Analyzing Failures",
+                f"AI is analyzing {len(failed_results)} failed test(s) to identify root causes...",
+                96
+            )
+
+        # Add error analysis to failed tests
+        for result in results:
+            if result.get("status") in ["failed", "error"]:
+                await self._add_error_analysis(
+                    result=result,
+                    problem_description=problem_description,
+                    design_text=design_text,
+                    api_spec=api_spec,
+                    endpoint_url=endpoint_url,
+                )
+            else:
+                # Mark passed/skipped tests as analysis skipped
+                result["ai_analysis_status"] = AnalysisStatus.SKIPPED.value
+
         if progress_callback:
             total_tests = len(results)
             passed_tests = sum(1 for r in results if r.get("status") == "passed")
@@ -131,6 +155,56 @@ class TestRunner:
             )
 
         return results
+
+    async def _add_error_analysis(
+        self,
+        result: Dict[str, Any],
+        problem_description: str,
+        design_text: str,
+        api_spec: Optional[Dict[str, Any]],
+        endpoint_url: str,
+    ) -> None:
+        """
+        Add AI-powered error analysis to a failed test result.
+        Modifies the result dict in place.
+        """
+        try:
+            # Get error output from details
+            details = result.get("details", {})
+            error_output = ""
+            if isinstance(details, dict):
+                error_output = details.get("error", "")
+                if not error_output:
+                    error_output = details.get("stderr", "")
+                if not error_output:
+                    error_output = details.get("stdout", "")
+            elif isinstance(details, str):
+                error_output = details
+
+            # Analyze the failure
+            analysis = await error_analyzer.analyze_failure(
+                test_type=result.get("test_type", "unknown"),
+                test_name=result.get("test_name", "unknown"),
+                status=result.get("status", "failed"),
+                error_output=str(error_output),
+                problem_description=problem_description,
+                design_text=design_text,
+                api_spec=api_spec,
+                endpoint_url=endpoint_url,
+            )
+
+            # Add analysis to result
+            result["error_category"] = analysis.get("category")
+            result["error_analysis"] = analysis
+            result["ai_analysis_status"] = analysis.get("status", AnalysisStatus.COMPLETED.value)
+
+        except Exception as e:
+            # If analysis fails, mark it but don't fail the whole test
+            result["ai_analysis_status"] = AnalysisStatus.FAILED.value
+            result["error_analysis"] = {
+                "error": str(e),
+                "status": AnalysisStatus.FAILED.value,
+            }
 
     def _get_test_file_for_problem(self, problem_description: str) -> Optional[Path]:
         """Get the appropriate test file based on problem type."""

@@ -1,69 +1,158 @@
 /**
  * Test result display card
- * Shows individual test results with status and details
+ * Shows individual test results with status, details, and error analysis
  */
 
-import { TestResult, TestStatus } from '../types'
+import { useState } from "react"
+import {
+  CheckCircle,
+  XCircle,
+  AlertCircle,
+  Clock,
+  Loader2,
+  MinusCircle,
+  ChevronDown,
+  ChevronUp,
+  Timer,
+} from "lucide-react"
+import { Card, CardContent, CardHeader } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { ErrorAnalysisCard } from "@/components/ErrorAnalysisCard"
+import { cn } from "@/lib/utils"
+import type { TestResult, TestStatus } from "@/types"
 
 interface TestResultCardProps {
   result: TestResult
+  showAnalysis?: boolean
 }
 
-const statusColors: Record<TestStatus, string> = {
-  pending: 'bg-gray-100 text-gray-800',
-  running: 'bg-blue-100 text-blue-800',
-  passed: 'bg-green-100 text-green-800',
-  failed: 'bg-red-100 text-red-800',
-  error: 'bg-orange-100 text-orange-800',
-  skipped: 'bg-gray-100 text-gray-600',
+const statusConfig: Record<
+  TestStatus,
+  {
+    icon: React.ElementType
+    label: string
+    variant: "success" | "destructive" | "warning" | "secondary" | "default"
+    iconClass: string
+  }
+> = {
+  pending: {
+    icon: Clock,
+    label: "Pending",
+    variant: "secondary",
+    iconClass: "text-muted-foreground",
+  },
+  running: {
+    icon: Loader2,
+    label: "Running",
+    variant: "default",
+    iconClass: "text-primary animate-spin",
+  },
+  passed: {
+    icon: CheckCircle,
+    label: "Passed",
+    variant: "success",
+    iconClass: "text-success",
+  },
+  failed: {
+    icon: XCircle,
+    label: "Failed",
+    variant: "destructive",
+    iconClass: "text-destructive",
+  },
+  error: {
+    icon: AlertCircle,
+    label: "Error",
+    variant: "warning",
+    iconClass: "text-warning",
+  },
+  skipped: {
+    icon: MinusCircle,
+    label: "Skipped",
+    variant: "secondary",
+    iconClass: "text-muted-foreground",
+  },
 }
 
-const statusIcons: Record<TestStatus, string> = {
-  pending: '...',
-  running: '...',
-  passed: '(+)',
-  failed: '(x)',
-  error: '(!)',
-  skipped: '(-)',
-}
+export default function TestResultCard({
+  result,
+  showAnalysis = true,
+}: TestResultCardProps) {
+  const [isExpanded, setIsExpanded] = useState(false)
+  const config = statusConfig[result.status] || statusConfig.pending
+  const StatusIcon = config.icon
 
-export default function TestResultCard({ result }: TestResultCardProps) {
-  const statusColor = statusColors[result.status] || statusColors.pending
-  const statusIcon = statusIcons[result.status] || ''
+  const hasError = result.status === "failed" || result.status === "error"
+  const hasAnalysis = hasError && result.error_analysis && showAnalysis
 
   return (
-    <div className="border rounded-lg p-4 bg-white">
-      <div className="flex items-center justify-between mb-2">
-        <h4 className="font-medium text-gray-900">{result.test_name}</h4>
-        <span
-          className={`px-2 py-1 text-xs font-medium rounded-full ${statusColor}`}
-        >
-          {statusIcon} {result.status.toUpperCase()}
-        </span>
-      </div>
+    <Card
+      className={cn(
+        "transition-all hover:shadow-md",
+        hasError && "border-destructive/50"
+      )}
+    >
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <StatusIcon className={cn("h-5 w-5", config.iconClass)} />
+            <div>
+              <h4 className="font-medium">{result.test_name}</h4>
+              {result.chaos_scenario && (
+                <p className="text-xs text-muted-foreground">
+                  Scenario: {result.chaos_scenario}
+                </p>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {result.duration_ms !== null && (
+              <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                <Timer className="h-3 w-3" />
+                {result.duration_ms}ms
+              </div>
+            )}
+            <Badge variant={config.variant}>{config.label}</Badge>
+          </div>
+        </div>
+      </CardHeader>
 
-      {result.chaos_scenario && (
-        <p className="text-sm text-gray-500 mb-2">
-          Scenario: {result.chaos_scenario}
-        </p>
+      {/* Error Analysis - show prominently for failed tests */}
+      {hasAnalysis && (
+        <CardContent className="pt-2 pb-2">
+          <ErrorAnalysisCard
+            analysis={result.error_analysis!}
+            className="border-0 shadow-none"
+          />
+        </CardContent>
       )}
 
-      {result.duration_ms !== null && (
-        <p className="text-sm text-gray-500">
-          Duration: {result.duration_ms}ms
-        </p>
-      )}
-
+      {/* Details section */}
       {result.details && (
-        <details className="mt-3">
-          <summary className="text-sm text-primary-600 cursor-pointer hover:text-primary-700">
-            View Details
-          </summary>
-          <pre className="mt-2 p-3 bg-gray-50 rounded text-xs overflow-x-auto">
-            {JSON.stringify(result.details, null, 2)}
-          </pre>
-        </details>
+        <CardContent className={cn(hasAnalysis ? "pt-0" : "pt-2")}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setIsExpanded(!isExpanded)}
+            className="w-full justify-between text-muted-foreground hover:text-foreground"
+          >
+            <span className="text-sm">
+              {isExpanded ? "Hide" : "View"} Raw Details
+            </span>
+            {isExpanded ? (
+              <ChevronUp className="h-4 w-4" />
+            ) : (
+              <ChevronDown className="h-4 w-4" />
+            )}
+          </Button>
+
+          {isExpanded && (
+            <pre className="mt-2 p-3 bg-muted rounded-md text-xs overflow-x-auto max-h-64 overflow-y-auto">
+              {JSON.stringify(result.details, null, 2)}
+            </pre>
+          )}
+        </CardContent>
       )}
-    </div>
+    </Card>
   )
 }

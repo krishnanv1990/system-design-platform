@@ -38,6 +38,9 @@ chaostoolkit-google-cloud-platform==0.4.1
 # Async HTTP
 aiohttp>=3.9.0
 
+# Rate Limiting
+slowapi==0.1.9
+
 # Utilities
 pydantic[email]==2.6.0
 pydantic-settings==2.1.0

@@ -37,6 +37,14 @@ class Settings(BaseSettings):
     frontend_url: str = "http://localhost:5173"
     backend_url: str = "http://localhost:8000"
 
+    # Rate Limiting
+    rate_limit_enabled: bool = True
+    rate_limit_submissions_per_hour: int = 5  # Authenticated users
+    rate_limit_submissions_unauth_per_hour: int = 2  # Unauthenticated
+    rate_limit_validate_per_hour: int = 20  # Validation endpoint
+    rate_limit_default_per_minute: int = 100  # Default for GET requests
+    redis_url: str = ""  # Optional Redis URL for distributed rate limiting
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

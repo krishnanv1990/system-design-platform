@@ -113,6 +113,23 @@ async def get_test_summary(
     else:
         overall_status = "pending"
 
+    # Aggregate error categories
+    issues_by_category = {
+        "user_solution": 0,
+        "platform": 0,
+        "deployment": 0,
+        "unknown": 0,
+    }
+    for r in results:
+        if r.error_category and r.error_category in issues_by_category:
+            issues_by_category[r.error_category] += 1
+
+    # Check if there are platform/deployment issues (not user's fault)
+    has_platform_issues = (
+        issues_by_category["platform"] > 0 or
+        issues_by_category["deployment"] > 0
+    )
+
     return TestSummaryResponse(
         submission_id=submission_id,
         total_tests=len(results),
@@ -124,6 +141,8 @@ async def get_test_summary(
         performance_tests=performance_tests,
         chaos_tests=chaos_tests,
         overall_status=overall_status,
+        issues_by_category=issues_by_category,
+        has_platform_issues=has_platform_issues,
     )
 
 

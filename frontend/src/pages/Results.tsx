@@ -1,13 +1,33 @@
 /**
  * Results page
- * Shows submission status and test results
+ * Shows submission status and test results with error analysis
  */
 
-import { useState, useEffect } from 'react'
-import { useParams, Link } from 'react-router-dom'
-import { submissionsApi, testsApi } from '../api/client'
-import { SubmissionDetail, TestSummary, SubmissionStatus } from '../types'
-import TestResultCard from '../components/TestResultCard'
+import { useState, useEffect } from "react"
+import { useParams, Link } from "react-router-dom"
+import {
+  ArrowLeft,
+  CheckCircle,
+  XCircle,
+  AlertCircle,
+  Clock,
+  Loader2,
+  ExternalLink,
+  Trash2,
+  Server,
+  AlertTriangle,
+  Code,
+} from "lucide-react"
+import { submissionsApi, testsApi } from "@/api/client"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Progress } from "@/components/ui/progress"
+import { Skeleton } from "@/components/ui/skeleton"
+import TestResultCard from "@/components/TestResultCard"
+import { cn } from "@/lib/utils"
+import type { SubmissionDetail, TestSummary, SubmissionStatus, TestResult } from "@/types"
 
 interface DeploymentStatus {
   submission_id: number
@@ -22,28 +42,100 @@ interface DeploymentStatus {
   is_cleaned_up: boolean
 }
 
-const statusLabels: Record<SubmissionStatus, string> = {
-  pending: 'Pending',
-  validating: 'Validating Design...',
-  validation_failed: 'Validation Failed',
-  generating_infra: 'Generating Infrastructure...',
-  deploying: 'Deploying to GCP...',
-  deploy_failed: 'Deployment Failed',
-  testing: 'Running Tests...',
-  completed: 'Completed',
-  failed: 'Failed',
+const statusConfig: Record<
+  SubmissionStatus,
+  {
+    label: string
+    variant: "default" | "secondary" | "destructive" | "success" | "warning"
+    icon: React.ElementType
+    iconClass: string
+  }
+> = {
+  pending: {
+    label: "Pending",
+    variant: "secondary",
+    icon: Clock,
+    iconClass: "text-muted-foreground",
+  },
+  validating: {
+    label: "Validating Design...",
+    variant: "default",
+    icon: Loader2,
+    iconClass: "text-primary animate-spin",
+  },
+  validation_failed: {
+    label: "Validation Failed",
+    variant: "destructive",
+    icon: XCircle,
+    iconClass: "text-destructive",
+  },
+  generating_infra: {
+    label: "Generating Infrastructure...",
+    variant: "default",
+    icon: Loader2,
+    iconClass: "text-primary animate-spin",
+  },
+  deploying: {
+    label: "Deploying to GCP...",
+    variant: "default",
+    icon: Loader2,
+    iconClass: "text-primary animate-spin",
+  },
+  deploy_failed: {
+    label: "Deployment Failed",
+    variant: "destructive",
+    icon: XCircle,
+    iconClass: "text-destructive",
+  },
+  testing: {
+    label: "Running Tests...",
+    variant: "warning",
+    icon: Loader2,
+    iconClass: "text-warning animate-spin",
+  },
+  completed: {
+    label: "Completed",
+    variant: "success",
+    icon: CheckCircle,
+    iconClass: "text-success",
+  },
+  failed: {
+    label: "Failed",
+    variant: "destructive",
+    icon: XCircle,
+    iconClass: "text-destructive",
+  },
 }
 
-const statusColors: Record<SubmissionStatus, string> = {
-  pending: 'bg-gray-100 text-gray-800',
-  validating: 'bg-blue-100 text-blue-800',
-  validation_failed: 'bg-red-100 text-red-800',
-  generating_infra: 'bg-blue-100 text-blue-800',
-  deploying: 'bg-blue-100 text-blue-800',
-  deploy_failed: 'bg-red-100 text-red-800',
-  testing: 'bg-yellow-100 text-yellow-800',
-  completed: 'bg-green-100 text-green-800',
-  failed: 'bg-red-100 text-red-800',
+function ResultsSkeleton() {
+  return (
+    <div className="max-w-5xl mx-auto space-y-6">
+      <div className="flex items-center justify-between">
+        <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-6 w-24" />
+      </div>
+      <Card>
+        <CardHeader>
+          <Skeleton className="h-6 w-32" />
+        </CardHeader>
+        <CardContent className="grid gap-4 md:grid-cols-4">
+          {[1, 2, 3, 4].map((i) => (
+            <Skeleton key={i} className="h-20" />
+          ))}
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <Skeleton className="h-6 w-32" />
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {[1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-24" />
+          ))}
+        </CardContent>
+      </Card>
+    </div>
+  )
 }
 
 export default function Results() {
@@ -53,7 +145,6 @@ export default function Results() {
   const [deploymentStatus, setDeploymentStatus] = useState<DeploymentStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [tearingDown, setTearingDown] = useState(false)
-  const [activeTab, setActiveTab] = useState<'overview' | 'functional' | 'performance' | 'chaos'>('overview')
 
   // Poll for updates while processing
   useEffect(() => {
@@ -65,7 +156,7 @@ export default function Results() {
         setSubmission(sub)
 
         // Load test results if testing or completed
-        if (['testing', 'completed'].includes(sub.status)) {
+        if (["testing", "completed"].includes(sub.status)) {
           try {
             const summary = await testsApi.getTestSummary(parseInt(id))
             setTestSummary(summary)
@@ -75,7 +166,7 @@ export default function Results() {
         }
 
         // Load deployment status if deployed
-        if (['deploying', 'testing', 'completed'].includes(sub.status)) {
+        if (["deploying", "testing", "completed"].includes(sub.status)) {
           try {
             const depStatus = await submissionsApi.getDeploymentStatus(parseInt(id))
             if (depStatus.deployment) {
@@ -86,7 +177,7 @@ export default function Results() {
           }
         }
       } catch (err) {
-        console.error('Failed to load submission:', err)
+        console.error("Failed to load submission:", err)
       } finally {
         setLoading(false)
       }
@@ -96,7 +187,10 @@ export default function Results() {
 
     // Poll for updates
     const interval = setInterval(() => {
-      if (submission && !['completed', 'failed', 'validation_failed', 'deploy_failed'].includes(submission.status)) {
+      if (
+        submission &&
+        !["completed", "failed", "validation_failed", "deploy_failed"].includes(submission.status)
+      ) {
         loadData()
       }
     }, 5000)
@@ -105,347 +199,445 @@ export default function Results() {
   }, [id, submission?.status])
 
   const handleTeardown = async () => {
-    if (!id || !confirm('Are you sure you want to tear down this deployment? This action cannot be undone.')) {
+    if (
+      !id ||
+      !confirm("Are you sure you want to tear down this deployment? This action cannot be undone.")
+    ) {
       return
     }
 
     setTearingDown(true)
     try {
       await submissionsApi.teardown(parseInt(id))
-      setDeploymentStatus((prev) => prev ? { ...prev, is_cleaned_up: true } : null)
-      alert('Deployment torn down successfully!')
+      setDeploymentStatus((prev) => (prev ? { ...prev, is_cleaned_up: true } : null))
     } catch (err) {
-      console.error('Failed to teardown:', err)
-      alert('Failed to tear down deployment')
+      console.error("Failed to teardown:", err)
     } finally {
       setTearingDown(false)
     }
   }
 
   const formatTimeRemaining = (minutes: number) => {
-    if (minutes < 1) return 'Less than 1 minute'
+    if (minutes < 1) return "Less than 1 minute"
     if (minutes < 60) return `${Math.round(minutes)} minutes`
     const hours = Math.floor(minutes / 60)
     const mins = Math.round(minutes % 60)
     return `${hours}h ${mins}m`
   }
 
+  const getTestCounts = (tests: TestResult[]) => ({
+    total: tests.length,
+    passed: tests.filter((t) => t.status === "passed").length,
+    failed: tests.filter((t) => t.status === "failed" || t.status === "error").length,
+  })
+
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
-      </div>
-    )
+    return <ResultsSkeleton />
   }
 
   if (!submission) {
     return (
-      <div className="text-center py-12">
-        <p className="text-red-500">Submission not found</p>
-        <Link to="/problems" className="text-primary-600 hover:underline mt-4 inline-block">
-          Back to problems
-        </Link>
+      <div className="flex flex-col items-center justify-center py-12">
+        <AlertCircle className="h-12 w-12 text-destructive mb-4" />
+        <p className="text-destructive font-medium mb-4">Submission not found</p>
+        <Button asChild variant="outline">
+          <Link to="/problems">
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Back to problems
+          </Link>
+        </Button>
       </div>
     )
   }
 
+  const config = statusConfig[submission.status]
+  const StatusIcon = config.icon
+
   return (
-    <div className="max-w-5xl mx-auto">
+    <div className="max-w-5xl mx-auto space-y-6">
       {/* Header */}
-      <div className="mb-6">
-        <Link
-          to="/problems"
-          className="text-sm text-gray-500 hover:text-gray-700 mb-2 inline-block"
-        >
-          {'<-'} Back to problems
-        </Link>
+      <div>
+        <Button asChild variant="ghost" size="sm" className="mb-2">
+          <Link to="/problems">
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Back to problems
+          </Link>
+        </Button>
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-gray-900">Submission Results</h1>
-          <span
-            className={`px-3 py-1 text-sm font-medium rounded-full ${
-              statusColors[submission.status]
-            }`}
-          >
-            {statusLabels[submission.status]}
-          </span>
+          <h1 className="text-2xl font-bold">Submission Results</h1>
+          <Badge variant={config.variant} className="flex items-center gap-1.5">
+            <StatusIcon className={cn("h-3.5 w-3.5", config.iconClass)} />
+            {config.label}
+          </Badge>
         </div>
       </div>
 
       {/* Error message */}
       {submission.error_message && (
-        <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
-          <h3 className="font-medium text-red-800 mb-1">Error</h3>
-          <p className="text-sm text-red-700">{submission.error_message}</p>
-        </div>
+        <Card className="border-destructive/50 bg-destructive/5">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-destructive flex items-center gap-2 text-base">
+              <AlertCircle className="h-4 w-4" />
+              Error
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-destructive/90">{submission.error_message}</p>
+          </CardContent>
+        </Card>
       )}
 
       {/* Validation feedback */}
-      {submission.validation_feedback && (
-        <div className="mb-6 p-4 bg-white border rounded-lg">
-          <h3 className="font-medium text-gray-900 mb-3">Validation Feedback</h3>
-          <div className="grid gap-4 md:grid-cols-2">
-            {submission.validation_feedback.feedback && (
-              <>
-                <div className="p-3 bg-gray-50 rounded">
-                  <p className="text-sm font-medium">Scalability</p>
-                  <p className="text-lg font-bold text-primary-600">
-                    {submission.validation_feedback.feedback.scalability.score}/100
-                  </p>
-                  <p className="text-xs text-gray-500">
-                    {submission.validation_feedback.feedback.scalability.comments}
-                  </p>
-                </div>
-                <div className="p-3 bg-gray-50 rounded">
-                  <p className="text-sm font-medium">Reliability</p>
-                  <p className="text-lg font-bold text-primary-600">
-                    {submission.validation_feedback.feedback.reliability.score}/100
-                  </p>
-                  <p className="text-xs text-gray-500">
-                    {submission.validation_feedback.feedback.reliability.comments}
-                  </p>
-                </div>
-                <div className="p-3 bg-gray-50 rounded">
-                  <p className="text-sm font-medium">Data Model</p>
-                  <p className="text-lg font-bold text-primary-600">
-                    {submission.validation_feedback.feedback.data_model.score}/100
-                  </p>
-                  <p className="text-xs text-gray-500">
-                    {submission.validation_feedback.feedback.data_model.comments}
-                  </p>
-                </div>
-                <div className="p-3 bg-gray-50 rounded">
-                  <p className="text-sm font-medium">API Design</p>
-                  <p className="text-lg font-bold text-primary-600">
-                    {submission.validation_feedback.feedback.api_design.score}/100
-                  </p>
-                  <p className="text-xs text-gray-500">
-                    {submission.validation_feedback.feedback.api_design.comments}
-                  </p>
-                </div>
-              </>
+      {submission.validation_feedback?.feedback && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Design Validation Feedback</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-4 md:grid-cols-2">
+              {["scalability", "reliability", "data_model", "api_design"].map((key) => {
+                const item = (submission.validation_feedback?.feedback as any)?.[key]
+                if (!item) return null
+                return (
+                  <div key={key} className="p-4 bg-muted/50 rounded-lg">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-sm font-medium capitalize">{key.replace("_", " ")}</p>
+                      <Badge variant={item.score >= 70 ? "success" : item.score >= 50 ? "warning" : "destructive"}>
+                        {item.score}/100
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground">{item.comments}</p>
+                  </div>
+                )
+              })}
+            </div>
+            {submission.validation_feedback.feedback.overall && (
+              <p className="mt-4 text-sm text-muted-foreground border-t pt-4">
+                {submission.validation_feedback.feedback.overall}
+              </p>
             )}
-          </div>
-          {submission.validation_feedback.feedback?.overall && (
-            <p className="mt-4 text-sm text-gray-700">
-              {submission.validation_feedback.feedback.overall}
-            </p>
-          )}
-        </div>
+          </CardContent>
+        </Card>
       )}
 
       {/* Deployment Status */}
       {deploymentStatus && (
-        <div className="mb-6 p-4 bg-white border rounded-lg">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="font-medium text-gray-900">Deployment Status</h3>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Server className="h-4 w-4" />
+              Deployment Status
+            </CardTitle>
             {!deploymentStatus.is_cleaned_up && (
-              <button
+              <Button
+                variant="destructive"
+                size="sm"
                 onClick={handleTeardown}
                 disabled={tearingDown}
-                className="px-4 py-2 bg-red-600 text-white text-sm font-medium rounded hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {tearingDown ? 'Tearing down...' : 'Tear Down Now'}
-              </button>
+                {tearingDown ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Trash2 className="mr-2 h-4 w-4" />
+                )}
+                {tearingDown ? "Tearing down..." : "Tear Down"}
+              </Button>
             )}
-          </div>
+          </CardHeader>
+          <CardContent>
+            {deploymentStatus.is_cleaned_up ? (
+              <div className="p-4 bg-muted rounded-lg text-center">
+                <p className="text-muted-foreground">Deployment has been cleaned up</p>
+              </div>
+            ) : (
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                <div className="p-3 bg-muted/50 rounded-lg">
+                  <p className="text-xs text-muted-foreground">Time Remaining</p>
+                  <p className="text-lg font-semibold text-warning">
+                    {formatTimeRemaining(deploymentStatus.time_remaining_minutes)}
+                  </p>
+                </div>
+                <div className="p-3 bg-muted/50 rounded-lg">
+                  <p className="text-xs text-muted-foreground">Deployment Mode</p>
+                  <p className="text-lg font-semibold">
+                    {deploymentStatus.deployment_mode === "warm_pool"
+                      ? "Warm Pool"
+                      : deploymentStatus.deployment_mode === "fast"
+                      ? "Cloud Run"
+                      : "Terraform"}
+                  </p>
+                </div>
+                <div className="p-3 bg-muted/50 rounded-lg">
+                  <p className="text-xs text-muted-foreground">Namespace</p>
+                  <p
+                    className="text-sm font-mono truncate"
+                    title={deploymentStatus.namespace}
+                  >
+                    {deploymentStatus.namespace}
+                  </p>
+                </div>
+                <div className="p-3 bg-muted/50 rounded-lg">
+                  <p className="text-xs text-muted-foreground">Cleanup Scheduled</p>
+                  <p className="text-sm">
+                    {new Date(deploymentStatus.scheduled_cleanup_at).toLocaleTimeString()}
+                  </p>
+                </div>
+              </div>
+            )}
 
-          {deploymentStatus.is_cleaned_up ? (
-            <div className="p-3 bg-gray-100 rounded text-center">
-              <p className="text-gray-600">Deployment has been cleaned up</p>
-            </div>
-          ) : (
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-              <div className="p-3 bg-gray-50 rounded">
-                <p className="text-sm text-gray-500">Time Remaining</p>
-                <p className="text-lg font-bold text-orange-600">
-                  {formatTimeRemaining(deploymentStatus.time_remaining_minutes)}
-                </p>
+            {deploymentStatus.endpoint_url && !deploymentStatus.is_cleaned_up && (
+              <div className="mt-4 p-3 bg-primary/5 border border-primary/20 rounded-lg">
+                <p className="text-xs text-muted-foreground mb-1">Endpoint URL</p>
+                <a
+                  href={deploymentStatus.endpoint_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm text-primary hover:underline flex items-center gap-1"
+                >
+                  {deploymentStatus.endpoint_url}
+                  <ExternalLink className="h-3 w-3" />
+                </a>
               </div>
-              <div className="p-3 bg-gray-50 rounded">
-                <p className="text-sm text-gray-500">Deployment Mode</p>
-                <p className="text-lg font-bold text-gray-900">
-                  {deploymentStatus.deployment_mode === 'warm_pool' ? 'Warm Pool' :
-                   deploymentStatus.deployment_mode === 'fast' ? 'Cloud Run' : 'Terraform'}
-                </p>
-              </div>
-              <div className="p-3 bg-gray-50 rounded">
-                <p className="text-sm text-gray-500">Namespace</p>
-                <p className="text-sm font-mono text-gray-900 truncate" title={deploymentStatus.namespace}>
-                  {deploymentStatus.namespace}
-                </p>
-              </div>
-              <div className="p-3 bg-gray-50 rounded">
-                <p className="text-sm text-gray-500">Cleanup Scheduled</p>
-                <p className="text-sm text-gray-900">
-                  {new Date(deploymentStatus.scheduled_cleanup_at).toLocaleTimeString()}
-                </p>
-              </div>
-            </div>
-          )}
-
-          {deploymentStatus.endpoint_url && !deploymentStatus.is_cleaned_up && (
-            <div className="mt-3 p-3 bg-blue-50 rounded">
-              <p className="text-sm text-gray-500 mb-1">Endpoint URL</p>
-              <a
-                href={deploymentStatus.endpoint_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-sm text-blue-600 hover:underline break-all"
-              >
-                {deploymentStatus.endpoint_url}
-              </a>
-            </div>
-          )}
-        </div>
+            )}
+          </CardContent>
+        </Card>
       )}
 
       {/* Test Results */}
       {testSummary && (
-        <div className="bg-white border rounded-lg">
-          {/* Test Summary */}
-          <div className="p-4 border-b">
+        <Card>
+          <CardHeader>
             <div className="flex items-center justify-between">
-              <h3 className="font-medium text-gray-900">Test Results</h3>
-              <div className="flex items-center space-x-4 text-sm">
-                <span className="text-green-600">Passed: {testSummary.passed}</span>
-                <span className="text-red-600">Failed: {testSummary.failed}</span>
-                <span className="text-orange-600">Errors: {testSummary.errors}</span>
-                <span className="text-gray-500">Total: {testSummary.total_tests}</span>
+              <CardTitle className="text-base">Test Results</CardTitle>
+              <div className="flex items-center gap-3 text-sm">
+                <div className="flex items-center gap-1.5">
+                  <CheckCircle className="h-4 w-4 text-success" />
+                  <span>{testSummary.passed} passed</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <XCircle className="h-4 w-4 text-destructive" />
+                  <span>{testSummary.failed} failed</span>
+                </div>
+                {testSummary.errors > 0 && (
+                  <div className="flex items-center gap-1.5">
+                    <AlertCircle className="h-4 w-4 text-warning" />
+                    <span>{testSummary.errors} errors</span>
+                  </div>
+                )}
               </div>
             </div>
-          </div>
 
-          {/* Tabs */}
-          <div className="border-b">
-            <nav className="flex -mb-px">
-              {(['overview', 'functional', 'performance', 'chaos'] as const).map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
-                  className={`px-4 py-3 text-sm font-medium border-b-2 ${
-                    activeTab === tab
-                      ? 'border-primary-500 text-primary-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  {tab.charAt(0).toUpperCase() + tab.slice(1)}
-                </button>
-              ))}
-            </nav>
-          </div>
+            {/* Error Category Breakdown */}
+            {testSummary.issues_by_category && (
+              <div className="mt-4 flex flex-wrap gap-2">
+                {testSummary.issues_by_category.user_solution > 0 && (
+                  <Badge variant="user_solution" className="flex items-center gap-1">
+                    <Code className="h-3 w-3" />
+                    {testSummary.issues_by_category.user_solution} solution issue
+                    {testSummary.issues_by_category.user_solution !== 1 ? "s" : ""}
+                  </Badge>
+                )}
+                {testSummary.issues_by_category.platform > 0 && (
+                  <Badge variant="platform" className="flex items-center gap-1">
+                    <Server className="h-3 w-3" />
+                    {testSummary.issues_by_category.platform} platform issue
+                    {testSummary.issues_by_category.platform !== 1 ? "s" : ""}
+                  </Badge>
+                )}
+                {testSummary.issues_by_category.deployment > 0 && (
+                  <Badge variant="deployment" className="flex items-center gap-1">
+                    <AlertTriangle className="h-3 w-3" />
+                    {testSummary.issues_by_category.deployment} deployment issue
+                    {testSummary.issues_by_category.deployment !== 1 ? "s" : ""}
+                  </Badge>
+                )}
+              </div>
+            )}
 
-          {/* Tab content */}
-          <div className="p-4">
-            {activeTab === 'overview' && (
-              <div className="grid gap-4 md:grid-cols-3">
-                <div className="p-4 bg-gray-50 rounded-lg text-center">
-                  <p className="text-sm text-gray-500">Functional Tests</p>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {testSummary.functional_tests.filter((t) => t.status === 'passed').length}/
+            {/* Platform Issues Warning */}
+            {testSummary.has_platform_issues && (
+              <div className="mt-4 p-3 bg-purple-50 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-800 rounded-lg">
+                <p className="text-sm text-purple-800 dark:text-purple-200 flex items-center gap-2">
+                  <Server className="h-4 w-4" />
+                  <span>
+                    <strong>Note:</strong> Some test failures are due to platform issues, not your
+                    solution. These are marked with a purple badge.
+                  </span>
+                </p>
+              </div>
+            )}
+          </CardHeader>
+
+          <CardContent className="pt-0">
+            <Tabs defaultValue="overview">
+              <TabsList className="mb-4">
+                <TabsTrigger value="overview">Overview</TabsTrigger>
+                <TabsTrigger value="functional">
+                  Functional
+                  <Badge variant="secondary" className="ml-2">
                     {testSummary.functional_tests.length}
-                  </p>
-                </div>
-                <div className="p-4 bg-gray-50 rounded-lg text-center">
-                  <p className="text-sm text-gray-500">Performance Tests</p>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {testSummary.performance_tests.filter((t) => t.status === 'passed').length}/
+                  </Badge>
+                </TabsTrigger>
+                <TabsTrigger value="performance">
+                  Performance
+                  <Badge variant="secondary" className="ml-2">
                     {testSummary.performance_tests.length}
-                  </p>
-                </div>
-                <div className="p-4 bg-gray-50 rounded-lg text-center">
-                  <p className="text-sm text-gray-500">Chaos Tests</p>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {testSummary.chaos_tests.filter((t) => t.status === 'passed').length}/
+                  </Badge>
+                </TabsTrigger>
+                <TabsTrigger value="chaos">
+                  Chaos
+                  <Badge variant="secondary" className="ml-2">
                     {testSummary.chaos_tests.length}
-                  </p>
+                  </Badge>
+                </TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="overview">
+                <div className="grid gap-4 md:grid-cols-3">
+                  {[
+                    { name: "Functional Tests", tests: testSummary.functional_tests },
+                    { name: "Performance Tests", tests: testSummary.performance_tests },
+                    { name: "Chaos Tests", tests: testSummary.chaos_tests },
+                  ].map(({ name, tests }) => {
+                    const counts = getTestCounts(tests)
+                    const passRate = counts.total > 0 ? (counts.passed / counts.total) * 100 : 0
+                    return (
+                      <Card key={name} className="bg-muted/30">
+                        <CardContent className="pt-6">
+                          <p className="text-sm text-muted-foreground mb-2">{name}</p>
+                          <div className="flex items-end justify-between mb-2">
+                            <p className="text-2xl font-bold">
+                              {counts.passed}/{counts.total}
+                            </p>
+                            <Badge
+                              variant={
+                                passRate === 100
+                                  ? "success"
+                                  : passRate >= 50
+                                  ? "warning"
+                                  : "destructive"
+                              }
+                            >
+                              {Math.round(passRate)}%
+                            </Badge>
+                          </div>
+                          <Progress value={passRate} className="h-2" />
+                        </CardContent>
+                      </Card>
+                    )
+                  })}
                 </div>
-              </div>
-            )}
+              </TabsContent>
 
-            {activeTab === 'functional' && (
-              <div className="space-y-4">
-                {testSummary.functional_tests.length === 0 ? (
-                  <p className="text-gray-500">No functional tests available</p>
-                ) : (
-                  testSummary.functional_tests.map((result) => (
-                    <TestResultCard key={result.id} result={result} />
-                  ))
-                )}
-              </div>
-            )}
+              <TabsContent value="functional">
+                <div className="space-y-4">
+                  {testSummary.functional_tests.length === 0 ? (
+                    <p className="text-muted-foreground text-center py-8">
+                      No functional tests available
+                    </p>
+                  ) : (
+                    testSummary.functional_tests.map((result) => (
+                      <TestResultCard key={result.id} result={result} />
+                    ))
+                  )}
+                </div>
+              </TabsContent>
 
-            {activeTab === 'performance' && (
-              <div className="space-y-4">
-                {testSummary.performance_tests.length === 0 ? (
-                  <p className="text-gray-500">No performance tests available</p>
-                ) : (
-                  testSummary.performance_tests.map((result) => (
-                    <TestResultCard key={result.id} result={result} />
-                  ))
-                )}
-              </div>
-            )}
+              <TabsContent value="performance">
+                <div className="space-y-4">
+                  {testSummary.performance_tests.length === 0 ? (
+                    <p className="text-muted-foreground text-center py-8">
+                      No performance tests available
+                    </p>
+                  ) : (
+                    testSummary.performance_tests.map((result) => (
+                      <TestResultCard key={result.id} result={result} />
+                    ))
+                  )}
+                </div>
+              </TabsContent>
 
-            {activeTab === 'chaos' && (
-              <div className="space-y-4">
-                {testSummary.chaos_tests.length === 0 ? (
-                  <p className="text-gray-500">No chaos tests available</p>
-                ) : (
-                  testSummary.chaos_tests.map((result) => (
-                    <TestResultCard key={result.id} result={result} />
-                  ))
-                )}
-              </div>
-            )}
-          </div>
-        </div>
+              <TabsContent value="chaos">
+                <div className="space-y-4">
+                  {testSummary.chaos_tests.length === 0 ? (
+                    <p className="text-muted-foreground text-center py-8">
+                      No chaos tests available
+                    </p>
+                  ) : (
+                    testSummary.chaos_tests.map((result) => (
+                      <TestResultCard key={result.id} result={result} />
+                    ))
+                  )}
+                </div>
+              </TabsContent>
+            </Tabs>
+          </CardContent>
+        </Card>
       )}
 
-      {/* Processing indicator with detailed progress */}
-      {!['completed', 'failed', 'validation_failed', 'deploy_failed'].includes(submission.status) && (
-        <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-          <div className="flex items-center mb-3">
-            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600 mr-3"></div>
-            <p className="text-blue-800 font-medium">
-              {submission.validation_feedback?.current_step || statusLabels[submission.status]}
-            </p>
-          </div>
-          {submission.validation_feedback?.current_detail && (
-            <p className="text-sm text-blue-700 ml-8">
-              {submission.validation_feedback.current_detail}
-            </p>
-          )}
-          {/* Progress bar */}
-          {submission.validation_feedback?.progress && submission.validation_feedback.progress.length > 0 && (
-            <div className="mt-4">
-              <div className="flex justify-between text-xs text-blue-600 mb-1">
-                <span>Progress</span>
-                <span>{submission.validation_feedback.progress[submission.validation_feedback.progress.length - 1]?.progress_pct || 0}%</span>
-              </div>
-              <div className="w-full bg-blue-200 rounded-full h-2">
-                <div
-                  className="bg-blue-600 h-2 rounded-full transition-all duration-500"
-                  style={{ width: `${submission.validation_feedback.progress[submission.validation_feedback.progress.length - 1]?.progress_pct || 0}%` }}
-                ></div>
-              </div>
+      {/* Processing indicator */}
+      {!["completed", "failed", "validation_failed", "deploy_failed"].includes(
+        submission.status
+      ) && (
+        <Card className="border-primary/30 bg-primary/5">
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3 mb-4">
+              <Loader2 className="h-5 w-5 text-primary animate-spin" />
+              <p className="font-medium text-primary">
+                {submission.validation_feedback?.current_step ||
+                  statusConfig[submission.status].label}
+              </p>
             </div>
-          )}
-          {/* Progress history */}
-          {submission.validation_feedback?.progress && submission.validation_feedback.progress.length > 1 && (
-            <div className="mt-4 space-y-1">
-              <p className="text-xs text-blue-600 font-medium">Activity Log:</p>
-              <div className="max-h-32 overflow-y-auto">
-                {submission.validation_feedback.progress.slice().reverse().map((p: any, i: number) => (
-                  <div key={i} className="text-xs text-blue-700 flex items-start">
-                    <span className="text-blue-400 mr-2">{new Date(p.timestamp).toLocaleTimeString()}</span>
-                    <span className="font-medium mr-1">{p.step}:</span>
-                    <span className="text-blue-600 truncate">{p.detail}</span>
+            {submission.validation_feedback?.current_detail && (
+              <p className="text-sm text-muted-foreground mb-4 ml-8">
+                {submission.validation_feedback.current_detail}
+              </p>
+            )}
+            {/* Progress bar */}
+            {submission.validation_feedback?.progress &&
+              submission.validation_feedback.progress.length > 0 && (
+                <div className="mb-4">
+                  <div className="flex justify-between text-xs text-muted-foreground mb-2">
+                    <span>Progress</span>
+                    <span>
+                      {submission.validation_feedback.progress[
+                        submission.validation_feedback.progress.length - 1
+                      ]?.progress_pct || 0}
+                      %
+                    </span>
                   </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
+                  <Progress
+                    value={
+                      submission.validation_feedback.progress[
+                        submission.validation_feedback.progress.length - 1
+                      ]?.progress_pct || 0
+                    }
+                  />
+                </div>
+              )}
+            {/* Progress history */}
+            {submission.validation_feedback?.progress &&
+              submission.validation_feedback.progress.length > 1 && (
+                <div className="border-t pt-4">
+                  <p className="text-xs font-medium text-muted-foreground mb-2">Activity Log</p>
+                  <div className="max-h-32 overflow-y-auto space-y-1">
+                    {submission.validation_feedback.progress
+                      .slice()
+                      .reverse()
+                      .map((p: any, i: number) => (
+                        <div key={i} className="text-xs flex items-start gap-2">
+                          <span className="text-muted-foreground whitespace-nowrap">
+                            {new Date(p.timestamp).toLocaleTimeString()}
+                          </span>
+                          <span className="font-medium">{p.step}:</span>
+                          <span className="text-muted-foreground truncate">{p.detail}</span>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
+          </CardContent>
+        </Card>
       )}
     </div>
   )

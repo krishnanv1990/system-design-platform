@@ -118,6 +118,24 @@ export interface ValidationResponse {
 export type TestType = 'functional' | 'performance' | 'chaos'
 export type TestStatus = 'pending' | 'running' | 'passed' | 'failed' | 'error' | 'skipped'
 
+// Error analysis types
+export type ErrorCategory = 'user_solution' | 'platform' | 'deployment' | 'unknown'
+export type AnalysisStatus = 'pending' | 'analyzing' | 'completed' | 'failed' | 'skipped'
+
+export interface ErrorAnalysis {
+  category: ErrorCategory
+  confidence: number
+  explanation: string
+  suggestions: string[]
+  technical_details?: {
+    error_type?: string
+    affected_component?: string
+  }
+  analyzed_at?: string
+  status: AnalysisStatus
+  demo_mode?: boolean
+}
+
 export interface TestResult {
   id: number
   submission_id: number
@@ -128,6 +146,17 @@ export interface TestResult {
   duration_ms: number | null
   chaos_scenario: string | null
   created_at: string
+  // Error analysis fields
+  error_category?: ErrorCategory
+  error_analysis?: ErrorAnalysis
+  ai_analysis_status?: AnalysisStatus
+}
+
+export interface IssuesByCategory {
+  user_solution: number
+  platform: number
+  deployment: number
+  unknown: number
 }
 
 export interface TestSummary {
@@ -141,6 +170,9 @@ export interface TestSummary {
   performance_tests: TestResult[]
   chaos_tests: TestResult[]
   overall_status: 'passed' | 'failed' | 'partial' | 'pending'
+  // Error analysis summary
+  issues_by_category?: IssuesByCategory
+  has_platform_issues?: boolean
 }
 
 // Auth types

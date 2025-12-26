@@ -4,7 +4,7 @@ Handles solution submissions and their lifecycle.
 """
 
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Query
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Query, Request
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
@@ -22,12 +22,15 @@ from backend.auth.jwt_handler import get_current_user, get_current_user_optional
 from backend.services.validation_service import ValidationService
 from backend.services.orchestrator import SubmissionOrchestrator
 from backend.services.cleanup_scheduler import cleanup_scheduler
+from backend.middleware.rate_limiter import limiter, submissions_limit, validate_limit
 
 router = APIRouter()
 
 
 @router.post("", response_model=SubmissionResponse, status_code=status.HTTP_201_CREATED)
+@limiter.limit(submissions_limit)
 async def create_submission(
+    request: Request,
     submission_data: SubmissionCreate,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
@@ -142,7 +145,9 @@ async def get_submission(
 
 
 @router.post("/validate", response_model=ValidationResponse)
+@limiter.limit(validate_limit)
 async def validate_submission(
+    request: Request,
     validation_data: ValidationRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),

@@ -6,10 +6,15 @@ System Design Interview Platform API.
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+import sqlalchemy as sa
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 from backend.config import get_settings
-from backend.database import engine, Base
+from backend.database import engine
 from backend.api import api_router
+from backend.middleware.rate_limiter import limiter, rate_limit_exceeded_handler
+from backend.websocket import websocket_router
 
 settings = get_settings()
 
@@ -18,15 +23,19 @@ settings = get_settings()
 async def lifespan(app: FastAPI):
     """
     Application lifespan handler.
-    Creates database tables on startup.
+    Verifies database connection on startup.
+
+    Note: Database schema is managed by Alembic migrations.
+    Run 'alembic upgrade head' to apply migrations.
     """
-    # Create all tables - retry on failure
     import time
     max_retries = 5
     for i in range(max_retries):
         try:
-            Base.metadata.create_all(bind=engine)
-            print(f"Database tables created successfully")
+            # Verify database connection (don't create tables - use Alembic)
+            with engine.connect() as conn:
+                conn.execute(sa.text("SELECT 1"))
+            print("Database connection verified successfully")
             break
         except Exception as e:
             if i < max_retries - 1:
@@ -34,7 +43,7 @@ async def lifespan(app: FastAPI):
                 time.sleep(2)
             else:
                 print(f"Failed to connect to database after {max_retries} attempts: {e}")
-                # Continue anyway - tables might already exist
+                print("Run 'alembic upgrade head' to create/update database schema")
     yield
     # Cleanup on shutdown (if needed)
 
@@ -73,8 +82,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Configure rate limiting
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
+
 # Include API routes
 app.include_router(api_router)
+
+# Include WebSocket routes
+app.include_router(websocket_router)
 
 
 @app.get("/")
