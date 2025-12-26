@@ -43,6 +43,7 @@ class TestRunner:
         api_spec: Optional[Dict[str, Any]] = None,
         design_text: str = "",
         problem_description: str = "",
+        progress_callback: Optional[callable] = None,
     ) -> List[Dict[str, Any]]:
         """
         Run all test types against a deployment.
@@ -53,6 +54,7 @@ class TestRunner:
             api_spec: API specification for test generation
             design_text: Design description
             problem_description: Problem description
+            progress_callback: Optional callback(step, detail, pct) for progress updates
 
         Returns:
             List of test results
@@ -64,7 +66,19 @@ class TestRunner:
         locust_file = self._get_locust_file_for_problem(problem_description)
         chaos_file = self._get_chaos_file_for_problem(problem_description)
 
+        # Get test file names for logging
+        test_file_name = test_file.name if test_file else "none"
+        locust_file_name = locust_file.name if locust_file else "none"
+        chaos_file_name = chaos_file.name if chaos_file else "none"
+
         # Run functional tests using pytest
+        if progress_callback:
+            progress_callback(
+                "Running Functional Tests",
+                f"Executing pytest with {test_file_name}: Testing health endpoints, CRUD operations, error handling...",
+                75
+            )
+
         functional_results = await self._run_pytest_tests(
             submission_id=submission_id,
             endpoint_url=endpoint_url,
@@ -72,7 +86,17 @@ class TestRunner:
         )
         results.extend(functional_results)
 
+        passed_count = sum(1 for r in functional_results if r.get("status") == "passed")
+        total_count = len(functional_results)
+
         # Run performance tests using Locust
+        if progress_callback:
+            progress_callback(
+                "Running Performance Tests",
+                f"Functional: {passed_count}/{total_count} passed. Now running Locust load test with {locust_file_name}: 10 users, 30 seconds...",
+                85
+            )
+
         performance_results = await self._run_locust_tests(
             submission_id=submission_id,
             endpoint_url=endpoint_url,
@@ -80,13 +104,31 @@ class TestRunner:
         )
         results.extend(performance_results)
 
+        perf_status = performance_results[0].get("status", "unknown") if performance_results else "skipped"
+
         # Run chaos tests using Chaos Toolkit
+        if progress_callback:
+            progress_callback(
+                "Running Chaos Tests",
+                f"Performance: {perf_status}. Now running chaos engineering tests with {chaos_file_name}: Testing resilience under failures...",
+                92
+            )
+
         chaos_results = await self._run_chaos_toolkit_tests(
             submission_id=submission_id,
             endpoint_url=endpoint_url,
             chaos_file=chaos_file,
         )
         results.extend(chaos_results)
+
+        if progress_callback:
+            total_tests = len(results)
+            passed_tests = sum(1 for r in results if r.get("status") == "passed")
+            progress_callback(
+                "Tests Complete",
+                f"All tests finished: {passed_tests}/{total_tests} passed",
+                100
+            )
 
         return results
 

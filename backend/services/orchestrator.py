@@ -39,6 +39,27 @@ class SubmissionOrchestrator:
     """
 
     @staticmethod
+    def _update_progress(db: Session, submission: Submission, step: str, detail: str, progress_pct: int = 0):
+        """Update submission with progress information."""
+        from datetime import datetime
+        submission.validation_feedback = submission.validation_feedback or {}
+        if "progress" not in submission.validation_feedback:
+            submission.validation_feedback["progress"] = []
+
+        submission.validation_feedback["progress"].append({
+            "step": step,
+            "detail": detail,
+            "progress_pct": progress_pct,
+            "timestamp": datetime.utcnow().isoformat(),
+        })
+        submission.validation_feedback["current_step"] = step
+        submission.validation_feedback["current_detail"] = detail
+        # Force the JSONB column to be marked as modified
+        from sqlalchemy.orm.attributes import flag_modified
+        flag_modified(submission, "validation_feedback")
+        db.commit()
+
+    @staticmethod
     async def process_submission(submission_id: int) -> None:
         """
         Process a submission through the complete evaluation pipeline.
@@ -112,6 +133,13 @@ class SubmissionOrchestrator:
         submission.status = SubmissionStatus.VALIDATING.value
         db.commit()
 
+        SubmissionOrchestrator._update_progress(
+            db, submission,
+            "Validating Design",
+            f"Claude AI is analyzing your system design for '{problem.title}'...",
+            5
+        )
+
         validation_service = ValidationService()
         result = await validation_service.validate_all(
             problem=problem,
@@ -172,10 +200,24 @@ class SubmissionOrchestrator:
 
         try:
             # Step 1: Generate API code using AI
+            SubmissionOrchestrator._update_progress(
+                db, submission,
+                "Generating Code",
+                f"Using Claude AI to generate FastAPI implementation from your design...",
+                10
+            )
+
             api_code = await ai_service.generate_api_code(
                 problem_description=problem.description,
                 design_text=submission.design_text or "",
                 api_spec=submission.api_spec_input,
+            )
+
+            SubmissionOrchestrator._update_progress(
+                db, submission,
+                "Code Generated",
+                f"Generated {len(api_code)} characters of Python code. Preparing for deployment...",
+                20
             )
 
             # Step 2: Create source tarball and upload to GCS
@@ -212,6 +254,13 @@ CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
             tar_buffer.seek(0)
 
             # Upload to GCS
+            SubmissionOrchestrator._update_progress(
+                db, submission,
+                "Uploading Source",
+                f"Uploading application code to Google Cloud Storage...",
+                25
+            )
+
             storage_client = storage.Client(project=project_id)
             bucket_name = f"{project_id}_cloudbuild"
             bucket = storage_client.bucket(bucket_name)
@@ -221,6 +270,13 @@ CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
 
             # Step 3: Build container using Cloud Build API
             image_tag = f"us-central1-docker.pkg.dev/{project_id}/sdp-repo/candidate-{submission.id}:latest"
+
+            SubmissionOrchestrator._update_progress(
+                db, submission,
+                "Building Container",
+                f"Building Docker container image: candidate-{submission.id}. This may take 2-3 minutes...",
+                30
+            )
 
             build_client = cloudbuild_v1.CloudBuildClient()
             build = cloudbuild_v1.Build(
@@ -268,11 +324,25 @@ CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
             if build_result.status != cloudbuild_v1.Build.Status.SUCCESS:
                 raise Exception(f"Build failed with status: {build_result.status.name}")
 
+            SubmissionOrchestrator._update_progress(
+                db, submission,
+                "Container Built",
+                f"Docker image built successfully. Deploying to Cloud Run...",
+                50
+            )
+
             # Step 4: Deploy to Cloud Run using Run API
             run_client = run_v2.ServicesClient()
             parent = f"projects/{project_id}/locations/{region}"
 
             database_url = f"postgresql://postgres:sdp-demo-2024@/candidate_{submission.id}?host=/cloudsql/{project_id}:{region}:sdp-db"
+
+            SubmissionOrchestrator._update_progress(
+                db, submission,
+                "Deploying to Cloud Run",
+                f"Creating Cloud Run service: {service_name} in {region}...",
+                55
+            )
 
             service = run_v2.Service(
                 template=run_v2.RevisionTemplate(
@@ -310,6 +380,13 @@ CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
             # Wait for deployment
             result = operation.result(timeout=300)
             endpoint_url = result.uri
+
+            SubmissionOrchestrator._update_progress(
+                db, submission,
+                "Service Deployed",
+                f"Cloud Run service is live at: {endpoint_url}",
+                65
+            )
 
             # Make service publicly accessible
             from google.iam.v1 import policy_pb2, iam_policy_pb2
@@ -585,12 +662,46 @@ CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
         deployment_info = submission.validation_feedback.get("deployment", {}) if submission.validation_feedback else {}
         endpoint_url = deployment_info.get("endpoint_url", f"https://{submission.deployment_id}-{settings.gcp_project_id}.{settings.gcp_region}.run.app")
 
+        SubmissionOrchestrator._update_progress(
+            db, submission,
+            "Starting Tests",
+            f"Running tests against deployed service at {endpoint_url}...",
+            70
+        )
+
+        # Determine test files being used
+        problem_desc = problem.description.lower()
+        if "url" in problem_desc and "shorten" in problem_desc:
+            test_suite = "URL Shortener"
+            tests_info = "test_url_shortener.py, locustfile_url_shortener.py, experiment_url_shortener.json"
+        elif "file" in problem_desc and ("shar" in problem_desc or "dropbox" in problem_desc):
+            test_suite = "File Sharing"
+            tests_info = "test_file_sharing.py, locustfile_file_sharing.py, experiment_file_sharing.json"
+        elif "chat" in problem_desc or "whatsapp" in problem_desc:
+            test_suite = "Chat Application"
+            tests_info = "test_chat_app.py, locustfile_chat.py, experiment_chat.json"
+        else:
+            test_suite = "Generic"
+            tests_info = "test_url_shortener.py (default)"
+
+        # Create progress callback
+        def progress_callback(step: str, detail: str, pct: int):
+            SubmissionOrchestrator._update_progress(db, submission, step, detail, pct)
+
+        SubmissionOrchestrator._update_progress(
+            db, submission,
+            "Running Functional Tests",
+            f"Executing {test_suite} functional tests using pytest. Testing API endpoints, data validation, and business logic...",
+            75
+        )
+
         try:
             results = await test_runner.run_all_tests(
                 submission_id=submission.id,
                 endpoint_url=endpoint_url,
                 api_spec=submission.api_spec_input,
                 design_text=submission.design_text or "",
+                progress_callback=progress_callback,
                 problem_description=problem.description,
             )
 
