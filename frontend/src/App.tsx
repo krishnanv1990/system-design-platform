@@ -1,5 +1,4 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
-import { useState, useEffect } from 'react'
 import { AuthProvider, useAuth } from './components/AuthContext'
 import Layout from './components/Layout'
 import ProblemList from './pages/ProblemList'
