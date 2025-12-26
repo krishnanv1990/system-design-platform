@@ -21,7 +21,10 @@ anthropic==0.18.1
 # GCP and Infrastructure
 google-cloud-storage==2.14.0
 google-cloud-resource-manager==1.12.0
+google-cloud-build==3.22.0
+google-cloud-run==0.10.0
 google-auth==2.27.0
+grpcio==1.60.0
 
 # Testing
 pytest>=7.0.0,<8.0.0

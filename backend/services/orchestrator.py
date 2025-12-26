@@ -147,11 +147,17 @@ class SubmissionOrchestrator:
         """
         Deploy to Google Cloud Run with real infrastructure.
         Creates a new Cloud Run service for each submission.
+        Uses Google Cloud Python libraries for authentication.
         """
         import asyncio
         import json
         import tempfile
+        import tarfile
+        import io
         from pathlib import Path
+        from google.cloud import storage
+        from google.cloud.devtools import cloudbuild_v1
+        from google.cloud import run_v2
 
         submission.status = SubmissionStatus.DEPLOYING.value
         db.commit()
@@ -159,6 +165,8 @@ class SubmissionOrchestrator:
         from backend.services.ai_service import AIService
         ai_service = AIService()
 
+        project_id = settings.gcp_project_id
+        region = settings.gcp_region or "us-central1"
         namespace = f"sub-{submission.id}"
         service_name = f"sdp-{namespace}"
 
@@ -170,7 +178,7 @@ class SubmissionOrchestrator:
                 api_spec=submission.api_spec_input,
             )
 
-            # Step 2: Create container and deploy
+            # Step 2: Create source tarball and upload to GCS
             workspace = Path(tempfile.mkdtemp(prefix=f"sdp_{submission.id}_"))
 
             # Write application files
@@ -196,54 +204,109 @@ ENV PORT=8080
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
 """)
 
-            # Step 3: Build and deploy using Cloud Build
-            image_tag = f"us-central1-docker.pkg.dev/{settings.gcp_project_id}/sdp-repo/candidate-{submission.id}:latest"
+            # Create tarball
+            tar_buffer = io.BytesIO()
+            with tarfile.open(fileobj=tar_buffer, mode='w:gz') as tar:
+                for file_path in workspace.iterdir():
+                    tar.add(file_path, arcname=file_path.name)
+            tar_buffer.seek(0)
 
-            # Build container
-            proc = await asyncio.create_subprocess_exec(
-                "gcloud", "builds", "submit",
-                "--tag", image_tag,
-                "--timeout", "300s",
-                "--quiet",
-                "--project", settings.gcp_project_id,
-                cwd=str(workspace),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
+            # Upload to GCS
+            storage_client = storage.Client(project=project_id)
+            bucket_name = f"{project_id}_cloudbuild"
+            bucket = storage_client.bucket(bucket_name)
+            blob_name = f"source/submission_{submission.id}.tar.gz"
+            blob = bucket.blob(blob_name)
+            blob.upload_from_file(tar_buffer, content_type='application/gzip')
+
+            # Step 3: Build container using Cloud Build API
+            image_tag = f"us-central1-docker.pkg.dev/{project_id}/sdp-repo/candidate-{submission.id}:latest"
+
+            build_client = cloudbuild_v1.CloudBuildClient()
+            build = cloudbuild_v1.Build(
+                source=cloudbuild_v1.Source(
+                    storage_source=cloudbuild_v1.StorageSource(
+                        bucket=bucket_name,
+                        object_=blob_name,
+                    )
+                ),
+                steps=[
+                    cloudbuild_v1.BuildStep(
+                        name="gcr.io/cloud-builders/docker",
+                        args=["build", "-t", image_tag, "."],
+                    ),
+                ],
+                images=[image_tag],
+                timeout={"seconds": 300},
             )
-            stdout, stderr = await proc.communicate()
 
-            if proc.returncode != 0:
-                raise Exception(f"Container build failed: {stderr.decode()[:500]}")
+            operation = build_client.create_build(project_id=project_id, build=build)
 
-            # Step 4: Deploy to Cloud Run
-            database_url = f"postgresql://postgres:sdp-demo-2024@/candidate_{submission.id}?host=/cloudsql/{settings.gcp_project_id}:us-central1:sdp-db"
+            # Wait for build to complete (with timeout)
+            import time
+            start_time = time.time()
+            while not operation.done():
+                if time.time() - start_time > 300:
+                    raise Exception("Build timed out after 5 minutes")
+                await asyncio.sleep(5)
+                operation = build_client.get_build(project_id=project_id, id=operation.metadata.build.id)
 
-            proc = await asyncio.create_subprocess_exec(
-                "gcloud", "run", "deploy", service_name,
-                "--image", image_tag,
-                "--platform", "managed",
-                "--region", settings.gcp_region,
-                "--allow-unauthenticated",
-                "--set-env-vars", f"DATABASE_URL={database_url}",
-                "--add-cloudsql-instances", f"{settings.gcp_project_id}:us-central1:sdp-db",
-                "--memory", "512Mi",
-                "--cpu", "1",
-                "--min-instances", "0",
-                "--max-instances", "2",
-                "--timeout", "60s",
-                "--quiet",
-                "--format", "json",
-                "--project", settings.gcp_project_id,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
+            if operation.result().status != cloudbuild_v1.Build.Status.SUCCESS:
+                raise Exception(f"Build failed with status: {operation.result().status}")
+
+            # Step 4: Deploy to Cloud Run using Run API
+            run_client = run_v2.ServicesClient()
+            parent = f"projects/{project_id}/locations/{region}"
+
+            database_url = f"postgresql://postgres:sdp-demo-2024@/candidate_{submission.id}?host=/cloudsql/{project_id}:{region}:sdp-db"
+
+            service = run_v2.Service(
+                template=run_v2.RevisionTemplate(
+                    containers=[
+                        run_v2.Container(
+                            image=image_tag,
+                            ports=[run_v2.ContainerPort(container_port=8080)],
+                            env=[
+                                run_v2.EnvVar(name="DATABASE_URL", value=database_url),
+                            ],
+                            resources=run_v2.ResourceRequirements(
+                                limits={"memory": "512Mi", "cpu": "1"},
+                            ),
+                        )
+                    ],
+                    scaling=run_v2.RevisionScaling(
+                        min_instance_count=0,
+                        max_instance_count=2,
+                    ),
+                ),
             )
-            stdout, stderr = await proc.communicate()
 
-            if proc.returncode != 0:
-                raise Exception(f"Cloud Run deployment failed: {stderr.decode()[:500]}")
+            try:
+                # Try to update existing service
+                service.name = f"{parent}/services/{service_name}"
+                operation = run_client.update_service(service=service)
+            except Exception:
+                # Create new service
+                operation = run_client.create_service(
+                    parent=parent,
+                    service=service,
+                    service_id=service_name,
+                )
 
-            result = json.loads(stdout.decode())
-            endpoint_url = result.get("status", {}).get("url", "")
+            # Wait for deployment
+            result = operation.result(timeout=300)
+            endpoint_url = result.uri
+
+            # Make service publicly accessible
+            from google.iam.v1 import policy_pb2, iam_policy_pb2
+            policy = run_client.get_iam_policy(resource=result.name)
+            policy.bindings.append(
+                policy_pb2.Binding(
+                    role="roles/run.invoker",
+                    members=["allUsers"],
+                )
+            )
+            run_client.set_iam_policy(resource=result.name, policy=policy)
 
             # Store deployment info
             submission.deployment_id = service_name
