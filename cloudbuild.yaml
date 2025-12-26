@@ -31,8 +31,8 @@ steps:
       - '10'
       - '--timeout'
       - '300'
-      - '--set-env-vars'
-      - 'DEMO_MODE=true,DEBUG=false,DATABASE_URL=postgresql://postgres:sdp-demo-2024@/system_design_db?host=/cloudsql/$PROJECT_ID:us-central1:sdp-db,ANTHROPIC_API_KEY=demo-key'
+      - '--update-env-vars'
+      - 'DEBUG=false,DATABASE_URL=postgresql://postgres:sdp-demo-2024@/system_design_db?host=/cloudsql/$PROJECT_ID:us-central1:sdp-db'
       - '--add-cloudsql-instances'
       - '$PROJECT_ID:us-central1:sdp-db'
 

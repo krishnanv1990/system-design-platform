@@ -1,0 +1,107 @@
+{
+    "title": "File Sharing Service Chaos Experiments",
+    "description": "Verify File Sharing service resilience under various failure conditions",
+    "tags": ["file-sharing", "dropbox", "resilience", "chaos"],
+    "steady-state-hypothesis": {
+        "title": "Service is healthy and can handle file operations",
+        "probes": [
+            {
+                "name": "health-check-responds",
+                "type": "probe",
+                "tolerance": 200,
+                "provider": {
+                    "type": "http",
+                    "url": "${TARGET_URL}/health",
+                    "timeout": 5
+                }
+            },
+            {
+                "name": "can-list-files",
+                "type": "probe",
+                "tolerance": [200, 404],
+                "provider": {
+                    "type": "http",
+                    "url": "${TARGET_URL}/api/v1/files",
+                    "headers": {
+                        "Authorization": "Bearer ${TEST_TOKEN}"
+                    },
+                    "timeout": 10
+                }
+            }
+        ]
+    },
+    "method": [
+        {
+            "type": "action",
+            "name": "simulate-storage-slowdown",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "simulate_storage_latency",
+                "arguments": {
+                    "latency_ms": 2000,
+                    "duration_seconds": 60
+                }
+            },
+            "pauses": {
+                "after": 10
+            }
+        },
+        {
+            "type": "probe",
+            "name": "verify-uploads-still-work",
+            "tolerance": [200, 201, 504],
+            "provider": {
+                "type": "http",
+                "url": "${TARGET_URL}/api/v1/files",
+                "method": "POST",
+                "headers": {
+                    "Authorization": "Bearer ${TEST_TOKEN}"
+                },
+                "timeout": 30
+            }
+        },
+        {
+            "type": "action",
+            "name": "simulate-partial-storage-failure",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "fail_storage_percentage",
+                "arguments": {
+                    "failure_rate": 0.3,
+                    "duration_seconds": 60
+                }
+            },
+            "pauses": {
+                "after": 10
+            }
+        },
+        {
+            "type": "probe",
+            "name": "verify-retries-succeed",
+            "tolerance": true,
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.probes",
+                "func": "verify_eventual_consistency",
+                "arguments": {
+                    "url": "${TARGET_URL}/api/v1/files",
+                    "max_retries": 5,
+                    "retry_delay": 2
+                }
+            }
+        }
+    ],
+    "rollbacks": [
+        {
+            "type": "action",
+            "name": "restore-storage-behavior",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "restore_storage"
+            }
+        }
+    ]
+}
