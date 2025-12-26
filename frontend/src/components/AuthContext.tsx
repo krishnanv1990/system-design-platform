@@ -10,6 +10,7 @@ import { authApi } from '../api/client'
 interface AuthContextType {
   user: User | null
   loading: boolean
+  demoMode: boolean
   login: (token: string) => void
   logout: () => void
 }
@@ -22,18 +23,36 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined)
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
+  const [demoMode, setDemoMode] = useState(false)
 
-  // Check for existing token on mount
+  // Check for demo mode and existing token on mount
   useEffect(() => {
     const checkAuth = async () => {
-      const token = localStorage.getItem('token')
-      if (token) {
-        try {
-          const userData = await authApi.getCurrentUser()
-          setUser(userData)
-        } catch (error) {
-          localStorage.removeItem('token')
+      try {
+        // First check if demo mode is enabled
+        const demoStatus = await authApi.getDemoStatus()
+        setDemoMode(demoStatus.demo_mode)
+
+        if (demoStatus.demo_mode) {
+          // In demo mode, get the demo user directly
+          const demoUser = await authApi.getDemoUser()
+          setUser(demoUser)
+          setLoading(false)
+          return
         }
+
+        // Normal auth flow
+        const token = localStorage.getItem('token')
+        if (token) {
+          try {
+            const userData = await authApi.getCurrentUser()
+            setUser(userData)
+          } catch (error) {
+            localStorage.removeItem('token')
+          }
+        }
+      } catch (error) {
+        console.error('Auth check failed:', error)
       }
       setLoading(false)
     }
@@ -57,7 +76,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, demoMode, login, logout }}>
       {children}
     </AuthContext.Provider>
   )

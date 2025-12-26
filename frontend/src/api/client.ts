@@ -70,6 +70,16 @@ export const authApi = {
     await api.post('/auth/logout')
     localStorage.removeItem('token')
   },
+
+  getDemoStatus: async (): Promise<{ demo_mode: boolean; message: string }> => {
+    const response = await api.get('/auth/demo-status')
+    return response.data
+  },
+
+  getDemoUser: async (): Promise<User> => {
+    const response = await api.get('/auth/demo-user')
+    return response.data
+  },
 }
 
 /**
@@ -127,6 +137,23 @@ export const submissionsApi = {
 
   delete: async (id: number): Promise<void> => {
     await api.delete(`/submissions/${id}`)
+  },
+
+  getDeploymentStatus: async (id: number): Promise<any> => {
+    const response = await api.get(`/submissions/${id}/deployment`)
+    return response.data
+  },
+
+  teardown: async (id: number): Promise<any> => {
+    const response = await api.post(`/submissions/${id}/teardown`)
+    return response.data
+  },
+
+  extendTimeout: async (id: number, additionalMinutes: number = 30): Promise<any> => {
+    const response = await api.post(`/submissions/${id}/extend`, null, {
+      params: { additional_minutes: additionalMinutes }
+    })
+    return response.data
   },
 }
 

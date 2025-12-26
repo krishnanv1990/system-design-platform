@@ -127,3 +127,37 @@ async def logout():
         Success message
     """
     return {"message": "Successfully logged out"}
+
+
+@router.get("/demo-status")
+async def get_demo_status():
+    """
+    Check if demo mode is enabled.
+    In demo mode, authentication is bypassed.
+
+    Returns:
+        Demo mode status
+    """
+    return {
+        "demo_mode": settings.demo_mode,
+        "message": "Authentication is disabled in demo mode" if settings.demo_mode else "Authentication required"
+    }
+
+
+@router.get("/demo-user", response_model=UserResponse)
+async def get_demo_user(db: Session = Depends(get_db)):
+    """
+    Get or create a demo user for testing without authentication.
+    Only available when demo_mode is enabled.
+
+    Returns:
+        Demo user information
+    """
+    if not settings.demo_mode:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Demo mode is not enabled"
+        )
+
+    from backend.auth.jwt_handler import get_or_create_demo_user
+    return get_or_create_demo_user(db)

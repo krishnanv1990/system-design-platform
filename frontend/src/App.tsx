@@ -11,9 +11,10 @@ import Login from './pages/Login'
 
 /**
  * Protected route wrapper - redirects to login if not authenticated
+ * In demo mode, allows access without authentication
  */
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth()
+  const { user, loading, demoMode } = useAuth()
 
   if (loading) {
     return (
@@ -23,11 +24,12 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     )
   }
 
-  if (!user) {
-    return <Navigate to="/login" replace />
+  // In demo mode or if user is authenticated, allow access
+  if (demoMode || user) {
+    return <>{children}</>
   }
 
-  return <>{children}</>
+  return <Navigate to="/login" replace />
 }
 
 /**

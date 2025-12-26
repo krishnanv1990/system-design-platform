@@ -9,6 +9,19 @@ import { submissionsApi, testsApi } from '../api/client'
 import { SubmissionDetail, TestSummary, SubmissionStatus } from '../types'
 import TestResultCard from '../components/TestResultCard'
 
+interface DeploymentStatus {
+  submission_id: number
+  deployment_id: string
+  namespace: string
+  deployment_mode: string
+  endpoint_url: string
+  deployed_at: string
+  scheduled_cleanup_at: string
+  time_remaining_seconds: number
+  time_remaining_minutes: number
+  is_cleaned_up: boolean
+}
+
 const statusLabels: Record<SubmissionStatus, string> = {
   pending: 'Pending',
   validating: 'Validating Design...',
@@ -37,7 +50,9 @@ export default function Results() {
   const { id } = useParams<{ id: string }>()
   const [submission, setSubmission] = useState<SubmissionDetail | null>(null)
   const [testSummary, setTestSummary] = useState<TestSummary | null>(null)
+  const [deploymentStatus, setDeploymentStatus] = useState<DeploymentStatus | null>(null)
   const [loading, setLoading] = useState(true)
+  const [tearingDown, setTearingDown] = useState(false)
   const [activeTab, setActiveTab] = useState<'overview' | 'functional' | 'performance' | 'chaos'>('overview')
 
   // Poll for updates while processing
@@ -58,6 +73,18 @@ export default function Results() {
             // Tests not ready yet
           }
         }
+
+        // Load deployment status if deployed
+        if (['deploying', 'testing', 'completed'].includes(sub.status)) {
+          try {
+            const depStatus = await submissionsApi.getDeploymentStatus(parseInt(id))
+            if (depStatus.deployment) {
+              setDeploymentStatus(depStatus.deployment)
+            }
+          } catch {
+            // Deployment status not ready yet
+          }
+        }
       } catch (err) {
         console.error('Failed to load submission:', err)
       } finally {
@@ -76,6 +103,32 @@ export default function Results() {
 
     return () => clearInterval(interval)
   }, [id, submission?.status])
+
+  const handleTeardown = async () => {
+    if (!id || !confirm('Are you sure you want to tear down this deployment? This action cannot be undone.')) {
+      return
+    }
+
+    setTearingDown(true)
+    try {
+      await submissionsApi.teardown(parseInt(id))
+      setDeploymentStatus((prev) => prev ? { ...prev, is_cleaned_up: true } : null)
+      alert('Deployment torn down successfully!')
+    } catch (err) {
+      console.error('Failed to teardown:', err)
+      alert('Failed to tear down deployment')
+    } finally {
+      setTearingDown(false)
+    }
+  }
+
+  const formatTimeRemaining = (minutes: number) => {
+    if (minutes < 1) return 'Less than 1 minute'
+    if (minutes < 60) return `${Math.round(minutes)} minutes`
+    const hours = Math.floor(minutes / 60)
+    const mins = Math.round(minutes % 60)
+    return `${hours}h ${mins}m`
+  }
 
   if (loading) {
     return (
@@ -176,6 +229,72 @@ export default function Results() {
             <p className="mt-4 text-sm text-gray-700">
               {submission.validation_feedback.feedback.overall}
             </p>
+          )}
+        </div>
+      )}
+
+      {/* Deployment Status */}
+      {deploymentStatus && (
+        <div className="mb-6 p-4 bg-white border rounded-lg">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-medium text-gray-900">Deployment Status</h3>
+            {!deploymentStatus.is_cleaned_up && (
+              <button
+                onClick={handleTeardown}
+                disabled={tearingDown}
+                className="px-4 py-2 bg-red-600 text-white text-sm font-medium rounded hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {tearingDown ? 'Tearing down...' : 'Tear Down Now'}
+              </button>
+            )}
+          </div>
+
+          {deploymentStatus.is_cleaned_up ? (
+            <div className="p-3 bg-gray-100 rounded text-center">
+              <p className="text-gray-600">Deployment has been cleaned up</p>
+            </div>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+              <div className="p-3 bg-gray-50 rounded">
+                <p className="text-sm text-gray-500">Time Remaining</p>
+                <p className="text-lg font-bold text-orange-600">
+                  {formatTimeRemaining(deploymentStatus.time_remaining_minutes)}
+                </p>
+              </div>
+              <div className="p-3 bg-gray-50 rounded">
+                <p className="text-sm text-gray-500">Deployment Mode</p>
+                <p className="text-lg font-bold text-gray-900">
+                  {deploymentStatus.deployment_mode === 'warm_pool' ? 'Warm Pool' :
+                   deploymentStatus.deployment_mode === 'fast' ? 'Cloud Run' : 'Terraform'}
+                </p>
+              </div>
+              <div className="p-3 bg-gray-50 rounded">
+                <p className="text-sm text-gray-500">Namespace</p>
+                <p className="text-sm font-mono text-gray-900 truncate" title={deploymentStatus.namespace}>
+                  {deploymentStatus.namespace}
+                </p>
+              </div>
+              <div className="p-3 bg-gray-50 rounded">
+                <p className="text-sm text-gray-500">Cleanup Scheduled</p>
+                <p className="text-sm text-gray-900">
+                  {new Date(deploymentStatus.scheduled_cleanup_at).toLocaleTimeString()}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {deploymentStatus.endpoint_url && !deploymentStatus.is_cleaned_up && (
+            <div className="mt-3 p-3 bg-blue-50 rounded">
+              <p className="text-sm text-gray-500 mb-1">Endpoint URL</p>
+              <a
+                href={deploymentStatus.endpoint_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm text-blue-600 hover:underline break-all"
+              >
+                {deploymentStatus.endpoint_url}
+              </a>
+            </div>
           )}
         </div>
       )}

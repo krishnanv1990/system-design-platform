@@ -66,12 +66,31 @@ def verify_token(token: str) -> Optional[dict]:
         return None
 
 
+def get_or_create_demo_user(db: Session) -> User:
+    """Get or create a demo user for demo mode."""
+    demo_user = db.query(User).filter(User.email == "demo@example.com").first()
+    if not demo_user:
+        demo_user = User(
+            google_id="demo-user-id",
+            email="demo@example.com",
+            name="Demo User",
+            avatar_url=None,
+        )
+        db.add(demo_user)
+        db.commit()
+        db.refresh(demo_user)
+    return demo_user
+
+
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(
+        HTTPBearer(auto_error=False)
+    ),
     db: Session = Depends(get_db)
 ) -> User:
     """
     FastAPI dependency to get the current authenticated user.
+    In demo mode, returns a demo user without requiring authentication.
 
     Args:
         credentials: Bearer token from Authorization header
@@ -81,13 +100,20 @@ async def get_current_user(
         User object for the authenticated user
 
     Raises:
-        HTTPException: If token is invalid or user not found
+        HTTPException: If token is invalid or user not found (only in non-demo mode)
     """
+    # In demo mode, return demo user
+    if settings.demo_mode:
+        return get_or_create_demo_user(db)
+
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
+
+    if credentials is None:
+        raise credentials_exception
 
     token = credentials.credentials
     payload = verify_token(token)
@@ -114,6 +140,7 @@ async def get_current_user_optional(
 ) -> Optional[User]:
     """
     Optional version of get_current_user that returns None for unauthenticated requests.
+    In demo mode, returns a demo user.
 
     Args:
         credentials: Bearer token from Authorization header (optional)
@@ -122,6 +149,10 @@ async def get_current_user_optional(
     Returns:
         User object or None if not authenticated
     """
+    # In demo mode, return demo user
+    if settings.demo_mode:
+        return get_or_create_demo_user(db)
+
     if credentials is None:
         return None
 

@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     # Application
     app_name: str = "System Design Platform"
     debug: bool = False
+    demo_mode: bool = True  # Set to True to disable authentication for demo
 
     # Database
     database_url: str = "postgresql://postgres:postgres@localhost:5432/system_design_db"

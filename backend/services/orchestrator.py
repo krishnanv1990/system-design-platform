@@ -19,6 +19,7 @@ from backend.services.deployment_service import FastDeploymentService, Deploymen
 from backend.services.warm_pool_service import WarmPoolService, ServiceType
 from backend.services.test_runner import TestRunner
 from backend.services.gcp_service import GCPService
+from backend.services.cleanup_scheduler import cleanup_scheduler
 from backend.config import get_settings
 
 settings = get_settings()
@@ -191,6 +192,16 @@ class SubmissionOrchestrator:
                     "namespace": result.get("namespace"),
                 }
                 db.commit()
+
+                # Register with cleanup scheduler (1 hour timeout)
+                cleanup_scheduler.register_deployment(
+                    submission_id=submission.id,
+                    deployment_id=submission.deployment_id,
+                    namespace=result.get("namespace", f"sub-{submission.id}"),
+                    deployment_mode="warm_pool",
+                    endpoint_url=result.get("endpoint_url", ""),
+                    timeout_minutes=60,  # 1 hour timeout
+                )
             else:
                 raise Exception(result.get("error", "Warm pool deployment failed"))
 
@@ -243,6 +254,16 @@ class SubmissionOrchestrator:
                     "resources": result.get("resources"),
                 }
                 db.commit()
+
+                # Register with cleanup scheduler (1 hour timeout)
+                cleanup_scheduler.register_deployment(
+                    submission_id=submission.id,
+                    deployment_id=submission.deployment_id,
+                    namespace=submission.namespace or f"sub-{submission.id}",
+                    deployment_mode="fast",
+                    endpoint_url=result.get("endpoint_url", ""),
+                    timeout_minutes=60,  # 1 hour timeout
+                )
             else:
                 raise Exception(result.get("error", "Deployment failed"))
 

@@ -18,9 +18,10 @@ from backend.schemas.submission import (
     ValidationRequest,
     ValidationResponse,
 )
-from backend.auth.jwt_handler import get_current_user
+from backend.auth.jwt_handler import get_current_user, get_current_user_optional
 from backend.services.validation_service import ValidationService
 from backend.services.orchestrator import SubmissionOrchestrator
+from backend.services.cleanup_scheduler import cleanup_scheduler
 
 router = APIRouter()
 
@@ -212,3 +213,114 @@ async def delete_submission(
 
     db.delete(submission)
     db.commit()
+
+
+@router.get("/{submission_id}/deployment")
+async def get_submission_deployment_status(
+    submission_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_optional),
+):
+    """
+    Get the deployment status for a submission including time until cleanup.
+
+    Args:
+        submission_id: Submission ID
+        db: Database session
+        current_user: Authenticated user (optional for demo mode)
+
+    Returns:
+        Deployment status with cleanup schedule
+    """
+    submission = db.query(Submission).filter(Submission.id == submission_id).first()
+
+    if not submission:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Submission not found"
+        )
+
+    # Get deployment status from cleanup scheduler
+    deployment_status = cleanup_scheduler.get_deployment_status(submission_id)
+
+    return {
+        "submission_id": submission_id,
+        "submission_status": submission.status,
+        "deployment": deployment_status,
+        "validation_feedback": submission.validation_feedback,
+    }
+
+
+@router.post("/{submission_id}/teardown")
+async def teardown_submission(
+    submission_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_optional),
+):
+    """
+    Manually tear down the deployed resources for a submission.
+
+    Args:
+        submission_id: Submission ID
+        db: Database session
+        current_user: Authenticated user (optional for demo mode)
+
+    Returns:
+        Teardown result
+    """
+    submission = db.query(Submission).filter(Submission.id == submission_id).first()
+
+    if not submission:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Submission not found"
+        )
+
+    # Perform teardown
+    result = await cleanup_scheduler.cleanup_deployment(submission_id, reason="manual")
+
+    if not result["success"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=result.get("error", "Teardown failed")
+        )
+
+    return result
+
+
+@router.post("/{submission_id}/extend")
+async def extend_submission_timeout(
+    submission_id: int,
+    additional_minutes: int = 30,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user_optional),
+):
+    """
+    Extend the deployment timeout for a submission.
+
+    Args:
+        submission_id: Submission ID
+        additional_minutes: Minutes to add (default 30)
+        db: Database session
+        current_user: Authenticated user (optional for demo mode)
+
+    Returns:
+        Updated timeout information
+    """
+    submission = db.query(Submission).filter(Submission.id == submission_id).first()
+
+    if not submission:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Submission not found"
+        )
+
+    result = cleanup_scheduler.extend_timeout(submission_id, additional_minutes)
+
+    if not result["success"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=result.get("error", "Extension failed")
+        )
+
+    return result

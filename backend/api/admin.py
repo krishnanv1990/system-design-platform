@@ -1,11 +1,13 @@
 """
 Admin API endpoints for platform management.
-Provides access to warm pool status and other administrative functions.
+Provides access to warm pool status, cleanup management, and other administrative functions.
 """
 
 from fastapi import APIRouter, Depends, HTTPException
+from typing import Optional
 
 from backend.services.warm_pool_service import WarmPoolService
+from backend.services.cleanup_scheduler import cleanup_scheduler
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -72,4 +74,90 @@ async def get_infrastructure_status():
     return {
         "services": services,
         "total_services": len(services),
+    }
+
+
+# ============ Deployment & Cleanup Management ============
+
+@router.get("/deployments")
+async def get_all_deployments():
+    """
+    Get all active deployments with their cleanup schedules.
+
+    Returns:
+        List of all active deployments with time remaining
+    """
+    return {
+        "deployments": cleanup_scheduler.get_all_active_deployments(),
+        "default_timeout_minutes": cleanup_scheduler.timeout_minutes,
+    }
+
+
+@router.get("/deployments/{submission_id}")
+async def get_deployment_status(submission_id: int):
+    """
+    Get the status of a specific deployment.
+
+    Returns:
+        Deployment details including time until cleanup
+    """
+    status = cleanup_scheduler.get_deployment_status(submission_id)
+    if not status:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+    return status
+
+
+@router.post("/deployments/{submission_id}/teardown")
+async def teardown_deployment(submission_id: int):
+    """
+    Manually tear down a deployment immediately.
+
+    This will:
+    - For warm_pool: Recycle the container back to the pool
+    - For fast: Delete the Cloud Run service
+    - For terraform: Destroy all Terraform resources
+    """
+    result = await cleanup_scheduler.cleanup_deployment(submission_id, reason="manual")
+
+    if not result["success"]:
+        raise HTTPException(status_code=400, detail=result.get("error", "Teardown failed"))
+
+    return result
+
+
+@router.post("/deployments/{submission_id}/extend")
+async def extend_deployment_timeout(submission_id: int, additional_minutes: int = 30):
+    """
+    Extend the cleanup timeout for a deployment.
+
+    Args:
+        submission_id: The submission ID
+        additional_minutes: Minutes to add to the timeout (default: 30)
+    """
+    result = cleanup_scheduler.extend_timeout(submission_id, additional_minutes)
+
+    if not result["success"]:
+        raise HTTPException(status_code=400, detail=result.get("error", "Extension failed"))
+
+    return result
+
+
+@router.post("/deployments/cleanup-all")
+async def cleanup_all_deployments():
+    """
+    Tear down all active deployments.
+    Use with caution!
+    """
+    results = []
+    for deployment in cleanup_scheduler.get_all_active_deployments():
+        result = await cleanup_scheduler.cleanup_deployment(
+            deployment["submission_id"],
+            reason="manual_bulk"
+        )
+        results.append(result)
+
+    return {
+        "cleaned_up": len([r for r in results if r.get("success")]),
+        "failed": len([r for r in results if not r.get("success")]),
+        "results": results,
     }
