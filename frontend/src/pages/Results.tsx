@@ -401,13 +401,50 @@ export default function Results() {
         </div>
       )}
 
-      {/* Processing indicator */}
+      {/* Processing indicator with detailed progress */}
       {!['completed', 'failed', 'validation_failed', 'deploy_failed'].includes(submission.status) && (
-        <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg flex items-center">
-          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600 mr-3"></div>
-          <p className="text-blue-800">
-            Your submission is being processed. This page will update automatically.
-          </p>
+        <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+          <div className="flex items-center mb-3">
+            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600 mr-3"></div>
+            <p className="text-blue-800 font-medium">
+              {submission.validation_feedback?.current_step || statusLabels[submission.status]}
+            </p>
+          </div>
+          {submission.validation_feedback?.current_detail && (
+            <p className="text-sm text-blue-700 ml-8">
+              {submission.validation_feedback.current_detail}
+            </p>
+          )}
+          {/* Progress bar */}
+          {submission.validation_feedback?.progress && submission.validation_feedback.progress.length > 0 && (
+            <div className="mt-4">
+              <div className="flex justify-between text-xs text-blue-600 mb-1">
+                <span>Progress</span>
+                <span>{submission.validation_feedback.progress[submission.validation_feedback.progress.length - 1]?.progress_pct || 0}%</span>
+              </div>
+              <div className="w-full bg-blue-200 rounded-full h-2">
+                <div
+                  className="bg-blue-600 h-2 rounded-full transition-all duration-500"
+                  style={{ width: `${submission.validation_feedback.progress[submission.validation_feedback.progress.length - 1]?.progress_pct || 0}%` }}
+                ></div>
+              </div>
+            </div>
+          )}
+          {/* Progress history */}
+          {submission.validation_feedback?.progress && submission.validation_feedback.progress.length > 1 && (
+            <div className="mt-4 space-y-1">
+              <p className="text-xs text-blue-600 font-medium">Activity Log:</p>
+              <div className="max-h-32 overflow-y-auto">
+                {submission.validation_feedback.progress.slice().reverse().map((p: any, i: number) => (
+                  <div key={i} className="text-xs text-blue-700 flex items-start">
+                    <span className="text-blue-400 mr-2">{new Date(p.timestamp).toLocaleTimeString()}</span>
+                    <span className="font-medium mr-1">{p.step}:</span>
+                    <span className="text-blue-600 truncate">{p.detail}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

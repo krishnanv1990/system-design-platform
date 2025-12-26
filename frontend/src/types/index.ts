@@ -73,6 +73,13 @@ export interface SubmissionCreate {
 }
 
 // Validation types
+export interface ProgressStep {
+  step: string
+  detail: string
+  progress_pct: number
+  timestamp: string
+}
+
 export interface ValidationFeedback {
   is_valid: boolean
   errors: string[]
@@ -86,6 +93,10 @@ export interface ValidationFeedback {
     api_design: { score: number; comments: string }
     overall: string
   }
+  // Progress tracking fields
+  progress?: ProgressStep[]
+  current_step?: string
+  current_detail?: string
 }
 
 export interface ValidationRequest {
