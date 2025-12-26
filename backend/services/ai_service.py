@@ -23,8 +23,11 @@ class AIService:
 
     def __init__(self):
         """Initialize the Anthropic client."""
-        self.demo_mode = settings.demo_mode or not settings.anthropic_api_key or settings.anthropic_api_key == "demo-key"
-        if not self.demo_mode:
+        # Only use mock AI responses if no valid API key is provided
+        # (DEMO_MODE setting only affects authentication, not AI)
+        has_valid_api_key = settings.anthropic_api_key and settings.anthropic_api_key != "demo-key"
+        self.demo_mode = not has_valid_api_key
+        if has_valid_api_key:
             self.client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
         else:
             self.client = None
