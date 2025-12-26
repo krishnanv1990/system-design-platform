@@ -23,7 +23,11 @@ class AIService:
 
     def __init__(self):
         """Initialize the Anthropic client."""
-        self.client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+        self.demo_mode = settings.demo_mode or not settings.anthropic_api_key or settings.anthropic_api_key == "demo-key"
+        if not self.demo_mode:
+            self.client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+        else:
+            self.client = None
         self.model = "claude-sonnet-4-20250514"
 
     async def validate_design(
@@ -45,6 +49,21 @@ class AIService:
         Returns:
             Validation result with feedback
         """
+        # Return mock response in demo mode
+        if self.demo_mode:
+            return {
+                "is_valid": True,
+                "feedback": "Demo Mode: Your design has been accepted for demonstration purposes. In production, Claude AI would provide detailed feedback on your system design including architecture review, scalability analysis, and specific recommendations.",
+                "errors": [],
+                "warnings": ["Demo mode is enabled - AI validation is simulated"],
+                "suggestions": [
+                    "Consider adding caching layer for improved read performance",
+                    "Think about data partitioning strategy for horizontal scaling",
+                    "Include monitoring and observability in your design"
+                ],
+                "score": 85,
+            }
+
         # Build the context for Claude
         context = f"""
 Problem Description:
@@ -109,6 +128,40 @@ Candidate's Design:
         Returns:
             Generated Terraform code
         """
+        # Return mock Terraform in demo mode
+        if self.demo_mode:
+            return f'''# Demo Mode - Terraform Generation Simulated
+# In production, Claude AI would generate actual Terraform code
+
+terraform {{
+  required_providers {{
+    google = {{
+      source  = "hashicorp/google"
+      version = "~> 5.0"
+    }}
+  }}
+}}
+
+provider "google" {{
+  project = "{settings.gcp_project_id or 'demo-project'}"
+  region  = "{settings.gcp_region or 'us-central1'}"
+}}
+
+# Demo placeholder for {namespace}
+resource "google_cloud_run_service" "{namespace}_api" {{
+  name     = "{namespace}-api"
+  location = "{settings.gcp_region or 'us-central1'}"
+
+  template {{
+    spec {{
+      containers {{
+        image = "gcr.io/demo/placeholder:latest"
+      }}
+    }}
+  }}
+}}
+'''
+
         context = f"""
 Problem: {problem_description}
 
@@ -156,6 +209,23 @@ Project ID: {settings.gcp_project_id}
         Returns:
             Test specifications for functional, performance, and chaos tests
         """
+        # Return mock tests in demo mode
+        if self.demo_mode:
+            return {
+                "functional_tests": [
+                    {"name": "test_health_endpoint", "description": "Verify health check returns 200", "passed": True},
+                    {"name": "test_create_resource", "description": "Test resource creation", "passed": True},
+                    {"name": "test_get_resource", "description": "Test resource retrieval", "passed": True},
+                ],
+                "performance_tests": [
+                    {"name": "load_test", "description": "100 concurrent users", "rps": 500, "p99_latency_ms": 45},
+                ],
+                "chaos_tests": [
+                    {"name": "network_partition", "description": "Simulate network failure", "recovered": True},
+                ],
+                "demo_mode": True,
+            }
+
         context = f"""
 Problem: {problem_description}
 
@@ -209,6 +279,27 @@ Deployed Endpoint: {endpoint_url}
         Returns:
             Generated Python FastAPI code
         """
+        # Return mock API code in demo mode
+        if self.demo_mode:
+            return '''# Demo Mode - API Code Generation Simulated
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+import os
+
+app = FastAPI(title="Demo API")
+
+class HealthResponse(BaseModel):
+    status: str
+
+@app.get("/health", response_model=HealthResponse)
+async def health():
+    return {"status": "healthy"}
+
+@app.get("/")
+async def root():
+    return {"message": "Demo API - In production, Claude AI would generate a complete implementation"}
+'''
+
         services_str = ", ".join(required_services or ["postgres"])
 
         context = f"""
