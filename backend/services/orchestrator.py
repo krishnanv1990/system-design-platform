@@ -365,12 +365,15 @@ CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
                 ),
             )
 
+            # Check if service exists first
+            service_path = f"{parent}/services/{service_name}"
             try:
-                # Try to update existing service
-                service.name = f"{parent}/services/{service_name}"
+                existing_service = run_client.get_service(name=service_path)
+                # Service exists, update it
+                service.name = service_path
                 operation = run_client.update_service(service=service)
             except Exception:
-                # Create new service
+                # Service doesn't exist, create new one (name must be empty)
                 operation = run_client.create_service(
                     parent=parent,
                     service=service,
