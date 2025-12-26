@@ -559,6 +559,7 @@ if __name__ == "__main__":
             "--platform", "managed",
             "--region", settings.gcp_region,
             "--allow-unauthenticated",
+            "--ingress", "all",  # Allow external traffic
             "--set-env-vars", ",".join(env_vars),
             "--memory", "512Mi",
             "--cpu", "1",

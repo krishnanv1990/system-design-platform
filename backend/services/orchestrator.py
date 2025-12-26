@@ -522,6 +522,7 @@ if __name__ == "__main__":
             )
 
             service = run_v2.Service(
+                ingress=run_v2.IngressTraffic.INGRESS_TRAFFIC_ALL,  # Allow public access
                 template=run_v2.RevisionTemplate(
                     containers=[
                         run_v2.Container(
