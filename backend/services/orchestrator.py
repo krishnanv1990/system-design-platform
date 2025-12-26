@@ -25,11 +25,11 @@ from backend.config import get_settings
 settings = get_settings()
 
 # Deployment mode options:
-# - "demo" (validation only, no actual deployment - for demos without GCP infra)
+# - "cloud_run" (Cloud Run deployment, 30-60 seconds) - DEFAULT
 # - "warm_pool" (sub-second, pre-provisioned infrastructure + warm containers)
-# - "fast" (Cloud Run, 10-30 seconds)
 # - "terraform" (full infra, 10-15 minutes)
-DEPLOYMENT_MODE = "demo" if settings.demo_mode else "warm_pool"
+# Always deploy to real infrastructure, even in demo mode
+DEPLOYMENT_MODE = "cloud_run"
 
 
 class SubmissionOrchestrator:
@@ -72,9 +72,9 @@ class SubmissionOrchestrator:
                 return
 
             # Stage 2 & 3: Generate and Deploy Infrastructure
-            # Use demo (skip deployment), warm pool, fast deployment, or legacy Terraform
-            if DEPLOYMENT_MODE == "demo":
-                await SubmissionOrchestrator._demo_deploy(db, submission, problem)
+            # Use cloud_run, warm pool, or legacy Terraform
+            if DEPLOYMENT_MODE == "cloud_run":
+                await SubmissionOrchestrator._cloud_run_deploy(db, submission, problem)
             elif DEPLOYMENT_MODE == "warm_pool":
                 await SubmissionOrchestrator._warm_pool_deploy(db, submission, problem)
             elif DEPLOYMENT_MODE == "fast":
@@ -139,44 +139,139 @@ class SubmissionOrchestrator:
         db.commit()
 
     @staticmethod
-    async def _demo_deploy(
+    async def _cloud_run_deploy(
         db: Session,
         submission: Submission,
         problem: Problem,
     ) -> None:
         """
-        Demo mode deployment - skips actual infrastructure deployment.
-        Uses AI to generate code and simulates deployment for demonstration purposes.
+        Deploy to Google Cloud Run with real infrastructure.
+        Creates a new Cloud Run service for each submission.
         """
+        import asyncio
+        import json
+        import tempfile
+        from pathlib import Path
+
         submission.status = SubmissionStatus.DEPLOYING.value
         db.commit()
 
-        # Generate API code using AI (this still works in demo mode)
         from backend.services.ai_service import AIService
         ai_service = AIService()
 
+        namespace = f"sub-{submission.id}"
+        service_name = f"sdp-{namespace}"
+
         try:
+            # Step 1: Generate API code using AI
             api_code = await ai_service.generate_api_code(
                 problem_description=problem.description,
                 design_text=submission.design_text or "",
                 api_spec=submission.api_spec_input,
             )
 
-            # Store generated code but skip actual deployment
-            submission.deployment_id = f"demo-{submission.id}"
-            submission.validation_feedback = submission.validation_feedback or {}
-            submission.validation_feedback["generated_code"] = api_code[:2000]  # Store preview
-            submission.validation_feedback["deployment_mode"] = "demo"
-            submission.validation_feedback["deployment_note"] = (
-                "Demo mode: Infrastructure deployment skipped. "
-                "In production, this would deploy to GCP and run actual tests."
+            # Step 2: Create container and deploy
+            workspace = Path(tempfile.mkdtemp(prefix=f"sdp_{submission.id}_"))
+
+            # Write application files
+            main_py = workspace / "main.py"
+            main_py.write_text(api_code)
+
+            requirements = workspace / "requirements.txt"
+            requirements.write_text("""fastapi==0.109.0
+uvicorn[standard]==0.27.0
+asyncpg==0.29.0
+pydantic==2.6.0
+httpx==0.27.0
+""")
+
+            dockerfile = workspace / "Dockerfile"
+            dockerfile.write_text("""FROM python:3.11-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY main.py .
+EXPOSE 8080
+ENV PORT=8080
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
+""")
+
+            # Step 3: Build and deploy using Cloud Build
+            image_tag = f"us-central1-docker.pkg.dev/{settings.gcp_project_id}/sdp-repo/candidate-{submission.id}:latest"
+
+            # Build container
+            proc = await asyncio.create_subprocess_exec(
+                "gcloud", "builds", "submit",
+                "--tag", image_tag,
+                "--timeout", "300s",
+                "--quiet",
+                "--project", settings.gcp_project_id,
+                cwd=str(workspace),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
             )
+            stdout, stderr = await proc.communicate()
+
+            if proc.returncode != 0:
+                raise Exception(f"Container build failed: {stderr.decode()[:500]}")
+
+            # Step 4: Deploy to Cloud Run
+            database_url = f"postgresql://postgres:sdp-demo-2024@/candidate_{submission.id}?host=/cloudsql/{settings.gcp_project_id}:us-central1:sdp-db"
+
+            proc = await asyncio.create_subprocess_exec(
+                "gcloud", "run", "deploy", service_name,
+                "--image", image_tag,
+                "--platform", "managed",
+                "--region", settings.gcp_region,
+                "--allow-unauthenticated",
+                "--set-env-vars", f"DATABASE_URL={database_url}",
+                "--add-cloudsql-instances", f"{settings.gcp_project_id}:us-central1:sdp-db",
+                "--memory", "512Mi",
+                "--cpu", "1",
+                "--min-instances", "0",
+                "--max-instances", "2",
+                "--timeout", "60s",
+                "--quiet",
+                "--format", "json",
+                "--project", settings.gcp_project_id,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await proc.communicate()
+
+            if proc.returncode != 0:
+                raise Exception(f"Cloud Run deployment failed: {stderr.decode()[:500]}")
+
+            result = json.loads(stdout.decode())
+            endpoint_url = result.get("status", {}).get("url", "")
+
+            # Store deployment info
+            submission.deployment_id = service_name
+            submission.namespace = namespace
+            submission.validation_feedback = submission.validation_feedback or {}
+            submission.validation_feedback["deployment"] = {
+                "endpoint_url": endpoint_url,
+                "service_name": service_name,
+                "image": image_tag,
+                "deployment_mode": "cloud_run",
+            }
+            submission.validation_feedback["generated_code"] = api_code[:2000]
             submission.status = SubmissionStatus.DEPLOYED.value
             db.commit()
 
+            # Register with cleanup scheduler (1 hour timeout)
+            cleanup_scheduler.register_deployment(
+                submission_id=submission.id,
+                deployment_id=service_name,
+                namespace=namespace,
+                deployment_mode="cloud_run",
+                endpoint_url=endpoint_url,
+                timeout_minutes=60,
+            )
+
         except Exception as e:
             submission.status = SubmissionStatus.DEPLOY_FAILED.value
-            submission.error_message = f"Demo deployment error: {str(e)}"
+            submission.error_message = f"Cloud Run deployment failed: {str(e)}"
             db.commit()
 
     @staticmethod
@@ -407,40 +502,11 @@ class SubmissionOrchestrator:
         submission.status = SubmissionStatus.TESTING.value
         db.commit()
 
-        # In demo mode, generate mock test results
-        if DEPLOYMENT_MODE == "demo":
-            mock_results = [
-                {"test_type": "functional", "test_name": "health_check", "status": "passed", "duration_ms": 45, "details": {"response_code": 200}},
-                {"test_type": "functional", "test_name": "create_resource", "status": "passed", "duration_ms": 120, "details": {"response_code": 201}},
-                {"test_type": "functional", "test_name": "get_resource", "status": "passed", "duration_ms": 35, "details": {"response_code": 200}},
-                {"test_type": "functional", "test_name": "update_resource", "status": "passed", "duration_ms": 85, "details": {"response_code": 200}},
-                {"test_type": "functional", "test_name": "delete_resource", "status": "passed", "duration_ms": 55, "details": {"response_code": 204}},
-                {"test_type": "performance", "test_name": "load_test_100_users", "status": "passed", "duration_ms": 5000, "details": {"rps": 450, "p99_latency_ms": 120, "error_rate": 0.01}},
-                {"test_type": "performance", "test_name": "stress_test", "status": "passed", "duration_ms": 10000, "details": {"max_rps": 1200, "breaking_point": "none"}},
-                {"test_type": "chaos", "test_name": "network_latency_injection", "status": "passed", "duration_ms": 15000, "details": {"injected_latency_ms": 500, "service_recovered": True}, "chaos_scenario": "network_delay"},
-                {"test_type": "chaos", "test_name": "pod_failure", "status": "passed", "duration_ms": 20000, "details": {"pods_killed": 1, "recovery_time_ms": 3500}, "chaos_scenario": "pod_kill"},
-                {"test_type": "chaos", "test_name": "database_latency", "status": "passed", "duration_ms": 12000, "details": {"degraded_gracefully": True}, "chaos_scenario": "db_slowdown"},
-            ]
-
-            for result in mock_results:
-                test_result = TestResult(
-                    submission_id=submission.id,
-                    test_type=result["test_type"],
-                    test_name=result["test_name"],
-                    status=result["status"],
-                    details=result.get("details"),
-                    duration_ms=result.get("duration_ms"),
-                    chaos_scenario=result.get("chaos_scenario"),
-                )
-                db.add(test_result)
-
-            db.commit()
-            return
-
         test_runner = TestRunner()
 
-        # Construct endpoint URL (would come from Terraform outputs in production)
-        endpoint_url = f"https://{submission.namespace}.{settings.gcp_region}.run.app"
+        # Get endpoint URL from deployment info
+        deployment_info = submission.validation_feedback.get("deployment", {}) if submission.validation_feedback else {}
+        endpoint_url = deployment_info.get("endpoint_url", f"https://{submission.deployment_id}-{settings.gcp_project_id}.{settings.gcp_region}.run.app")
 
         try:
             results = await test_runner.run_all_tests(
@@ -485,10 +551,15 @@ class SubmissionOrchestrator:
             if not submission or not submission.namespace:
                 return
 
-            if DEPLOYMENT_MODE == "fast":
+            if DEPLOYMENT_MODE in ["cloud_run", "fast"]:
                 # Clean up Cloud Run deployment
                 deployment_service = FastDeploymentService()
                 await deployment_service.cleanup(submission_id, submission.namespace)
+            elif DEPLOYMENT_MODE == "warm_pool":
+                # Clean up warm pool resources
+                warm_pool = WarmPoolService()
+                # warm_pool.cleanup(submission_id)
+                pass
             else:
                 # Clean up Terraform resources
                 terraform_service = TerraformService()

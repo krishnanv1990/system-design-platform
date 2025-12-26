@@ -1,21 +1,26 @@
 """
 Test runner service for executing functional, performance, and chaos tests.
-Orchestrates test execution and result collection.
+Orchestrates test execution and result collection against deployed services.
 """
 
 import asyncio
 import subprocess
 import json
 import tempfile
+import os
 from typing import Dict, Any, List, Optional
 from pathlib import Path
 from datetime import datetime
+import re
 
 from backend.models.test_result import TestType, TestStatus
 from backend.services.ai_service import AIService
 from backend.config import get_settings
 
 settings = get_settings()
+
+# Path to test files
+TESTS_DIR = Path(__file__).parent.parent.parent / "tests"
 
 
 class TestRunner:
@@ -29,6 +34,7 @@ class TestRunner:
         self.ai_service = AIService()
         self.test_dir = Path("/tmp/test_workspaces")
         self.test_dir.mkdir(exist_ok=True)
+        self.tests_dir = TESTS_DIR
 
     async def run_all_tests(
         self,
@@ -53,40 +59,341 @@ class TestRunner:
         """
         results = []
 
-        # Generate tests using AI
-        test_specs = await self.ai_service.generate_tests(
-            problem_description=problem_description,
-            design_text=design_text,
-            api_spec_input=api_spec,
-            endpoint_url=endpoint_url,
-        )
+        # Determine which test file to run based on problem description
+        test_file = self._get_test_file_for_problem(problem_description)
+        locust_file = self._get_locust_file_for_problem(problem_description)
+        chaos_file = self._get_chaos_file_for_problem(problem_description)
 
-        # Run functional tests
-        functional_results = await self._run_functional_tests(
+        # Run functional tests using pytest
+        functional_results = await self._run_pytest_tests(
             submission_id=submission_id,
             endpoint_url=endpoint_url,
-            test_specs=test_specs.get("functional_tests", []),
+            test_file=test_file,
         )
         results.extend(functional_results)
 
-        # Run performance tests
-        performance_results = await self._run_performance_tests(
+        # Run performance tests using Locust
+        performance_results = await self._run_locust_tests(
             submission_id=submission_id,
             endpoint_url=endpoint_url,
-            test_specs=test_specs.get("performance_tests", []),
+            locust_file=locust_file,
         )
         results.extend(performance_results)
 
-        # Run chaos tests
-        chaos_results = await self._run_chaos_tests(
+        # Run chaos tests using Chaos Toolkit
+        chaos_results = await self._run_chaos_toolkit_tests(
             submission_id=submission_id,
             endpoint_url=endpoint_url,
-            test_specs=test_specs.get("chaos_tests", []),
+            chaos_file=chaos_file,
         )
         results.extend(chaos_results)
 
         return results
 
+    def _get_test_file_for_problem(self, problem_description: str) -> Optional[Path]:
+        """Get the appropriate test file based on problem type."""
+        desc_lower = problem_description.lower()
+        functional_dir = self.tests_dir / "functional"
+
+        if "url" in desc_lower and "shorten" in desc_lower:
+            return functional_dir / "test_url_shortener.py"
+        elif "file" in desc_lower and ("shar" in desc_lower or "dropbox" in desc_lower):
+            return functional_dir / "test_file_sharing.py"
+        elif "chat" in desc_lower or "whatsapp" in desc_lower or "messag" in desc_lower:
+            return functional_dir / "test_chat_app.py"
+        else:
+            # Return generic test or first available
+            return functional_dir / "test_url_shortener.py"
+
+    def _get_locust_file_for_problem(self, problem_description: str) -> Optional[Path]:
+        """Get the appropriate Locust file based on problem type."""
+        desc_lower = problem_description.lower()
+        perf_dir = self.tests_dir / "performance"
+
+        if "url" in desc_lower and "shorten" in desc_lower:
+            return perf_dir / "locustfile_url_shortener.py"
+        elif "file" in desc_lower and ("shar" in desc_lower or "dropbox" in desc_lower):
+            return perf_dir / "locustfile_file_sharing.py"
+        elif "chat" in desc_lower or "whatsapp" in desc_lower or "messag" in desc_lower:
+            return perf_dir / "locustfile_chat.py"
+        else:
+            return perf_dir / "locustfile_url_shortener.py"
+
+    def _get_chaos_file_for_problem(self, problem_description: str) -> Optional[Path]:
+        """Get the appropriate chaos experiment file based on problem type."""
+        desc_lower = problem_description.lower()
+        chaos_dir = self.tests_dir / "chaos"
+
+        if "url" in desc_lower and "shorten" in desc_lower:
+            return chaos_dir / "experiment_url_shortener.json"
+        elif "file" in desc_lower and ("shar" in desc_lower or "dropbox" in desc_lower):
+            return chaos_dir / "experiment_file_sharing.json"
+        elif "chat" in desc_lower or "whatsapp" in desc_lower or "messag" in desc_lower:
+            return chaos_dir / "experiment_chat.json"
+        else:
+            return chaos_dir / "experiment_url_shortener.json"
+
+    async def _run_pytest_tests(
+        self,
+        submission_id: int,
+        endpoint_url: str,
+        test_file: Optional[Path],
+    ) -> List[Dict[str, Any]]:
+        """Run pytest tests against the deployed service."""
+        results = []
+        start_time = datetime.utcnow()
+
+        if not test_file or not test_file.exists():
+            return [{
+                "test_type": TestType.FUNCTIONAL.value,
+                "test_name": "pytest_suite",
+                "status": TestStatus.SKIPPED.value,
+                "duration_ms": 0,
+                "details": {"error": "No test file found"},
+            }]
+
+        try:
+            # Run pytest with JSON output
+            env = os.environ.copy()
+            env["TEST_TARGET_URL"] = endpoint_url
+
+            proc = await asyncio.create_subprocess_exec(
+                "python", "-m", "pytest", str(test_file),
+                "-v", "--tb=short", "-x", "--timeout=60",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env=env,
+            )
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(),
+                timeout=300,  # 5 minute timeout for all tests
+            )
+
+            duration_ms = int((datetime.utcnow() - start_time).total_seconds() * 1000)
+            output = stdout.decode()
+
+            # Parse pytest output to extract individual test results
+            test_results = self._parse_pytest_output(output)
+
+            if test_results:
+                for test_name, passed in test_results.items():
+                    results.append({
+                        "test_type": TestType.FUNCTIONAL.value,
+                        "test_name": test_name,
+                        "status": TestStatus.PASSED.value if passed else TestStatus.FAILED.value,
+                        "duration_ms": duration_ms // len(test_results),
+                        "details": {"output": output[:500]},
+                    })
+            else:
+                # No individual tests parsed, report overall
+                results.append({
+                    "test_type": TestType.FUNCTIONAL.value,
+                    "test_name": "pytest_suite",
+                    "status": TestStatus.PASSED.value if proc.returncode == 0 else TestStatus.FAILED.value,
+                    "duration_ms": duration_ms,
+                    "details": {
+                        "stdout": output[:2000],
+                        "stderr": stderr.decode()[:1000],
+                        "return_code": proc.returncode,
+                    },
+                })
+
+        except asyncio.TimeoutError:
+            results.append({
+                "test_type": TestType.FUNCTIONAL.value,
+                "test_name": "pytest_suite",
+                "status": TestStatus.ERROR.value,
+                "duration_ms": 300000,
+                "details": {"error": "Tests timed out after 5 minutes"},
+            })
+        except Exception as e:
+            results.append({
+                "test_type": TestType.FUNCTIONAL.value,
+                "test_name": "pytest_suite",
+                "status": TestStatus.ERROR.value,
+                "duration_ms": 0,
+                "details": {"error": str(e)},
+            })
+
+        return results
+
+    def _parse_pytest_output(self, output: str) -> Dict[str, bool]:
+        """Parse pytest verbose output to extract test results."""
+        results = {}
+        # Match lines like "test_health_endpoint PASSED" or "test_create_short_url FAILED"
+        pattern = r"(test_\w+)\s+(PASSED|FAILED|ERROR|SKIPPED)"
+        matches = re.findall(pattern, output)
+        for test_name, status in matches:
+            results[test_name] = status == "PASSED"
+        return results
+
+    async def _run_locust_tests(
+        self,
+        submission_id: int,
+        endpoint_url: str,
+        locust_file: Optional[Path],
+    ) -> List[Dict[str, Any]]:
+        """Run Locust performance tests."""
+        results = []
+        start_time = datetime.utcnow()
+
+        if not locust_file or not locust_file.exists():
+            return [{
+                "test_type": TestType.PERFORMANCE.value,
+                "test_name": "load_test",
+                "status": TestStatus.SKIPPED.value,
+                "duration_ms": 0,
+                "details": {"error": "No Locust file found"},
+            }]
+
+        try:
+            workspace = self.test_dir / f"perf_{submission_id}"
+            workspace.mkdir(exist_ok=True)
+
+            proc = await asyncio.create_subprocess_exec(
+                "locust",
+                "-f", str(locust_file),
+                "--headless",
+                "--host", endpoint_url,
+                "-u", "10",  # 10 users
+                "-r", "2",   # spawn rate
+                "-t", "30s", # run time
+                "--csv", str(workspace / "results"),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(),
+                timeout=120,
+            )
+
+            duration_ms = int((datetime.utcnow() - start_time).total_seconds() * 1000)
+
+            # Parse results
+            stats = self._parse_locust_stats(workspace / "results_stats.csv")
+
+            # Determine pass/fail
+            passed = (
+                stats.get("avg_response_time", float("inf")) < 1000 and
+                stats.get("failure_rate", 100) < 10
+            )
+
+            results.append({
+                "test_type": TestType.PERFORMANCE.value,
+                "test_name": "load_test_10_users",
+                "status": TestStatus.PASSED.value if passed else TestStatus.FAILED.value,
+                "duration_ms": duration_ms,
+                "details": {
+                    "stats": stats,
+                    "thresholds": {"max_latency_ms": 1000, "max_error_rate": 10},
+                },
+            })
+
+        except asyncio.TimeoutError:
+            results.append({
+                "test_type": TestType.PERFORMANCE.value,
+                "test_name": "load_test",
+                "status": TestStatus.ERROR.value,
+                "duration_ms": 120000,
+                "details": {"error": "Load test timed out"},
+            })
+        except Exception as e:
+            results.append({
+                "test_type": TestType.PERFORMANCE.value,
+                "test_name": "load_test",
+                "status": TestStatus.ERROR.value,
+                "duration_ms": 0,
+                "details": {"error": str(e)},
+            })
+
+        return results
+
+    async def _run_chaos_toolkit_tests(
+        self,
+        submission_id: int,
+        endpoint_url: str,
+        chaos_file: Optional[Path],
+    ) -> List[Dict[str, Any]]:
+        """Run Chaos Toolkit experiments."""
+        results = []
+        start_time = datetime.utcnow()
+
+        if not chaos_file or not chaos_file.exists():
+            return [{
+                "test_type": TestType.CHAOS.value,
+                "test_name": "chaos_experiment",
+                "status": TestStatus.SKIPPED.value,
+                "duration_ms": 0,
+                "chaos_scenario": "none",
+                "details": {"error": "No chaos experiment file found"},
+            }]
+
+        try:
+            workspace = self.test_dir / f"chaos_{submission_id}"
+            workspace.mkdir(exist_ok=True)
+
+            # Read and modify experiment to use the endpoint URL
+            with open(chaos_file) as f:
+                experiment = json.load(f)
+
+            # Replace placeholders in the experiment
+            experiment_str = json.dumps(experiment)
+            experiment_str = experiment_str.replace("${TARGET_URL}", endpoint_url)
+            experiment_str = experiment_str.replace("${TEST_TOKEN}", "test-token")
+            modified_experiment = json.loads(experiment_str)
+
+            # Write modified experiment
+            modified_file = workspace / "experiment.json"
+            with open(modified_file, "w") as f:
+                json.dump(modified_experiment, f, indent=2)
+
+            proc = await asyncio.create_subprocess_exec(
+                "chaos", "run", str(modified_file),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=str(workspace),
+            )
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(),
+                timeout=300,
+            )
+
+            duration_ms = int((datetime.utcnow() - start_time).total_seconds() * 1000)
+
+            results.append({
+                "test_type": TestType.CHAOS.value,
+                "test_name": experiment.get("title", "chaos_experiment"),
+                "status": TestStatus.PASSED.value if proc.returncode == 0 else TestStatus.FAILED.value,
+                "duration_ms": duration_ms,
+                "chaos_scenario": "resilience_test",
+                "details": {
+                    "stdout": stdout.decode()[:2000],
+                    "stderr": stderr.decode()[:1000],
+                },
+            })
+
+        except asyncio.TimeoutError:
+            results.append({
+                "test_type": TestType.CHAOS.value,
+                "test_name": "chaos_experiment",
+                "status": TestStatus.ERROR.value,
+                "duration_ms": 300000,
+                "chaos_scenario": "timeout",
+                "details": {"error": "Chaos experiment timed out"},
+            })
+        except Exception as e:
+            results.append({
+                "test_type": TestType.CHAOS.value,
+                "test_name": "chaos_experiment",
+                "status": TestStatus.ERROR.value,
+                "duration_ms": 0,
+                "chaos_scenario": "error",
+                "details": {"error": str(e)},
+            })
+
+        return results
+
+    # Legacy methods kept for compatibility
     async def _run_functional_tests(
         self,
         submission_id: int,
