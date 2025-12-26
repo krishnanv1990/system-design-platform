@@ -390,17 +390,32 @@ CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
                 65
             )
 
-            # Make service publicly accessible using gcloud CLI
-            import subprocess
-            subprocess.run([
-                "gcloud", "run", "services", "add-iam-policy-binding",
-                service_name,
-                "--region", region,
-                "--member", "allUsers",
-                "--role", "roles/run.invoker",
-                "--project", project_id,
-                "--quiet"
-            ], check=True, capture_output=True)
+            # Make service publicly accessible using IAM API
+            try:
+                from google.iam.v1 import iam_policy_pb2
+                from google.iam.v1 import policy_pb2
+
+                # Get current policy
+                get_request = iam_policy_pb2.GetIamPolicyRequest(resource=result.name)
+                policy = run_client.get_iam_policy(request=get_request)
+
+                # Add allUsers as invoker
+                policy.bindings.append(
+                    policy_pb2.Binding(
+                        role="roles/run.invoker",
+                        members=["allUsers"],
+                    )
+                )
+
+                # Set the updated policy
+                set_request = iam_policy_pb2.SetIamPolicyRequest(
+                    resource=result.name,
+                    policy=policy,
+                )
+                run_client.set_iam_policy(request=set_request)
+            except Exception as iam_error:
+                # Log but don't fail - service is deployed, just not public
+                print(f"Warning: Could not set IAM policy: {iam_error}")
 
             # Store deployment info
             submission.deployment_id = service_name
