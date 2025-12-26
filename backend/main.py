@@ -66,6 +66,7 @@ app.add_middleware(
         settings.frontend_url,
         "http://localhost:5173",
         "http://localhost:3000",
+        "https://storage.googleapis.com",
     ],
     allow_credentials=True,
     allow_methods=["*"],
