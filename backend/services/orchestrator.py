@@ -234,10 +234,9 @@ asyncpg==0.29.0
 pydantic==2.6.0
 httpx==0.27.0
 redis==5.0.1
-aioredis==2.0.1
-sqlalchemy==2.0.25
-databases==0.8.0
+sqlalchemy[asyncio]==2.0.25
 python-dotenv==1.0.1
+aiofiles==23.2.1
 """)
 
             dockerfile = workspace / "Dockerfile"
