@@ -58,6 +58,7 @@ class Submission(Base):
     # Deployment tracking
     deployment_id = Column(String(255), nullable=True)
     namespace = Column(String(255), nullable=True)  # Candidate isolation namespace
+    endpoint_url = Column(String(512), nullable=True)  # Deployed service URL
 
     # Status and errors
     status = Column(String(50), default=SubmissionStatus.PENDING.value)

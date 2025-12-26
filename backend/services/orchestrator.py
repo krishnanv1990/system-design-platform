@@ -596,14 +596,18 @@ if __name__ == "__main__":
             # Store deployment info
             submission.deployment_id = service_name
             submission.namespace = namespace
-            submission.validation_feedback = submission.validation_feedback or {}
-            submission.validation_feedback["deployment"] = {
+            submission.endpoint_url = endpoint_url  # Store endpoint URL directly
+
+            # Update validation_feedback - need to reassign to trigger SQLAlchemy change detection
+            feedback = submission.validation_feedback or {}
+            feedback["deployment"] = {
                 "endpoint_url": endpoint_url,
                 "service_name": service_name,
                 "image": image_tag,
                 "deployment_mode": "cloud_run",
             }
-            submission.validation_feedback["generated_code"] = api_code[:2000]
+            feedback["generated_code"] = api_code[:2000]
+            submission.validation_feedback = feedback  # Reassign to trigger change detection
             # Don't set status here - let _run_tests set it to TESTING
             db.commit()
 
@@ -852,9 +856,13 @@ if __name__ == "__main__":
 
         test_runner = TestRunner()
 
-        # Get endpoint URL from deployment info
+        # Get endpoint URL - prefer direct field, then validation_feedback, then construct from deployment_id
         deployment_info = submission.validation_feedback.get("deployment", {}) if submission.validation_feedback else {}
-        endpoint_url = deployment_info.get("endpoint_url", f"https://{submission.deployment_id}-{settings.gcp_project_id}.{settings.gcp_region}.run.app")
+        endpoint_url = (
+            submission.endpoint_url or
+            deployment_info.get("endpoint_url") or
+            f"https://{submission.deployment_id}-5i2gvcmu3q-uc.a.run.app"  # Fallback with correct format
+        )
 
         SubmissionOrchestrator._update_progress(
             db, submission,
