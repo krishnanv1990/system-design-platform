@@ -320,20 +320,19 @@ Required Infrastructure Services: {services_str}
 
 Generate a complete, working FastAPI application based on the candidate's system design.
 
-Requirements:
+CRITICAL Requirements:
 1. Use FastAPI with async/await
 2. Include proper error handling
-3. Use environment variables for service connections (they will be injected):
-   - DATABASE_URL for PostgreSQL
-   - REDIS_URL for Redis
-   - KAFKA_BROKERS for Kafka
-   - CASSANDRA_URL for Cassandra
-   - MONGODB_URL for MongoDB
-   - ELASTICSEARCH_URL for Elasticsearch
+3. USE IN-MEMORY STORAGE ONLY - use Python dictionaries for data storage
+   - Do NOT import or use asyncpg, databases, sqlalchemy, redis, or any database libraries
+   - Do NOT try to connect to any external services on startup
+   - Store all data in simple Python dictionaries (e.g., urls_db = {}, users_db = {})
+   - This is for demonstration/testing purposes
 4. Include a /health endpoint that returns {"status": "healthy"}
 5. Implement the core API endpoints from the design
 6. Use proper type hints and Pydantic models
 7. Keep the code self-contained in a single file
+8. The app MUST start successfully without any external dependencies
 
 Return ONLY the Python code, no explanations or markdown code blocks."""
 

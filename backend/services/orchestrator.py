@@ -339,8 +339,6 @@ CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
             run_client = run_v2.ServicesClient()
             parent = f"projects/{project_id}/locations/{region}"
 
-            database_url = f"postgresql://postgres:sdp-demo-2024@/candidate_{submission.id}?host=/cloudsql/{project_id}:{region}:sdp-db"
-
             SubmissionOrchestrator._update_progress(
                 db, submission,
                 "Deploying to Cloud Run",
@@ -354,9 +352,6 @@ CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
                         run_v2.Container(
                             image=image_tag,
                             ports=[run_v2.ContainerPort(container_port=8080)],
-                            env=[
-                                run_v2.EnvVar(name="DATABASE_URL", value=database_url),
-                            ],
                             resources=run_v2.ResourceRequirements(
                                 limits={"memory": "512Mi", "cpu": "1"},
                             ),
