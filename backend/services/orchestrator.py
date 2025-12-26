@@ -15,11 +15,15 @@ from backend.models.submission import Submission, SubmissionStatus
 from backend.models.test_result import TestResult
 from backend.services.validation_service import ValidationService
 from backend.services.terraform_service import TerraformService
+from backend.services.deployment_service import FastDeploymentService, DeploymentStrategy
 from backend.services.test_runner import TestRunner
 from backend.services.gcp_service import GCPService
 from backend.config import get_settings
 
 settings = get_settings()
+
+# Deployment mode: "fast" (Cloud Run, seconds) or "terraform" (full infra, minutes)
+DEPLOYMENT_MODE = "fast"
 
 
 class SubmissionOrchestrator:
@@ -61,13 +65,16 @@ class SubmissionOrchestrator:
             if submission.status == SubmissionStatus.VALIDATION_FAILED.value:
                 return
 
-            # Stage 2: Terraform Generation
-            await SubmissionOrchestrator._generate_infrastructure(db, submission, problem)
-            if submission.status == SubmissionStatus.FAILED.value:
-                return
+            # Stage 2 & 3: Generate and Deploy Infrastructure
+            # Use fast deployment (Cloud Run) or legacy Terraform based on mode
+            if DEPLOYMENT_MODE == "fast":
+                await SubmissionOrchestrator._fast_deploy(db, submission, problem)
+            else:
+                await SubmissionOrchestrator._generate_infrastructure(db, submission, problem)
+                if submission.status == SubmissionStatus.FAILED.value:
+                    return
+                await SubmissionOrchestrator._deploy_infrastructure(db, submission)
 
-            # Stage 3: Deployment
-            await SubmissionOrchestrator._deploy_infrastructure(db, submission)
             if submission.status == SubmissionStatus.DEPLOY_FAILED.value:
                 return
 
@@ -120,6 +127,58 @@ class SubmissionOrchestrator:
             submission.status = SubmissionStatus.GENERATING_INFRA.value
 
         db.commit()
+
+    @staticmethod
+    async def _fast_deploy(
+        db: Session,
+        submission: Submission,
+        problem: Problem,
+    ) -> None:
+        """
+        Fast deployment using Cloud Run (seconds instead of minutes).
+        Uses pre-provisioned shared infrastructure with dynamic app deployment.
+        """
+        submission.status = SubmissionStatus.DEPLOYING.value
+        db.commit()
+
+        deployment_service = FastDeploymentService()
+
+        # Determine problem type from tags or title
+        problem_type = "url_shortener"  # Default
+        if problem.tags:
+            if "rate-limiting" in problem.tags or "rate limiter" in problem.title.lower():
+                problem_type = "rate_limiter"
+            elif "cache" in problem.tags or "cache" in problem.title.lower():
+                problem_type = "cache"
+            elif "notification" in problem.tags:
+                problem_type = "notification"
+
+        try:
+            result = await deployment_service.deploy(
+                submission_id=submission.id,
+                design_text=submission.design_text or "",
+                api_spec=submission.api_spec_input,
+                problem_type=problem_type,
+            )
+
+            if result["success"]:
+                submission.deployment_id = result.get("service_name", f"sub-{submission.id}")
+                # Store deployment info for later reference
+                submission.validation_feedback = submission.validation_feedback or {}
+                submission.validation_feedback["deployment"] = {
+                    "endpoint_url": result.get("endpoint_url"),
+                    "deployment_time_seconds": result.get("deployment_time_seconds"),
+                    "strategy": result.get("strategy"),
+                    "resources": result.get("resources"),
+                }
+                db.commit()
+            else:
+                raise Exception(result.get("error", "Deployment failed"))
+
+        except Exception as e:
+            submission.status = SubmissionStatus.DEPLOY_FAILED.value
+            submission.error_message = f"Fast deployment failed: {str(e)}"
+            db.commit()
 
     @staticmethod
     async def _generate_infrastructure(
@@ -260,18 +319,22 @@ class SubmissionOrchestrator:
             if not submission or not submission.namespace:
                 return
 
-            terraform_service = TerraformService()
-            gcp_service = GCPService()
+            if DEPLOYMENT_MODE == "fast":
+                # Clean up Cloud Run deployment
+                deployment_service = FastDeploymentService()
+                await deployment_service.cleanup(submission_id, submission.namespace)
+            else:
+                # Clean up Terraform resources
+                terraform_service = TerraformService()
+                gcp_service = GCPService()
 
-            # Destroy Terraform resources
-            workspace = terraform_service.workspace_dir / f"submission_{submission_id}"
-            if workspace.exists():
-                terraform_service.destroy(workspace)
-                terraform_service.cleanup_workspace(workspace)
+                workspace = terraform_service.workspace_dir / f"submission_{submission_id}"
+                if workspace.exists():
+                    terraform_service.destroy(workspace)
+                    terraform_service.cleanup_workspace(workspace)
 
-            # Clean up any remaining GCP resources
-            if gcp_service.is_configured():
-                gcp_service.cleanup_namespace_resources(submission.namespace)
+                if gcp_service.is_configured():
+                    gcp_service.cleanup_namespace_resources(submission.namespace)
 
         finally:
             db.close()
