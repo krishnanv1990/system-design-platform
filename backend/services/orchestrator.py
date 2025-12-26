@@ -242,17 +242,31 @@ CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
 
             operation = build_client.create_build(project_id=project_id, build=build)
 
-            # Wait for build to complete (with timeout)
+            # Wait for build to complete using the operation
             import time
             start_time = time.time()
-            while not operation.done():
+            build_id = operation.metadata.build.id
+
+            while True:
                 if time.time() - start_time > 300:
                     raise Exception("Build timed out after 5 minutes")
-                await asyncio.sleep(5)
-                operation = build_client.get_build(project_id=project_id, id=operation.metadata.build.id)
 
-            if operation.result().status != cloudbuild_v1.Build.Status.SUCCESS:
-                raise Exception(f"Build failed with status: {operation.result().status}")
+                # Get build status
+                build_result = build_client.get_build(project_id=project_id, id=build_id)
+
+                if build_result.status in [
+                    cloudbuild_v1.Build.Status.SUCCESS,
+                    cloudbuild_v1.Build.Status.FAILURE,
+                    cloudbuild_v1.Build.Status.INTERNAL_ERROR,
+                    cloudbuild_v1.Build.Status.TIMEOUT,
+                    cloudbuild_v1.Build.Status.CANCELLED,
+                ]:
+                    break
+
+                await asyncio.sleep(10)
+
+            if build_result.status != cloudbuild_v1.Build.Status.SUCCESS:
+                raise Exception(f"Build failed with status: {build_result.status.name}")
 
             # Step 4: Deploy to Cloud Run using Run API
             run_client = run_v2.ServicesClient()
