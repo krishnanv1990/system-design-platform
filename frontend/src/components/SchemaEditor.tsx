@@ -21,10 +21,13 @@ import {
   Calendar,
   ToggleLeft,
   Sparkles,
+  Code,
+  LayoutGrid,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { cn } from "@/lib/utils"
 
 // Database types with their icons and colors
@@ -95,18 +98,55 @@ type DatabaseType = typeof DATABASE_TYPES[number]["id"]
 
 // Column types for SQL databases
 const SQL_COLUMN_TYPES = [
-  { value: "uuid", label: "UUID", icon: Hash },
-  { value: "serial", label: "Serial/Auto-increment", icon: Hash },
-  { value: "integer", label: "Integer", icon: Hash },
-  { value: "bigint", label: "Big Integer", icon: Hash },
-  { value: "varchar", label: "Varchar", icon: Type },
-  { value: "text", label: "Text", icon: Type },
-  { value: "boolean", label: "Boolean", icon: ToggleLeft },
-  { value: "timestamp", label: "Timestamp", icon: Calendar },
-  { value: "date", label: "Date", icon: Calendar },
-  { value: "json", label: "JSON", icon: FileJson },
-  { value: "decimal", label: "Decimal", icon: Hash },
-  { value: "float", label: "Float", icon: Hash },
+  // Identifiers
+  { value: "uuid", label: "UUID", icon: Hash, category: "Identifiers" },
+  { value: "serial", label: "Serial (Auto-increment)", icon: Hash, category: "Identifiers" },
+  { value: "bigserial", label: "BigSerial (Auto-increment)", icon: Hash, category: "Identifiers" },
+  { value: "smallserial", label: "SmallSerial (Auto-increment)", icon: Hash, category: "Identifiers" },
+  // Numeric
+  { value: "integer", label: "Integer", icon: Hash, category: "Numeric" },
+  { value: "bigint", label: "BigInt", icon: Hash, category: "Numeric" },
+  { value: "smallint", label: "SmallInt", icon: Hash, category: "Numeric" },
+  { value: "decimal", label: "Decimal", icon: Hash, category: "Numeric" },
+  { value: "numeric", label: "Numeric", icon: Hash, category: "Numeric" },
+  { value: "real", label: "Real", icon: Hash, category: "Numeric" },
+  { value: "double", label: "Double Precision", icon: Hash, category: "Numeric" },
+  { value: "float", label: "Float", icon: Hash, category: "Numeric" },
+  // Text
+  { value: "varchar", label: "Varchar", icon: Type, category: "Text" },
+  { value: "char", label: "Char (Fixed)", icon: Type, category: "Text" },
+  { value: "text", label: "Text", icon: Type, category: "Text" },
+  // Boolean
+  { value: "boolean", label: "Boolean", icon: ToggleLeft, category: "Boolean" },
+  // Date/Time
+  { value: "timestamp", label: "Timestamp", icon: Calendar, category: "Date/Time" },
+  { value: "timestamptz", label: "Timestamp with Timezone", icon: Calendar, category: "Date/Time" },
+  { value: "date", label: "Date", icon: Calendar, category: "Date/Time" },
+  { value: "time", label: "Time", icon: Calendar, category: "Date/Time" },
+  { value: "timetz", label: "Time with Timezone", icon: Calendar, category: "Date/Time" },
+  { value: "interval", label: "Interval", icon: Calendar, category: "Date/Time" },
+  // JSON
+  { value: "json", label: "JSON", icon: FileJson, category: "JSON" },
+  { value: "jsonb", label: "JSONB (Binary)", icon: FileJson, category: "JSON" },
+  // Binary
+  { value: "bytea", label: "Bytea (Binary)", icon: Hash, category: "Binary" },
+  // Arrays
+  { value: "array", label: "Array", icon: Hash, category: "Arrays" },
+  // Other
+  { value: "inet", label: "IP Address (inet)", icon: Hash, category: "Network" },
+  { value: "cidr", label: "CIDR", icon: Hash, category: "Network" },
+  { value: "macaddr", label: "MAC Address", icon: Hash, category: "Network" },
+]
+
+// SQL constraint options for dropdown
+const SQL_CONSTRAINTS = [
+  { value: "primary_key", label: "Primary Key", shortLabel: "PK", color: "amber" },
+  { value: "unique", label: "Unique", shortLabel: "UQ", color: "blue" },
+  { value: "not_null", label: "Not Null", shortLabel: "NN", color: "red" },
+  { value: "indexed", label: "Indexed", shortLabel: "IDX", color: "green" },
+  { value: "foreign_key", label: "Foreign Key", shortLabel: "FK", color: "purple" },
+  { value: "auto_increment", label: "Auto Increment", shortLabel: "AI", color: "cyan" },
+  { value: "default", label: "Has Default", shortLabel: "DEF", color: "gray" },
 ]
 
 // Field types for other database types
@@ -254,6 +294,9 @@ export default function SchemaEditor({
 }: SchemaEditorProps) {
   const [stores, setStores] = useState<TableStore[]>([])
   const [showTypeSelector, setShowTypeSelector] = useState(false)
+  const [editorMode, setEditorMode] = useState<"visual" | "json">("visual")
+  const [jsonText, setJsonText] = useState("")
+  const [jsonError, setJsonError] = useState<string | null>(null)
 
   // Parse initial value
   useEffect(() => {
@@ -262,6 +305,13 @@ export default function SchemaEditor({
       if (parsed.length > 0) {
         setStores(parsed)
       }
+      // Also set json text for JSON mode
+      try {
+        const formatted = JSON.stringify(JSON.parse(value), null, 2)
+        setJsonText(formatted)
+      } catch {
+        setJsonText(value)
+      }
     }
   }, [])
 
@@ -269,10 +319,44 @@ export default function SchemaEditor({
   const updateParent = useCallback(
     (newStores: TableStore[]) => {
       setStores(newStores)
-      onChange(toJsonSchema(newStores))
+      const jsonOutput = toJsonSchema(newStores)
+      onChange(jsonOutput)
+      // Keep JSON text in sync
+      setJsonText(jsonOutput)
+      setJsonError(null)
     },
     [onChange]
   )
+
+  // Handle JSON text changes
+  const handleJsonChange = (text: string) => {
+    setJsonText(text)
+    try {
+      // Validate JSON by parsing it
+      JSON.parse(text)
+      setJsonError(null)
+      // Update stores from JSON
+      const newStores = parseSchema(text)
+      setStores(newStores)
+      onChange(text)
+    } catch (e) {
+      setJsonError((e as Error).message)
+    }
+  }
+
+  // Switch between modes
+  const handleModeChange = (mode: "visual" | "json") => {
+    if (mode === "json" && editorMode === "visual") {
+      // Switching to JSON - update JSON text from current stores
+      const jsonOutput = toJsonSchema(stores)
+      setJsonText(jsonOutput)
+    } else if (mode === "visual" && editorMode === "json" && !jsonError) {
+      // Switching to visual - parse JSON if valid
+      const newStores = parseSchema(jsonText)
+      setStores(newStores)
+    }
+    setEditorMode(mode)
+  }
 
   const addStore = (dbType: DatabaseType) => {
     const newStore: TableStore = {
@@ -401,18 +485,79 @@ export default function SchemaEditor({
             Define your data stores, tables, and their structures
           </p>
         </div>
-        {!readOnly && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowTypeSelector(!showTypeSelector)}
-            className="gap-2 border-dashed hover:border-primary hover:bg-primary/5"
-          >
-            <Plus className="h-4 w-4" />
-            Add Data Store
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {/* Mode Toggle */}
+          <Tabs value={editorMode} onValueChange={(v) => handleModeChange(v as "visual" | "json")}>
+            <TabsList className="h-9">
+              <TabsTrigger value="visual" className="gap-1.5 px-3">
+                <LayoutGrid className="h-3.5 w-3.5" />
+                Visual
+              </TabsTrigger>
+              <TabsTrigger value="json" className="gap-1.5 px-3">
+                <Code className="h-3.5 w-3.5" />
+                JSON
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+          {!readOnly && editorMode === "visual" && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowTypeSelector(!showTypeSelector)}
+              className="gap-2 border-dashed hover:border-primary hover:bg-primary/5"
+            >
+              <Plus className="h-4 w-4" />
+              Add Data Store
+            </Button>
+          )}
+        </div>
       </div>
+
+      {/* JSON Editor Mode */}
+      {editorMode === "json" && (
+        <Card className="overflow-hidden">
+          <CardContent className="p-0">
+            <div className="relative">
+              <textarea
+                value={jsonText}
+                onChange={(e) => handleJsonChange(e.target.value)}
+                readOnly={readOnly}
+                placeholder={`{
+  "stores": [
+    {
+      "name": "urls",
+      "type": "sql",
+      "fields": [
+        { "name": "id", "type": "bigserial", "constraints": ["primary_key"] },
+        { "name": "short_code", "type": "varchar", "constraints": ["unique", "not_null"] },
+        { "name": "original_url", "type": "text", "constraints": ["not_null"] },
+        { "name": "created_at", "type": "timestamptz" }
+      ]
+    }
+  ]
+}`}
+                className={cn(
+                  "w-full min-h-[400px] p-4 font-mono text-sm bg-muted/30 focus:outline-none focus:ring-2 focus:ring-primary/30 resize-y",
+                  jsonError && "border-2 border-destructive",
+                  readOnly && "cursor-default"
+                )}
+              />
+              {jsonError && (
+                <div className="absolute bottom-0 left-0 right-0 p-2 bg-destructive/10 border-t border-destructive text-destructive text-xs font-mono">
+                  Error: {jsonError}
+                </div>
+              )}
+            </div>
+            <div className="p-3 bg-muted/20 border-t text-xs text-muted-foreground">
+              <span className="font-medium">Tip:</span> You can define stores with type: "sql", "kv", "document", "graph", "timeseries", or "search"
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Visual Editor Mode */}
+      {editorMode === "visual" && (
+        <>
 
       {/* Database Type Selector */}
       {showTypeSelector && (
@@ -645,124 +790,73 @@ export default function SchemaEditor({
                           </select>
                         </div>
 
-                        {/* Constraints */}
-                        <div className="col-span-3 flex flex-wrap gap-1">
-                          {store.dbType === "sql" && (
-                            <>
-                              <button
-                                onClick={() =>
-                                  toggleConstraint(
-                                    store.id,
-                                    column.id,
-                                    "primary_key"
-                                  )
-                                }
+                        {/* Constraints - Dropdown + Badges */}
+                        <div className="col-span-3">
+                          <div className="flex flex-wrap gap-1 items-center">
+                            {/* Selected constraints as badges */}
+                            {column.constraints.map((c) => {
+                              const constraint = SQL_CONSTRAINTS.find((sc) => sc.value === c)
+                              if (!constraint) return null
+                              const colorClasses: Record<string, string> = {
+                                amber: "bg-amber-500/20 border-amber-500/50 text-amber-700 dark:text-amber-400",
+                                blue: "bg-blue-500/20 border-blue-500/50 text-blue-700 dark:text-blue-400",
+                                red: "bg-red-500/20 border-red-500/50 text-red-700 dark:text-red-400",
+                                green: "bg-green-500/20 border-green-500/50 text-green-700 dark:text-green-400",
+                                purple: "bg-purple-500/20 border-purple-500/50 text-purple-700 dark:text-purple-400",
+                                cyan: "bg-cyan-500/20 border-cyan-500/50 text-cyan-700 dark:text-cyan-400",
+                                gray: "bg-gray-500/20 border-gray-500/50 text-gray-700 dark:text-gray-400",
+                              }
+                              return (
+                                <span
+                                  key={c}
+                                  className={cn(
+                                    "px-1.5 py-0.5 text-[10px] rounded border font-medium cursor-pointer hover:opacity-70",
+                                    colorClasses[constraint.color] || colorClasses.gray
+                                  )}
+                                  onClick={() => !readOnly && toggleConstraint(store.id, column.id, c)}
+                                  title={`${constraint.label} - Click to remove`}
+                                >
+                                  {constraint.shortLabel}
+                                </span>
+                              )
+                            })}
+                            {/* Add constraint dropdown */}
+                            {!readOnly && (
+                              <select
+                                value=""
+                                onChange={(e) => {
+                                  if (e.target.value) {
+                                    toggleConstraint(store.id, column.id, e.target.value)
+                                  }
+                                }}
+                                className="px-1.5 py-0.5 text-[10px] rounded border border-dashed border-muted-foreground/30 bg-transparent hover:border-primary/50 focus:outline-none cursor-pointer"
                                 disabled={readOnly}
-                                className={cn(
-                                  "px-2 py-1 text-xs rounded-md border transition-colors",
-                                  column.constraints.includes("primary_key")
-                                    ? "bg-amber-500/20 border-amber-500/50 text-amber-700 dark:text-amber-400"
-                                    : "border-dashed border-muted-foreground/30 text-muted-foreground hover:border-amber-500/50"
-                                )}
                               >
-                                PK
-                              </button>
-                              <button
-                                onClick={() =>
-                                  toggleConstraint(
-                                    store.id,
-                                    column.id,
-                                    "unique"
-                                  )
-                                }
-                                disabled={readOnly}
-                                className={cn(
-                                  "px-2 py-1 text-xs rounded-md border transition-colors",
-                                  column.constraints.includes("unique")
-                                    ? "bg-blue-500/20 border-blue-500/50 text-blue-700 dark:text-blue-400"
-                                    : "border-dashed border-muted-foreground/30 text-muted-foreground hover:border-blue-500/50"
+                                <option value="">+ Add</option>
+                                {store.dbType === "sql" ? (
+                                  SQL_CONSTRAINTS
+                                    .filter((c) => !column.constraints.includes(c.value))
+                                    .map((c) => (
+                                      <option key={c.value} value={c.value}>
+                                        {c.label}
+                                      </option>
+                                    ))
+                                ) : (
+                                  <>
+                                    {!column.constraints.includes("required") && (
+                                      <option value="required">Required</option>
+                                    )}
+                                    {!column.constraints.includes("indexed") && (
+                                      <option value="indexed">Indexed</option>
+                                    )}
+                                    {!column.constraints.includes("unique") && (
+                                      <option value="unique">Unique</option>
+                                    )}
+                                  </>
                                 )}
-                              >
-                                UQ
-                              </button>
-                              <button
-                                onClick={() =>
-                                  toggleConstraint(
-                                    store.id,
-                                    column.id,
-                                    "not_null"
-                                  )
-                                }
-                                disabled={readOnly}
-                                className={cn(
-                                  "px-2 py-1 text-xs rounded-md border transition-colors",
-                                  column.constraints.includes("not_null")
-                                    ? "bg-red-500/20 border-red-500/50 text-red-700 dark:text-red-400"
-                                    : "border-dashed border-muted-foreground/30 text-muted-foreground hover:border-red-500/50"
-                                )}
-                              >
-                                NN
-                              </button>
-                              <button
-                                onClick={() =>
-                                  toggleConstraint(
-                                    store.id,
-                                    column.id,
-                                    "indexed"
-                                  )
-                                }
-                                disabled={readOnly}
-                                className={cn(
-                                  "px-2 py-1 text-xs rounded-md border transition-colors",
-                                  column.constraints.includes("indexed")
-                                    ? "bg-green-500/20 border-green-500/50 text-green-700 dark:text-green-400"
-                                    : "border-dashed border-muted-foreground/30 text-muted-foreground hover:border-green-500/50"
-                                )}
-                              >
-                                IDX
-                              </button>
-                            </>
-                          )}
-                          {store.dbType !== "sql" && (
-                            <>
-                              <button
-                                onClick={() =>
-                                  toggleConstraint(
-                                    store.id,
-                                    column.id,
-                                    "required"
-                                  )
-                                }
-                                disabled={readOnly}
-                                className={cn(
-                                  "px-2 py-1 text-xs rounded-md border transition-colors",
-                                  column.constraints.includes("required")
-                                    ? "bg-red-500/20 border-red-500/50 text-red-700 dark:text-red-400"
-                                    : "border-dashed border-muted-foreground/30 text-muted-foreground hover:border-red-500/50"
-                                )}
-                              >
-                                Req
-                              </button>
-                              <button
-                                onClick={() =>
-                                  toggleConstraint(
-                                    store.id,
-                                    column.id,
-                                    "indexed"
-                                  )
-                                }
-                                disabled={readOnly}
-                                className={cn(
-                                  "px-2 py-1 text-xs rounded-md border transition-colors",
-                                  column.constraints.includes("indexed")
-                                    ? "bg-green-500/20 border-green-500/50 text-green-700 dark:text-green-400"
-                                    : "border-dashed border-muted-foreground/30 text-muted-foreground hover:border-green-500/50"
-                                )}
-                              >
-                                Idx
-                              </button>
-                            </>
-                          )}
+                              </select>
+                            )}
+                          </div>
                         </div>
 
                         {/* Description */}
@@ -851,6 +945,8 @@ export default function SchemaEditor({
             })}
           </div>
         </div>
+      )}
+      </>
       )}
     </div>
   )

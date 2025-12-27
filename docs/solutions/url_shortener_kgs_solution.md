@@ -9,6 +9,10 @@ This document provides a complete, production-ready solution for a URL shortener
 4. [API Specification](#api-specification)
 5. [Implementation](#implementation)
 6. [Design Decisions](#design-decisions)
+7. [Test Scenarios](#test-scenarios)
+   - [Functional Tests](#functional-tests)
+   - [Performance Tests](#performance-tests)
+   - [Chaos Tests](#chaos-tests)
 
 ---
 
@@ -1071,4 +1075,414 @@ Expiration:
 - Optional expires_at stored in DB and cache
 - Checked on every read, returns 404 if expired
 - Background cleanup for expired entries
+```
+
+---
+
+## Test Scenarios
+
+This section details all the test scenarios used to validate the URL shortener implementation across functional, performance, and chaos testing dimensions.
+
+### Functional Tests
+
+Functional tests verify that the core API endpoints and business logic work correctly.
+
+#### 1. Health & Status Tests
+
+| Test | Description | Expected Behavior |
+|------|-------------|-------------------|
+| Health Endpoint | `GET /health` returns service health | Returns 200 with `{"status": "healthy"}` |
+| Root Endpoint | `GET /` returns service info | Returns 200 with service name and version |
+| KGS Pool Status | Health includes key pool size | `kgs_pool_size` in health response (optional) |
+
+#### 2. URL Creation Tests (Core CRUD)
+
+| Test | Description | Expected Behavior |
+|------|-------------|-------------------|
+| Create Basic URL | POST with valid `original_url` | Returns 201 with `short_code`, `short_url`, `created_at` |
+| Create with Custom Code | POST with `custom_code` field | Returns 201 with specified code or 409 if taken |
+| Create with Expiration | POST with `expires_in_hours` or `expires_in_seconds` | Returns 201 with `expires_at` timestamp |
+| Invalid URL Rejected | POST with malformed URL | Returns 400/422 with validation error |
+| Empty URL Rejected | POST with empty `original_url` | Returns 400/422 |
+| Missing URL Field | POST without `original_url` | Returns 400/422 |
+| Duplicate URL Handling | POST same URL twice | Both succeed (may return same or different codes) |
+
+**Example Request:**
+```json
+POST /api/v1/urls
+{
+  "original_url": "https://www.example.com/long/path",
+  "custom_code": "mylink",
+  "expires_in_hours": 24
+}
+```
+
+**Example Response:**
+```json
+{
+  "id": 12345,
+  "short_code": "mylink",
+  "short_url": "https://short.url/mylink",
+  "original_url": "https://www.example.com/long/path",
+  "created_at": "2024-01-15T10:30:00Z",
+  "expires_at": "2024-01-16T10:30:00Z"
+}
+```
+
+#### 3. URL Retrieval Tests
+
+| Test | Description | Expected Behavior |
+|------|-------------|-------------------|
+| Get by Short Code | `GET /api/v1/urls/{code}` | Returns 200 with URL details |
+| Redirect Short URL | `GET /{code}` | Returns 301/302 redirect to original URL |
+| Nonexistent Code | `GET /api/v1/urls/nonexistent` | Returns 404 |
+| Expired URL Access | Access URL after expiration | Returns 404 or 410 (Gone) |
+
+#### 4. URL Analytics Tests
+
+| Test | Description | Expected Behavior |
+|------|-------------|-------------------|
+| Get URL Stats | `GET /api/v1/urls/{code}/stats` | Returns 200 with `clicks`, `created_at`, `last_accessed_at` |
+| Click Count Increments | Access URL multiple times | `clicks` count increases correctly |
+
+#### 5. URL Deletion Tests
+
+| Test | Description | Expected Behavior |
+|------|-------------|-------------------|
+| Delete URL | `DELETE /api/v1/urls/{code}` | Returns 204, URL no longer accessible |
+| Delete Nonexistent | `DELETE /api/v1/urls/nonexistent` | Returns 404 |
+
+#### 6. URL Validation Tests
+
+| Test | Description | Expected Behavior |
+|------|-------------|-------------------|
+| XSS Prevention | `javascript:alert(1)` URL | Rejected with 400/422 |
+| Data URI Blocked | `data:text/html,...` URL | Rejected with 400/422 |
+| File URI Blocked | `file:///etc/passwd` URL | Rejected with 400/422 |
+| SQL Injection | `'; DROP TABLE urls;--` in code | Returns 400/404, no SQL executed |
+| Path Traversal | `../../../etc/passwd` as code | Returns 400/404 |
+
+#### 7. URL Expiration Tests
+
+| Test | Description | Expected Behavior |
+|------|-------------|-------------------|
+| URL Expires After TTL | Create with 2-second TTL, wait 5 seconds | Returns 404/410 after expiration |
+| URL Accessible Before Expiry | Access URL within TTL window | Returns 200 or redirect |
+| Expiry Info in Response | Create with TTL | `expires_at` included in response |
+
+#### 8. Data Integrity Tests
+
+| Test | Description | Expected Behavior |
+|------|-------------|-------------------|
+| Original URL Preserved | Create and retrieve URL | Original URL exactly matches |
+| Short Code Uniqueness | Create 50 URLs | All short codes are unique |
+| Special Characters | URL with `?query=val&foo=bar` | Preserved correctly |
+| Unicode URLs | URL with non-ASCII paths | Handled correctly (accepted or rejected consistently) |
+
+#### 9. Key Generation Service (KGS) Tests
+
+| Test | Description | Expected Behavior |
+|------|-------------|-------------------|
+| KGS Generates Unique Codes | Create 50 URLs rapidly | All codes unique, no duplicates |
+| KGS Code Format | Check generated code format | 4-10 alphanumeric characters |
+| KGS High Throughput | 20 concurrent creates | At least 15 succeed with unique codes |
+| Custom Code Validation | Provide valid custom code | Accepted or conflict error |
+| Custom Code Conflict | Use same custom code twice | Second request returns 409 |
+| Fast Key Allocation | Measure create latency | Average < 2000ms (including cold start) |
+| Rapid Sequential Creates | 30 rapid creates | No pool exhaustion (no 503) |
+| Character Distribution | Check randomness of codes | At least 2 different starting characters |
+
+#### 10. Edge Cases
+
+| Test | Description | Expected Behavior |
+|------|-------------|-------------------|
+| Very Long URL (2000+ chars) | Create with 2000-char path | Accepted or rejected with proper error |
+| Concurrent Requests | 10 parallel creates | At least 8 succeed |
+| Empty Request Body | POST with empty body | Returns 400/415/422 |
+| Wrong Content-Type | POST with text/plain | Returns 400/415 or handles gracefully |
+
+---
+
+### Performance Tests
+
+Performance tests validate system behavior under load using tools like Locust or k6.
+
+#### 1. Load Test Configuration
+
+```python
+# Locust configuration
+class URLShortenerUser(HttpUser):
+    wait_time = between(0.5, 2.0)  # 0.5-2 seconds between requests
+
+    # Traffic ratio: 80% reads, 20% writes
+    @task(4)  # Weight 4
+    def read_url(self):
+        self.client.get(f"/{random_short_code}")
+
+    @task(1)  # Weight 1
+    def create_url(self):
+        self.client.post("/api/v1/urls", json={...})
+```
+
+#### 2. Latency Benchmarks
+
+| Metric | Target | Description |
+|--------|--------|-------------|
+| P50 Latency | < 100ms | 50th percentile response time |
+| P95 Latency | < 500ms | 95th percentile response time |
+| P99 Latency | < 1000ms | 99th percentile response time |
+| Create URL Avg | < 2000ms | Average time to create (allows cold start) |
+| Redirect Avg | < 500ms | Average redirect latency |
+
+#### 3. Throughput Targets
+
+| Metric | Target | Description |
+|--------|--------|-------------|
+| Target RPS | 100+ | Requests per second at steady state |
+| Error Rate | < 1% | Percentage of failed requests |
+| Success Ratio | > 99% | Successful requests under load |
+
+#### 4. Traffic Pattern Tests
+
+| Pattern | Description | Duration |
+|---------|-------------|----------|
+| Ramp Up | 0 → 50 users over 60s | Gradual load increase |
+| Sustained Load | 50 users for 120s | Steady state testing |
+| Spike Test | 50 → 100 → 50 users | Sudden traffic spike |
+| Soak Test | 20 users for 300s | Extended duration |
+
+#### 5. Load Test Scenarios
+
+```yaml
+# Test Scenario: Standard Load
+scenarios:
+  - name: url_creation
+    executor: constant-vus
+    vus: 10
+    duration: 60s
+    exec: createURL
+
+  - name: url_access
+    executor: constant-vus
+    vus: 40
+    duration: 60s
+    exec: accessURL
+
+  - name: analytics
+    executor: constant-vus
+    vus: 5
+    duration: 60s
+    exec: getStats
+```
+
+#### 6. Performance Test Assertions
+
+```javascript
+// k6 thresholds
+thresholds: {
+  'http_req_duration': ['p(95)<500', 'p(99)<1000'],
+  'http_req_failed': ['rate<0.01'],
+  'http_reqs': ['rate>100'],
+  'checks': ['rate>0.99']
+}
+```
+
+---
+
+### Chaos Tests
+
+Chaos tests verify system resilience to failures using Chaos Toolkit or similar tools.
+
+#### 1. Network Failure Tests
+
+| Scenario | Injection | Expected Behavior |
+|----------|-----------|-------------------|
+| Network Partition | Block traffic between service and DB | Graceful degradation, cached reads work |
+| High Latency | Add 500ms+ network delay | Requests complete, may timeout |
+| Packet Loss | Drop 10% of packets | Retries succeed, partial degradation |
+| DNS Failure | Block DNS resolution | Cached connections continue working |
+
+**Chaos Toolkit Experiment:**
+```yaml
+steady-state-hypothesis:
+  title: "Service remains responsive"
+  probes:
+    - type: probe
+      name: health-check
+      tolerance: 200
+      provider:
+        type: http
+        url: "http://service/health"
+
+method:
+  - type: action
+    name: inject-network-latency
+    provider:
+      type: process
+      path: tc
+      arguments: "qdisc add dev eth0 root netem delay 500ms"
+    pauses:
+      after: 30
+```
+
+#### 2. Database Failure Tests
+
+| Scenario | Injection | Expected Behavior |
+|----------|-----------|-------------------|
+| Database Latency | Add 5s+ DB response delay | Timeouts with proper error responses |
+| Connection Failure | Kill DB connections | 503 errors, no data corruption |
+| Partial Write Failure | Fail mid-transaction | Rollback, consistent state |
+| Read Replica Lag | Delay replica by 30s | May serve stale data (acceptable) |
+
+**Test Implementation:**
+```python
+def test_database_failure_handling():
+    # Inject database latency
+    inject_db_latency(seconds=5)
+
+    # Attempt to create URL
+    response = client.post("/api/v1/urls", json={...}, timeout=10)
+
+    # Should get timeout or 503, not 500
+    assert response.status_code in [503, 504, 408]
+
+    # Remove injection
+    remove_db_latency()
+
+    # Service should recover
+    response = client.get("/health")
+    assert response.status_code == 200
+```
+
+#### 3. Cache Failure Tests
+
+| Scenario | Injection | Expected Behavior |
+|----------|-----------|-------------------|
+| Cache Unavailable | Stop Redis | Fallback to database reads |
+| Cache Corruption | Write invalid data | Handle gracefully, re-fetch from DB |
+| Cache Miss Storm | Flush all cache | Database handles load spike |
+| Cache Connection Pool | Exhaust connections | Queue or reject gracefully |
+
+**Chaos Experiment:**
+```yaml
+method:
+  - type: action
+    name: stop-redis
+    provider:
+      type: process
+      path: docker
+      arguments: "stop redis"
+    pauses:
+      after: 60
+
+rollbacks:
+  - type: action
+    name: restart-redis
+    provider:
+      type: process
+      path: docker
+      arguments: "start redis"
+```
+
+#### 4. Infrastructure Failure Tests
+
+| Scenario | Injection | Expected Behavior |
+|----------|-----------|-------------------|
+| Instance Crash | Kill service instance | Load balancer routes to healthy instances |
+| Cold Start | Scale to 0, then request | Acceptable cold start latency (<10s) |
+| Zonal Outage | Block one availability zone | Multi-zone deployment continues |
+| Memory Pressure | Consume 90% memory | OOM handling or graceful rejection |
+
+#### 5. KGS-Specific Chaos Tests
+
+| Scenario | Injection | Expected Behavior |
+|----------|-----------|-------------------|
+| KGS Pool Empty | Drain all unused keys | Emergency key generation kicks in |
+| KGS Redis Failure | Stop KGS Redis | Fallback to on-the-fly generation |
+| Slow Key Generation | Add latency to SPOP | Writes slow but succeed |
+| Concurrent Pool Drain | Many rapid creates | No duplicate keys issued |
+
+**KGS Resilience Test:**
+```python
+def test_kgs_pool_exhaustion():
+    # Simulate pool exhaustion by rapid creates
+    results = []
+    for i in range(1000):
+        response = client.post("/api/v1/urls", json={
+            "original_url": f"https://example.com/{i}"
+        })
+        results.append(response.status_code)
+
+    # Most should succeed (emergency fallback)
+    success_rate = sum(1 for r in results if r in [200, 201]) / len(results)
+    assert success_rate > 0.95, "Too many failures during pool stress"
+
+    # No duplicates in successful responses
+    codes = [r.json()["short_code"] for r in results if r.status_code in [200, 201]]
+    assert len(codes) == len(set(codes)), "Duplicate codes during stress"
+```
+
+#### 6. Steady State Verification
+
+Before and after each chaos experiment, verify:
+
+```yaml
+steady-state-hypothesis:
+  title: "URL Shortener is healthy"
+  probes:
+    - name: health-endpoint-responsive
+      type: probe
+      tolerance: 200
+      provider:
+        type: http
+        url: "${SERVICE_URL}/health"
+
+    - name: can-create-urls
+      type: probe
+      tolerance: [200, 201]
+      provider:
+        type: http
+        method: POST
+        url: "${SERVICE_URL}/api/v1/urls"
+        body: '{"original_url": "https://example.com/chaos-test"}'
+
+    - name: can-read-urls
+      type: probe
+      tolerance: 200
+      provider:
+        type: http
+        url: "${SERVICE_URL}/api/v1/urls/${TEST_SHORT_CODE}"
+```
+
+---
+
+## Test Coverage Summary
+
+| Category | Tests | Coverage |
+|----------|-------|----------|
+| **Functional** | 50+ | Core CRUD, validation, KGS, expiration |
+| **Performance** | 10+ | Latency, throughput, load patterns |
+| **Chaos** | 15+ | Network, database, cache, infrastructure |
+
+### Running Tests
+
+```bash
+# Functional tests
+pytest tests/functional/test_url_shortener.py -v
+
+# Performance tests (Locust)
+locust -f tests/performance/locustfile.py --host=$SERVICE_URL
+
+# Chaos tests (Chaos Toolkit)
+chaos run tests/chaos/network-failure.yaml
+chaos run tests/chaos/database-failure.yaml
+chaos run tests/chaos/cache-failure.yaml
+```
+
+### Test Environment Variables
+
+```bash
+export TEST_TARGET_URL="https://your-service-url.run.app"
+export DATABASE_URL="postgresql://..."
+export REDIS_URL="redis://..."
 ```
