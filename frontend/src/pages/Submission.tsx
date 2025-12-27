@@ -189,6 +189,7 @@ export default function Submission() {
           return (
             <div key={s.id} className={cn("flex items-center", i < steps.length - 1 && "flex-1")}>
               <button
+                type="button"
                 onClick={() => goToStep(s.id)}
                 className={cn(
                   "flex items-center justify-center w-10 h-10 rounded-full font-medium transition-colors",

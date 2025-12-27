@@ -588,6 +588,7 @@ export default function SchemaEditor({
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
               {DATABASE_TYPES.map((db) => (
                 <button
+                  type="button"
                   key={db.id}
                   onClick={() => addStore(db.id)}
                   className={cn(
