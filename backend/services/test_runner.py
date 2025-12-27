@@ -20,8 +20,8 @@ from backend.config import get_settings
 
 settings = get_settings()
 
-# Path to test files
-TESTS_DIR = Path(__file__).parent.parent.parent / "tests"
+# Path to test files - use environment variable or fallback to relative path
+TESTS_DIR = Path(os.getenv("TESTS_DIR", str(Path(__file__).parent.parent.parent / "tests")))
 
 
 class TestRunner:
@@ -359,7 +359,19 @@ class TestRunner:
                 "test_name": "load_test",
                 "status": TestStatus.SKIPPED.value,
                 "duration_ms": 0,
-                "details": {"error": "No Locust file found"},
+                "details": {"error": f"No Locust file found at {locust_file}"},
+            }]
+
+        # Check if locust command is available
+        import shutil
+        locust_cmd = shutil.which("locust")
+        if not locust_cmd:
+            return [{
+                "test_type": TestType.PERFORMANCE.value,
+                "test_name": "load_test",
+                "status": TestStatus.SKIPPED.value,
+                "duration_ms": 0,
+                "details": {"error": "Locust command not found in PATH"},
             }]
 
         try:
@@ -367,7 +379,7 @@ class TestRunner:
             workspace.mkdir(exist_ok=True)
 
             proc = await asyncio.create_subprocess_exec(
-                "locust",
+                locust_cmd,
                 "-f", str(locust_file),
                 "--headless",
                 "--host", endpoint_url,
@@ -441,7 +453,20 @@ class TestRunner:
                 "status": TestStatus.SKIPPED.value,
                 "duration_ms": 0,
                 "chaos_scenario": "none",
-                "details": {"error": "No chaos experiment file found"},
+                "details": {"error": f"No chaos experiment file found at {chaos_file}"},
+            }]
+
+        # Check if chaos command is available
+        import shutil
+        chaos_cmd = shutil.which("chaos")
+        if not chaos_cmd:
+            return [{
+                "test_type": TestType.CHAOS.value,
+                "test_name": "chaos_experiment",
+                "status": TestStatus.SKIPPED.value,
+                "duration_ms": 0,
+                "chaos_scenario": "none",
+                "details": {"error": "Chaos Toolkit command not found in PATH"},
             }]
 
         try:
@@ -464,7 +489,7 @@ class TestRunner:
                 json.dump(modified_experiment, f, indent=2)
 
             proc = await asyncio.create_subprocess_exec(
-                "chaos", "run", str(modified_file),
+                chaos_cmd, "run", str(modified_file),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=str(workspace),

@@ -30,13 +30,30 @@ RUN curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | gpg --dearmor -
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Verify locust and chaos are installed and accessible
+RUN which locust && locust --version
+RUN which chaos && chaos --version
+
 # Copy application code
 COPY backend/ ./backend/
 COPY tests/ ./tests/
 
-# Create non-root user
+# Set tests directory path as environment variable
+ENV TESTS_DIR=/app/tests
+
+# Ensure test files are readable
+RUN chmod -R 755 /app/tests
+
+# Create non-root user and set permissions
 RUN useradd -m appuser && chown -R appuser:appuser /app
+
+# Create temp directory for test workspaces
+RUN mkdir -p /tmp/test_workspaces && chown -R appuser:appuser /tmp/test_workspaces
+
 USER appuser
+
+# Ensure PATH includes pip installed binaries
+ENV PATH="/usr/local/bin:${PATH}"
 
 EXPOSE 8080
 
