@@ -1,15 +1,21 @@
 /**
  * Design Chat Component
  * Claude-powered chatbot for system design guidance
+ *
+ * Supports difficulty levels:
+ * - Easy (L5): Senior Software Engineer
+ * - Medium (L6): Staff Engineer
+ * - Hard (L7): Principal Engineer
  */
 
 import { useState, useRef, useEffect } from "react"
-import { Send, Bot, User, Loader2, Sparkles, AlertCircle, CheckCircle, Lightbulb } from "lucide-react"
+import { Send, Bot, User, Loader2, Sparkles, AlertCircle, CheckCircle, Lightbulb, Flag, GraduationCap } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
-import { chatApi, ChatMessage, ChatResponse, DiagramFeedback } from "@/api/client"
+import { chatApi, ChatMessage, ChatResponse, DiagramFeedback, DifficultyLevel, DesignSummaryResponse } from "@/api/client"
+import DesignSummary from "./DesignSummary"
 
 interface DesignChatProps {
   problemId: number
@@ -17,6 +23,15 @@ interface DesignChatProps {
   currentApiSpec?: any
   currentDiagram?: any
   readOnly?: boolean
+  difficultyLevel?: DifficultyLevel
+  onSummaryGenerated?: (summary: DesignSummaryResponse) => void
+}
+
+// Engineering level labels
+const levelLabels: Record<DifficultyLevel, { level: string; title: string }> = {
+  easy: { level: "L5", title: "Senior SWE" },
+  medium: { level: "L6", title: "Staff Engineer" },
+  hard: { level: "L7", title: "Principal Engineer" },
 }
 
 interface Message extends ChatMessage {
@@ -48,11 +63,16 @@ export default function DesignChat({
   currentApiSpec,
   currentDiagram,
   readOnly = false,
+  difficultyLevel = "medium",
+  onSummaryGenerated,
 }: DesignChatProps) {
   const [messages, setMessages] = useState<Message[]>([WELCOME_MESSAGE])
   const [inputValue, setInputValue] = useState("")
   const [isLoading, setIsLoading] = useState(false)
+  const [isGeneratingSummary, setIsGeneratingSummary] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [designSummary, setDesignSummary] = useState<DesignSummaryResponse | null>(null)
+  const [showSummary, setShowSummary] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
@@ -96,6 +116,7 @@ export default function DesignChat({
         current_schema: currentSchema,
         current_api_spec: currentApiSpec,
         current_diagram: currentDiagram,
+        difficulty_level: difficultyLevel,
       })
 
       // Add assistant message
@@ -125,6 +146,37 @@ export default function DesignChat({
       return
     }
     sendMessage("Please evaluate my current diagram and provide detailed feedback on my architecture.")
+  }
+
+  /**
+   * Generate a design summary to conclude the session
+   */
+  const generateDesignSummary = async () => {
+    setIsGeneratingSummary(true)
+    setError(null)
+
+    try {
+      const summary = await chatApi.generateSummary({
+        problem_id: problemId,
+        difficulty_level: difficultyLevel,
+        conversation_history: getConversationHistory(),
+        current_schema: currentSchema,
+        current_api_spec: currentApiSpec,
+        current_diagram: currentDiagram,
+      })
+
+      setDesignSummary(summary)
+      setShowSummary(true)
+
+      // Notify parent component
+      if (onSummaryGenerated) {
+        onSummaryGenerated(summary)
+      }
+    } catch (err: any) {
+      setError(err.message || "Failed to generate design summary")
+    } finally {
+      setIsGeneratingSummary(false)
+    }
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -308,6 +360,44 @@ export default function DesignChat({
     )
   }
 
+  // If showing the summary view, render that instead
+  if (showSummary && designSummary) {
+    return (
+      <div className="flex flex-col h-full">
+        {/* Summary Header */}
+        <div className="flex items-center justify-between p-3 border-b bg-gradient-to-r from-green-500/10 to-emerald-500/10">
+          <div className="flex items-center gap-2">
+            <div className="p-1.5 rounded-lg bg-gradient-to-br from-green-500 to-emerald-600">
+              <Flag className="h-4 w-4 text-white" />
+            </div>
+            <div>
+              <h3 className="text-sm font-medium">Design Complete</h3>
+              <p className="text-xs text-muted-foreground">
+                {levelLabels[difficultyLevel].level} - {levelLabels[difficultyLevel].title}
+              </p>
+            </div>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowSummary(false)}
+            className="text-xs"
+          >
+            Back to Chat
+          </Button>
+        </div>
+
+        {/* Summary Content */}
+        <div className="flex-1 overflow-y-auto p-4">
+          <DesignSummary
+            summary={designSummary}
+            diagramData={currentDiagram ? JSON.stringify(currentDiagram) : undefined}
+          />
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
@@ -318,23 +408,42 @@ export default function DesignChat({
           </div>
           <div>
             <h3 className="text-sm font-medium">Design Coach</h3>
-            <p className="text-xs text-muted-foreground">
-              Powered by Claude AI
+            <p className="text-xs text-muted-foreground flex items-center gap-1">
+              <GraduationCap className="h-3 w-3" />
+              {levelLabels[difficultyLevel].level} - {levelLabels[difficultyLevel].title}
             </p>
           </div>
         </div>
-        {!readOnly && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={evaluateDiagram}
-            disabled={isLoading || !currentDiagram}
-            className="text-xs"
-          >
-            <Sparkles className="h-3 w-3 mr-1" />
-            Evaluate My Diagram
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {!readOnly && (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={evaluateDiagram}
+                disabled={isLoading || !currentDiagram}
+                className="text-xs"
+              >
+                <Sparkles className="h-3 w-3 mr-1" />
+                Evaluate Diagram
+              </Button>
+              <Button
+                variant="default"
+                size="sm"
+                onClick={generateDesignSummary}
+                disabled={isLoading || isGeneratingSummary || messages.length < 3}
+                className="text-xs bg-green-600 hover:bg-green-700"
+              >
+                {isGeneratingSummary ? (
+                  <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                ) : (
+                  <Flag className="h-3 w-3 mr-1" />
+                )}
+                {isGeneratingSummary ? "Generating..." : "Complete Design"}
+              </Button>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Messages */}

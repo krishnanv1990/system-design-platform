@@ -1,6 +1,11 @@
 """
 Problems API routes.
 CRUD operations for system design problems.
+
+Supports difficulty levels mapped to engineering levels:
+- easy: L5 SWE (Senior Software Engineer)
+- medium: L6 SWE (Staff Engineer)
+- hard: L7 SWE (Principal Engineer)
 """
 
 from typing import List, Optional
@@ -8,17 +13,84 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
-from backend.models.problem import Problem
+from backend.models.problem import Problem, DIFFICULTY_LEVELS
 from backend.models.user import User
 from backend.schemas.problem import (
     ProblemCreate,
     ProblemUpdate,
     ProblemResponse,
     ProblemListResponse,
+    DifficultyLevelInfo,
 )
 from backend.auth.jwt_handler import get_current_user, get_current_user_optional
 
 router = APIRouter()
+
+
+def get_difficulty_info(difficulty: str) -> Optional[DifficultyLevelInfo]:
+    """
+    Get difficulty level info for a given difficulty.
+
+    Args:
+        difficulty: Difficulty level (easy/medium/hard)
+
+    Returns:
+        DifficultyLevelInfo with level, title, and description
+    """
+    if difficulty in DIFFICULTY_LEVELS:
+        level_data = DIFFICULTY_LEVELS[difficulty]
+        return DifficultyLevelInfo(
+            level=level_data["level"],
+            title=level_data["title"],
+            description=level_data["description"],
+        )
+    return None
+
+
+def problem_to_response(problem: Problem) -> dict:
+    """
+    Convert a Problem model to a response dict with difficulty info.
+
+    Args:
+        problem: Problem model instance
+
+    Returns:
+        Dict ready for ProblemResponse serialization
+    """
+    return {
+        "id": problem.id,
+        "title": problem.title,
+        "description": problem.description,
+        "difficulty": problem.difficulty,
+        "difficulty_requirements": problem.difficulty_requirements,
+        "difficulty_info": get_difficulty_info(problem.difficulty),
+        "expected_schema": problem.expected_schema,
+        "expected_api_spec": problem.expected_api_spec,
+        "hints": problem.hints,
+        "tags": problem.tags,
+        "created_at": problem.created_at,
+    }
+
+
+def problem_to_list_response(problem: Problem) -> dict:
+    """
+    Convert a Problem model to a list response dict with difficulty info.
+
+    Args:
+        problem: Problem model instance
+
+    Returns:
+        Dict ready for ProblemListResponse serialization
+    """
+    return {
+        "id": problem.id,
+        "title": problem.title,
+        "description": problem.description,
+        "difficulty": problem.difficulty,
+        "difficulty_info": get_difficulty_info(problem.difficulty),
+        "tags": problem.tags,
+        "created_at": problem.created_at,
+    }
 
 
 @router.get("", response_model=List[ProblemListResponse])
@@ -35,12 +107,12 @@ async def list_problems(
     Args:
         skip: Number of records to skip (pagination)
         limit: Maximum number of records to return
-        difficulty: Filter by difficulty level
+        difficulty: Filter by difficulty level (easy/medium/hard)
         tag: Filter by tag
         db: Database session
 
     Returns:
-        List of problems (without validation rules for security)
+        List of problems with difficulty level info (L5/L6/L7)
     """
     query = db.query(Problem)
 
@@ -52,12 +124,18 @@ async def list_problems(
         query = query.filter(Problem.tags.contains([tag]))
 
     problems = query.offset(skip).limit(limit).all()
-    return problems
+
+    # Add difficulty level info to each problem
+    return [problem_to_list_response(p) for p in problems]
 
 
 @router.get("/{problem_id}", response_model=ProblemResponse)
 async def get_problem(
     problem_id: int,
+    selected_difficulty: Optional[str] = Query(
+        None,
+        description="Override difficulty level (easy/medium/hard)"
+    ),
     db: Session = Depends(get_db),
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
@@ -66,11 +144,12 @@ async def get_problem(
 
     Args:
         problem_id: Problem ID
+        selected_difficulty: Optional difficulty level override
         db: Database session
         current_user: Optional authenticated user
 
     Returns:
-        Problem details (includes hints if authenticated)
+        Problem details with difficulty level info (L5/L6/L7)
     """
     problem = db.query(Problem).filter(Problem.id == problem_id).first()
 
@@ -80,7 +159,13 @@ async def get_problem(
             detail="Problem not found"
         )
 
-    return problem
+    response = problem_to_response(problem)
+
+    # If a specific difficulty is selected, use that for difficulty_info
+    if selected_difficulty and selected_difficulty in DIFFICULTY_LEVELS:
+        response["difficulty_info"] = get_difficulty_info(selected_difficulty)
+
+    return response
 
 
 @router.post("", response_model=ProblemResponse, status_code=status.HTTP_201_CREATED)
@@ -98,14 +183,23 @@ async def create_problem(
         current_user: Authenticated user
 
     Returns:
-        Created problem
+        Created problem with difficulty level info
     """
     # TODO: Add admin role check in production
+
+    # Convert difficulty_requirements to dict if provided
+    difficulty_reqs = None
+    if problem_data.difficulty_requirements:
+        difficulty_reqs = {
+            k: v.model_dump() if hasattr(v, 'model_dump') else v
+            for k, v in problem_data.difficulty_requirements.items()
+        }
 
     problem = Problem(
         title=problem_data.title,
         description=problem_data.description,
         difficulty=problem_data.difficulty,
+        difficulty_requirements=difficulty_reqs,
         expected_schema=problem_data.expected_schema,
         expected_api_spec=problem_data.expected_api_spec,
         validation_rules=problem_data.validation_rules,
@@ -117,7 +211,7 @@ async def create_problem(
     db.commit()
     db.refresh(problem)
 
-    return problem
+    return problem_to_response(problem)
 
 
 @router.put("/{problem_id}", response_model=ProblemResponse)
@@ -137,7 +231,7 @@ async def update_problem(
         current_user: Authenticated user
 
     Returns:
-        Updated problem
+        Updated problem with difficulty level info
     """
     # TODO: Add admin role check in production
 
@@ -151,13 +245,21 @@ async def update_problem(
 
     # Update only provided fields
     update_data = problem_data.model_dump(exclude_unset=True)
+
+    # Handle difficulty_requirements conversion
+    if "difficulty_requirements" in update_data and update_data["difficulty_requirements"]:
+        update_data["difficulty_requirements"] = {
+            k: v.model_dump() if hasattr(v, 'model_dump') else v
+            for k, v in update_data["difficulty_requirements"].items()
+        }
+
     for field, value in update_data.items():
         setattr(problem, field, value)
 
     db.commit()
     db.refresh(problem)
 
-    return problem
+    return problem_to_response(problem)
 
 
 @router.delete("/{problem_id}", status_code=status.HTTP_204_NO_CONTENT)

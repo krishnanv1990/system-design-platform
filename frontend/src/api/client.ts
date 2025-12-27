@@ -242,11 +242,22 @@ export const assetsApi = {
 /**
  * Chat API - Design coaching chatbot
  */
+/**
+ * Chat Message type
+ */
 export interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
 }
 
+/**
+ * Difficulty level type
+ */
+export type DifficultyLevel = 'easy' | 'medium' | 'hard'
+
+/**
+ * Chat request with optional difficulty level
+ */
 export interface ChatRequest {
   problem_id: number
   message: string
@@ -254,8 +265,12 @@ export interface ChatRequest {
   current_schema?: any
   current_api_spec?: any
   current_diagram?: any
+  difficulty_level?: DifficultyLevel
 }
 
+/**
+ * Diagram feedback from AI coach
+ */
 export interface DiagramFeedback {
   strengths: string[]
   weaknesses: string[]
@@ -264,6 +279,9 @@ export interface DiagramFeedback {
   score?: number
 }
 
+/**
+ * Chat response from AI coach
+ */
 export interface ChatResponse {
   response: string
   diagram_feedback?: DiagramFeedback
@@ -272,16 +290,96 @@ export interface ChatResponse {
   demo_mode: boolean
 }
 
+/**
+ * Design summary request
+ */
+export interface DesignSummaryRequest {
+  problem_id: number
+  difficulty_level: DifficultyLevel
+  conversation_history: ChatMessage[]
+  current_schema?: any
+  current_api_spec?: any
+  current_diagram?: any
+}
+
+/**
+ * Difficulty level info (L5/L6/L7)
+ */
+export interface DifficultyLevelInfo {
+  level: string
+  title: string
+  description: string
+}
+
+/**
+ * Design summary response after completing the design session
+ */
+export interface DesignSummaryResponse {
+  summary: string
+  key_components: string[]
+  strengths: string[]
+  areas_for_improvement: string[]
+  overall_score: number | null
+  difficulty_level: DifficultyLevel
+  level_info: DifficultyLevelInfo
+  demo_mode: boolean
+}
+
+/**
+ * Level requirements response
+ */
+export interface LevelRequirementsResponse {
+  problem_id: number
+  problem_title: string
+  difficulty: DifficultyLevel
+  level_info: DifficultyLevelInfo
+  requirements: string
+}
+
+/**
+ * Chat API for design coaching
+ * Supports difficulty levels mapped to engineering levels:
+ * - easy: L5 (Senior SWE)
+ * - medium: L6 (Staff Engineer)
+ * - hard: L7 (Principal Engineer)
+ */
 export const chatApi = {
+  /**
+   * Send a message to the AI coach
+   */
   sendMessage: async (request: ChatRequest): Promise<ChatResponse> => {
     const response = await api.post('/chat/', request)
     return response.data
   },
 
+  /**
+   * Evaluate a diagram and get feedback
+   */
   evaluateDiagram: async (problemId: number, diagramData: any): Promise<any> => {
     const response = await api.post('/chat/evaluate-diagram', null, {
       params: { problem_id: problemId },
       data: diagramData,
+    })
+    return response.data
+  },
+
+  /**
+   * Generate a design summary after completing the session
+   */
+  generateSummary: async (request: DesignSummaryRequest): Promise<DesignSummaryResponse> => {
+    const response = await api.post('/chat/generate-summary', request)
+    return response.data
+  },
+
+  /**
+   * Get level-specific requirements for a problem
+   */
+  getLevelRequirements: async (
+    problemId: number,
+    difficulty: DifficultyLevel = 'medium'
+  ): Promise<LevelRequirementsResponse> => {
+    const response = await api.get(`/chat/level-requirements/${problemId}`, {
+      params: { difficulty },
     })
     return response.data
   },

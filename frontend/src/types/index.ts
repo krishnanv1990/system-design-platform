@@ -1,5 +1,10 @@
 /**
  * TypeScript type definitions for the System Design Platform
+ *
+ * Supports difficulty levels mapped to engineering levels:
+ * - easy: L5 SWE (Senior Software Engineer)
+ * - medium: L6 SWE (Staff Engineer)
+ * - hard: L7 SWE (Principal Engineer)
  */
 
 // User types
@@ -11,12 +16,31 @@ export interface User {
   created_at: string
 }
 
+// Difficulty level types
+export type DifficultyLevel = 'easy' | 'medium' | 'hard'
+
+export interface DifficultyLevelInfo {
+  level: string  // L5, L6, L7
+  title: string  // Senior Software Engineer, Staff Engineer, Principal Engineer
+  description: string
+}
+
+export interface DifficultyRequirements {
+  focus_areas: string[]
+  expected_components: string[]
+  evaluation_criteria: string[]
+  scale_requirements?: string
+  additional_considerations?: string[]
+}
+
 // Problem types
 export interface Problem {
   id: number
   title: string
   description: string
-  difficulty: 'easy' | 'medium' | 'hard'
+  difficulty: DifficultyLevel
+  difficulty_requirements?: Record<DifficultyLevel, DifficultyRequirements> | null
+  difficulty_info?: DifficultyLevelInfo | null
   expected_schema: Record<string, unknown> | null
   expected_api_spec: Record<string, unknown> | null
   hints: string[] | null
@@ -28,7 +52,8 @@ export interface ProblemListItem {
   id: number
   title: string
   description: string
-  difficulty: 'easy' | 'medium' | 'hard'
+  difficulty: DifficultyLevel
+  difficulty_info?: DifficultyLevelInfo | null
   tags: string[] | null
   created_at: string
 }
@@ -180,4 +205,65 @@ export interface TokenResponse {
   access_token: string
   token_type: string
   user: User
+}
+
+// Design Summary types
+export interface DesignSummaryRequest {
+  problem_id: number
+  difficulty_level: DifficultyLevel
+  conversation_history: ChatMessage[]
+  current_schema?: Record<string, unknown>
+  current_api_spec?: Record<string, unknown>
+  current_diagram?: Record<string, unknown>
+}
+
+export interface DesignSummaryResponse {
+  summary: string
+  key_components: string[]
+  strengths: string[]
+  areas_for_improvement: string[]
+  overall_score: number | null
+  difficulty_level: DifficultyLevel
+  level_info: DifficultyLevelInfo
+  demo_mode: boolean
+}
+
+// Chat types
+export interface ChatMessage {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+export interface ChatRequest {
+  problem_id: number
+  message: string
+  conversation_history: ChatMessage[]
+  current_schema?: Record<string, unknown>
+  current_api_spec?: Record<string, unknown>
+  current_diagram?: Record<string, unknown>
+  difficulty_level?: DifficultyLevel
+}
+
+export interface DiagramFeedback {
+  strengths: string[]
+  weaknesses: string[]
+  suggested_improvements: string[]
+  is_on_track: boolean
+  score?: number
+}
+
+export interface ChatResponse {
+  response: string
+  diagram_feedback?: DiagramFeedback
+  suggested_improvements: string[]
+  is_on_track: boolean
+  demo_mode: boolean
+}
+
+export interface LevelRequirementsResponse {
+  problem_id: number
+  problem_title: string
+  difficulty: DifficultyLevel
+  level_info: DifficultyLevelInfo
+  requirements: string
 }

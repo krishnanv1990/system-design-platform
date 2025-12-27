@@ -10,6 +10,8 @@ import { Button } from "@/components/ui/button"
 import DesignCanvas from "./DesignCanvas"
 import DesignChat from "./DesignChat"
 
+import { DifficultyLevel } from "@/api/client"
+
 interface DesignEditorProps {
   value: string
   onChange: (value: string) => void
@@ -17,6 +19,7 @@ interface DesignEditorProps {
   problemId?: number
   currentSchema?: string
   currentApiSpec?: string
+  difficultyLevel?: DifficultyLevel
 }
 
 interface DesignData {
@@ -32,6 +35,7 @@ export default function DesignEditor({
   problemId,
   currentSchema,
   currentApiSpec,
+  difficultyLevel = "medium",
 }: DesignEditorProps) {
   const [chatExpanded, setChatExpanded] = useState(true)
 
@@ -214,6 +218,7 @@ export default function DesignEditor({
               currentApiSpec={parsedApiSpec}
               currentDiagram={currentDiagram}
               readOnly={readOnly}
+              difficultyLevel={difficultyLevel}
             />
           </div>
         )}

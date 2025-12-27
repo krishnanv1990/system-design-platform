@@ -591,6 +591,150 @@ The code must be syntactically valid and immediately runnable."""
 
         return code.strip()
 
+    async def generate_design_summary(
+        self,
+        problem_description: str,
+        problem_title: str,
+        difficulty_level: str,
+        level_requirements: str,
+        conversation_history: list[Dict[str, str]],
+        current_schema: Optional[Dict[str, Any]] = None,
+        current_api_spec: Optional[Dict[str, Any]] = None,
+        current_diagram: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Generate a comprehensive design summary after the chat session.
+
+        Args:
+            problem_description: The problem being solved
+            problem_title: Title of the problem
+            difficulty_level: Difficulty level (easy/medium/hard)
+            level_requirements: Requirements for this difficulty level
+            conversation_history: Previous messages in the conversation
+            current_schema: Current database schema design (if any)
+            current_api_spec: Current API specification (if any)
+            current_diagram: Current diagram data (if any)
+
+        Returns:
+            Dict with summary, key_components, strengths, areas_for_improvement, overall_score
+        """
+        # Demo mode response
+        if self.demo_mode:
+            return {
+                "summary": f"""## Design Summary for {problem_title}
+
+This is a demo summary for your **{difficulty_level.upper()}** level ({self._get_level_label(difficulty_level)}) design.
+
+### Your Design Approach
+Based on the conversation, you have been working on designing a system that addresses the core requirements of the problem. Your design shows an understanding of the key concepts involved.
+
+### Key Architecture Decisions
+- You discussed the importance of using a Key Generation Service (KGS) for generating short codes
+- Database design considerations were explored
+- API endpoint structure was outlined
+
+### Implementation Notes
+In a production implementation, you would need to consider:
+- Proper indexing strategies for your database
+- Caching layers for improved read performance
+- Monitoring and observability for production systems
+
+*Demo mode: In production, Claude would provide a detailed analysis of your specific design decisions and conversation.*""",
+                "key_components": [
+                    "Key Generation Service (KGS)",
+                    "Database for URL storage",
+                    "API layer for CRUD operations",
+                    "Caching layer (Redis)",
+                    "Redirect service",
+                ],
+                "strengths": [
+                    "Understanding of KGS for unique code generation",
+                    "Consideration of database schema design",
+                    "API endpoint structure planning",
+                ],
+                "areas_for_improvement": [
+                    "Consider adding more details on caching strategy",
+                    "Expand on error handling approaches",
+                    "Discuss monitoring and observability",
+                ],
+                "overall_score": 75,
+                "demo_mode": True,
+            }
+
+        # Build context for summary generation
+        context = f"""
+Problem: {problem_title}
+Description: {problem_description}
+
+Difficulty Level: {difficulty_level.upper()}
+Level Requirements:
+{level_requirements}
+
+"""
+        if current_schema:
+            context += f"Candidate's Database Schema:\n{json.dumps(current_schema, indent=2)}\n\n"
+
+        if current_api_spec:
+            context += f"Candidate's API Specification:\n{json.dumps(current_api_spec, indent=2)}\n\n"
+
+        if current_diagram:
+            context += f"Candidate's Diagram Data:\n{json.dumps(current_diagram, indent=2)}\n\n"
+
+        # Add conversation history summary
+        if conversation_history:
+            context += "Conversation History:\n"
+            for msg in conversation_history[-10:]:  # Last 10 messages
+                role = "Candidate" if msg.get("role") == "user" else "Coach"
+                context += f"{role}: {msg.get('content', '')[:500]}...\n"
+
+        system_prompt = """You are generating a final design summary for a system design interview session.
+
+Based on the conversation and artifacts provided, generate a comprehensive summary of the candidate's design.
+
+Respond with JSON in this exact format:
+{
+    "summary": "A 2-3 paragraph markdown summary of the candidate's design approach, key decisions, and overall assessment",
+    "key_components": ["List", "of", "key", "components", "in", "their", "design"],
+    "strengths": ["List", "of", "strong", "points", "in", "their", "design"],
+    "areas_for_improvement": ["List", "of", "areas", "that", "could", "be", "improved"],
+    "overall_score": 0-100 based on how well the design meets the level requirements
+}
+
+Evaluate the design against the specific requirements for the difficulty level.
+Be specific and constructive in your feedback."""
+
+        message = self.client.messages.create(
+            model=self.model,
+            max_tokens=2048,
+            system=system_prompt,
+            messages=[{"role": "user", "content": context}]
+        )
+
+        response_text = message.content[0].text
+
+        try:
+            result = json.loads(response_text)
+        except json.JSONDecodeError:
+            result = {
+                "summary": response_text,
+                "key_components": [],
+                "strengths": [],
+                "areas_for_improvement": [],
+                "overall_score": None,
+            }
+
+        result["demo_mode"] = False
+        return result
+
+    def _get_level_label(self, difficulty: str) -> str:
+        """Get human-readable level label for a difficulty."""
+        labels = {
+            "easy": "L5 - Senior SWE",
+            "medium": "L6 - Staff Engineer",
+            "hard": "L7 - Principal Engineer",
+        }
+        return labels.get(difficulty, difficulty)
+
     async def chat_about_design(
         self,
         problem_description: str,

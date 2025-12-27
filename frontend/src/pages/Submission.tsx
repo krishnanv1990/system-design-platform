@@ -12,7 +12,7 @@
  */
 
 import { useState, useEffect, useCallback, useMemo } from "react"
-import { useParams, useNavigate, useBlocker } from "react-router-dom"
+import { useParams, useNavigate, useBlocker, useSearchParams } from "react-router-dom"
 import {
   Check,
   ChevronLeft,
@@ -27,7 +27,7 @@ import {
   RotateCcw,
   RefreshCw,
 } from "lucide-react"
-import { problemsApi, submissionsApi } from "@/api/client"
+import { problemsApi, submissionsApi, DifficultyLevel } from "@/api/client"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -128,8 +128,12 @@ function validateJson(input: string): JsonValidationResult {
 
 export default function Submission() {
   const { id } = useParams<{ id: string }>()
+  const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const { toast } = useToast()
+
+  // Get difficulty level from URL query params, default to "medium"
+  const difficultyLevel = (searchParams.get("difficulty") as DifficultyLevel) || "medium"
 
   const [problem, setProblem] = useState<Problem | null>(null)
   const [loading, setLoading] = useState(true)
@@ -653,6 +657,7 @@ export default function Submission() {
                 problemId={problem?.id}
                 currentSchema={schemaInput}
                 currentApiSpec={apiSpecInput}
+                difficultyLevel={difficultyLevel}
               />
             )}
             {step === "review" && (

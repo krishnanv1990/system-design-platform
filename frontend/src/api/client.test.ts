@@ -233,5 +233,165 @@ describe('API Client', () => {
       expect(mockAxios.post).toHaveBeenCalledWith('/chat/', request)
       expect(result.response).toBe('Here is my suggestion...')
     })
+
+    it('sendMessage - sends message with difficulty level', async () => {
+      const request = {
+        problem_id: 1,
+        message: 'How do I design this at L7 level?',
+        conversation_history: [],
+        difficulty_level: 'hard' as const,
+      }
+      const response = {
+        response: 'For L7 level, you need global distribution...',
+        is_on_track: true,
+        demo_mode: false,
+      }
+      mockAxios.post.mockResolvedValueOnce({ data: response })
+
+      const result = await chatApi.sendMessage(request)
+
+      expect(mockAxios.post).toHaveBeenCalledWith('/chat/', request)
+      expect(result.response).toContain('L7')
+    })
+
+    it('generateSummary - generates design summary', async () => {
+      const request = {
+        problem_id: 1,
+        difficulty_level: 'medium' as const,
+        conversation_history: [
+          { role: 'user', content: 'How should I design this?' },
+          { role: 'assistant', content: 'Start with KGS...' },
+        ],
+      }
+      const response = {
+        summary: 'This design demonstrates a solid understanding...',
+        key_components: ['KGS', 'Redis Cache', 'Load Balancer'],
+        strengths: ['Good use of KGS', 'Proper caching'],
+        areas_for_improvement: ['Consider adding analytics'],
+        overall_score: 85,
+        difficulty_level: 'medium',
+        level_info: {
+          level: 'L6',
+          title: 'Staff Engineer',
+          description: 'Production-ready design',
+        },
+        demo_mode: false,
+      }
+      mockAxios.post.mockResolvedValueOnce({ data: response })
+
+      const result = await chatApi.generateSummary(request)
+
+      expect(mockAxios.post).toHaveBeenCalledWith('/chat/generate-summary', request)
+      expect(result.summary).toContain('solid understanding')
+      expect(result.key_components).toContain('KGS')
+      expect(result.overall_score).toBe(85)
+      expect(result.level_info.level).toBe('L6')
+    })
+
+    it('generateSummary - handles different difficulty levels', async () => {
+      const easyRequest = {
+        problem_id: 1,
+        difficulty_level: 'easy' as const,
+        conversation_history: [],
+      }
+      const easyResponse = {
+        summary: 'Basic implementation',
+        key_components: ['KGS'],
+        strengths: ['Working solution'],
+        areas_for_improvement: ['Add caching'],
+        overall_score: 70,
+        difficulty_level: 'easy',
+        level_info: {
+          level: 'L5',
+          title: 'Senior Software Engineer',
+          description: 'Core functionality',
+        },
+        demo_mode: true,
+      }
+      mockAxios.post.mockResolvedValueOnce({ data: easyResponse })
+
+      const result = await chatApi.generateSummary(easyRequest)
+
+      expect(result.difficulty_level).toBe('easy')
+      expect(result.level_info.level).toBe('L5')
+    })
+
+    it('getLevelRequirements - fetches level requirements', async () => {
+      const response = {
+        problem_id: 1,
+        problem_title: 'URL Shortener',
+        difficulty: 'medium',
+        level_info: {
+          level: 'L6',
+          title: 'Staff Engineer',
+          description: 'Production-ready design',
+        },
+        requirements: '**L6 (Staff SWE) URL Shortener Requirements:**...',
+      }
+      mockAxios.get.mockResolvedValueOnce({ data: response })
+
+      const result = await chatApi.getLevelRequirements(1, 'medium')
+
+      expect(mockAxios.get).toHaveBeenCalledWith('/chat/level-requirements/1', {
+        params: { difficulty: 'medium' },
+      })
+      expect(result.level_info.level).toBe('L6')
+      expect(result.requirements).toContain('L6')
+    })
+
+    it('getLevelRequirements - defaults to medium difficulty', async () => {
+      const response = {
+        problem_id: 1,
+        problem_title: 'URL Shortener',
+        difficulty: 'medium',
+        level_info: { level: 'L6', title: 'Staff Engineer', description: '' },
+        requirements: 'Medium level requirements',
+      }
+      mockAxios.get.mockResolvedValueOnce({ data: response })
+
+      await chatApi.getLevelRequirements(1)
+
+      expect(mockAxios.get).toHaveBeenCalledWith('/chat/level-requirements/1', {
+        params: { difficulty: 'medium' },
+      })
+    })
+
+    it('getLevelRequirements - fetches L5 requirements for easy', async () => {
+      const response = {
+        problem_id: 1,
+        problem_title: 'URL Shortener',
+        difficulty: 'easy',
+        level_info: {
+          level: 'L5',
+          title: 'Senior Software Engineer',
+          description: 'Core functionality',
+        },
+        requirements: '**L5 (Senior SWE) Requirements:**...',
+      }
+      mockAxios.get.mockResolvedValueOnce({ data: response })
+
+      const result = await chatApi.getLevelRequirements(1, 'easy')
+
+      expect(result.level_info.level).toBe('L5')
+    })
+
+    it('getLevelRequirements - fetches L7 requirements for hard', async () => {
+      const response = {
+        problem_id: 1,
+        problem_title: 'URL Shortener',
+        difficulty: 'hard',
+        level_info: {
+          level: 'L7',
+          title: 'Principal Engineer',
+          description: 'Global-scale architecture',
+        },
+        requirements: '**L7 (Principal SWE) Requirements:**...',
+      }
+      mockAxios.get.mockResolvedValueOnce({ data: response })
+
+      const result = await chatApi.getLevelRequirements(1, 'hard')
+
+      expect(result.level_info.level).toBe('L7')
+    })
   })
 })

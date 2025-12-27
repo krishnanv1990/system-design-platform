@@ -1,6 +1,11 @@
 /**
  * Problem list page
  * Shows all available system design problems
+ *
+ * Displays difficulty levels mapped to engineering levels:
+ * - Easy (L5): Senior Software Engineer
+ * - Medium (L6): Staff Engineer
+ * - Hard (L7): Principal Engineer
  */
 
 import { useState, useEffect } from "react"
@@ -12,10 +17,18 @@ import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import type { ProblemListItem } from "@/types"
 
+// Difficulty level variants for badge styling
 const difficultyVariant: Record<string, "success" | "warning" | "destructive"> = {
   easy: "success",
   medium: "warning",
   hard: "destructive",
+}
+
+// Engineering level labels for each difficulty
+const levelLabels: Record<string, string> = {
+  easy: "L5",
+  medium: "L6",
+  hard: "L7",
 }
 
 function ProblemListSkeleton() {
@@ -110,8 +123,11 @@ export default function ProblemList() {
                 <CardHeader className="pb-2">
                   <div className="flex items-center justify-between">
                     <CardTitle className="text-lg">{problem.title}</CardTitle>
-                    <Badge variant={difficultyVariant[problem.difficulty]}>
-                      {problem.difficulty}
+                    <Badge
+                      variant={difficultyVariant[problem.difficulty]}
+                      title={problem.difficulty_info?.title || ""}
+                    >
+                      {levelLabels[problem.difficulty] || problem.difficulty} - {problem.difficulty}
                     </Badge>
                   </div>
                 </CardHeader>
