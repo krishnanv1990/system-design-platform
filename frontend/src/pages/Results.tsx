@@ -17,8 +17,14 @@ import {
   Server,
   AlertTriangle,
   Code,
+  Cloud,
+  FileCode,
+  ChevronDown,
+  ChevronUp,
+  Copy,
+  Check,
 } from "lucide-react"
-import { submissionsApi, testsApi } from "@/api/client"
+import { submissionsApi, testsApi, assetsApi } from "@/api/client"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -40,6 +46,26 @@ interface DeploymentStatus {
   time_remaining_seconds: number
   time_remaining_minutes: number
   is_cleaned_up: boolean
+}
+
+interface GCPAssets {
+  submission_id: number
+  user_email: string
+  status: string
+  created_at: string
+  service_name: string | null
+  endpoint_url: string | null
+  region: string
+  container_image: string | null
+  console_links: {
+    cloud_run_service?: string
+    cloud_run_logs?: string
+    cloud_run_revisions?: string
+    cloud_build_history?: string
+    container_registry?: string
+    cloud_storage_source?: string
+  }
+  generated_code: string | null
 }
 
 const statusConfig: Record<
@@ -143,6 +169,11 @@ export default function Results() {
   const [submission, setSubmission] = useState<SubmissionDetail | null>(null)
   const [testSummary, setTestSummary] = useState<TestSummary | null>(null)
   const [deploymentStatus, setDeploymentStatus] = useState<DeploymentStatus | null>(null)
+  const [gcpAssets, setGcpAssets] = useState<GCPAssets | null>(null)
+  const [generatedCode, setGeneratedCode] = useState<string | null>(null)
+  const [showCode, setShowCode] = useState(false)
+  const [loadingCode, setLoadingCode] = useState(false)
+  const [copiedCode, setCopiedCode] = useState(false)
   const [loading, setLoading] = useState(true)
   const [tearingDown, setTearingDown] = useState(false)
 
@@ -174,6 +205,14 @@ export default function Results() {
             }
           } catch {
             // Deployment status not ready yet
+          }
+
+          // Load GCP assets
+          try {
+            const assets = await assetsApi.getSubmissionAssets(parseInt(id))
+            setGcpAssets(assets)
+          } catch {
+            // Assets not available yet
           }
         }
       } catch (err) {
@@ -223,6 +262,31 @@ export default function Results() {
     const hours = Math.floor(minutes / 60)
     const mins = Math.round(minutes % 60)
     return `${hours}h ${mins}m`
+  }
+
+  const handleLoadCode = async () => {
+    if (!id) return
+    setLoadingCode(true)
+    try {
+      const codeData = await assetsApi.getSubmissionCode(parseInt(id))
+      setGeneratedCode(codeData.code)
+      setShowCode(true)
+    } catch (err) {
+      console.error("Failed to load code:", err)
+    } finally {
+      setLoadingCode(false)
+    }
+  }
+
+  const handleCopyCode = async () => {
+    if (!generatedCode) return
+    try {
+      await navigator.clipboard.writeText(generatedCode)
+      setCopiedCode(true)
+      setTimeout(() => setCopiedCode(false), 2000)
+    } catch (err) {
+      console.error("Failed to copy:", err)
+    }
   }
 
   const getTestCounts = (tests: TestResult[]) => ({
@@ -399,6 +463,148 @@ export default function Results() {
                 </a>
               </div>
             )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* GCP Assets */}
+      {gcpAssets && (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Cloud className="h-4 w-4" />
+              GCP Resources
+            </CardTitle>
+            <Badge variant="secondary">{gcpAssets.region}</Badge>
+          </CardHeader>
+          <CardContent>
+            {/* Resource Links */}
+            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 mb-4">
+              {gcpAssets.console_links.cloud_run_service && (
+                <a
+                  href={gcpAssets.console_links.cloud_run_service}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 p-3 bg-muted/50 rounded-lg hover:bg-muted transition-colors"
+                >
+                  <Server className="h-4 w-4 text-blue-500" />
+                  <span className="text-sm">Cloud Run Service</span>
+                  <ExternalLink className="h-3 w-3 ml-auto text-muted-foreground" />
+                </a>
+              )}
+              {gcpAssets.console_links.cloud_run_logs && (
+                <a
+                  href={gcpAssets.console_links.cloud_run_logs}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 p-3 bg-muted/50 rounded-lg hover:bg-muted transition-colors"
+                >
+                  <FileCode className="h-4 w-4 text-green-500" />
+                  <span className="text-sm">Service Logs</span>
+                  <ExternalLink className="h-3 w-3 ml-auto text-muted-foreground" />
+                </a>
+              )}
+              {gcpAssets.console_links.cloud_build_history && (
+                <a
+                  href={gcpAssets.console_links.cloud_build_history}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 p-3 bg-muted/50 rounded-lg hover:bg-muted transition-colors"
+                >
+                  <Cloud className="h-4 w-4 text-orange-500" />
+                  <span className="text-sm">Build History</span>
+                  <ExternalLink className="h-3 w-3 ml-auto text-muted-foreground" />
+                </a>
+              )}
+              {gcpAssets.console_links.container_registry && (
+                <a
+                  href={gcpAssets.console_links.container_registry}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 p-3 bg-muted/50 rounded-lg hover:bg-muted transition-colors"
+                >
+                  <Cloud className="h-4 w-4 text-purple-500" />
+                  <span className="text-sm">Container Images</span>
+                  <ExternalLink className="h-3 w-3 ml-auto text-muted-foreground" />
+                </a>
+              )}
+            </div>
+
+            {/* Resource Summary */}
+            <div className="p-3 bg-muted/30 rounded-lg mb-4">
+              <h4 className="text-sm font-medium mb-2">Resource Details</h4>
+              <div className="grid gap-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Service Name:</span>
+                  <span className="font-mono">{gcpAssets.service_name}</span>
+                </div>
+                {gcpAssets.container_image && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Container Image:</span>
+                    <span className="font-mono text-xs truncate max-w-[300px]" title={gcpAssets.container_image}>
+                      {gcpAssets.container_image.split('/').pop()}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Generated Code Section */}
+            <div className="border-t pt-4">
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="text-sm font-medium flex items-center gap-2">
+                  <Code className="h-4 w-4" />
+                  Generated Code
+                </h4>
+                <div className="flex gap-2">
+                  {!showCode ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleLoadCode}
+                      disabled={loadingCode}
+                    >
+                      {loadingCode ? (
+                        <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                      ) : (
+                        <ChevronDown className="h-3 w-3 mr-1" />
+                      )}
+                      View Code
+                    </Button>
+                  ) : (
+                    <>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleCopyCode}
+                      >
+                        {copiedCode ? (
+                          <Check className="h-3 w-3 mr-1 text-green-500" />
+                        ) : (
+                          <Copy className="h-3 w-3 mr-1" />
+                        )}
+                        {copiedCode ? "Copied!" : "Copy"}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setShowCode(false)}
+                      >
+                        <ChevronUp className="h-3 w-3 mr-1" />
+                        Hide
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </div>
+              {showCode && generatedCode && (
+                <div className="relative">
+                  <pre className="p-4 bg-slate-900 text-slate-100 rounded-lg overflow-x-auto text-xs max-h-96 overflow-y-auto">
+                    <code>{generatedCode}</code>
+                  </pre>
+                </div>
+              )}
+            </div>
           </CardContent>
         </Card>
       )}

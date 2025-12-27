@@ -9,6 +9,7 @@ from backend.api.problems import router as problems_router
 from backend.api.submissions import router as submissions_router
 from backend.api.tests import router as tests_router
 from backend.api.admin import router as admin_router
+from backend.api.assets import router as assets_router
 
 # Create main API router
 api_router = APIRouter(prefix="/api")
@@ -19,3 +20,4 @@ api_router.include_router(problems_router, prefix="/problems", tags=["Problems"]
 api_router.include_router(submissions_router, prefix="/submissions", tags=["Submissions"])
 api_router.include_router(tests_router, prefix="/tests", tags=["Tests"])
 api_router.include_router(admin_router, tags=["Admin"])
+api_router.include_router(assets_router, prefix="/assets", tags=["GCP Assets"])

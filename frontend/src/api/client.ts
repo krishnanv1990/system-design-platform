@@ -182,4 +182,31 @@ export const testsApi = {
   },
 }
 
+/**
+ * GCP Assets API
+ */
+export const assetsApi = {
+  getSubmissionAssets: async (submissionId: number): Promise<any> => {
+    const response = await api.get(`/assets/submission/${submissionId}`)
+    return response.data
+  },
+
+  getSubmissionCode: async (submissionId: number): Promise<any> => {
+    const response = await api.get(`/assets/submission/${submissionId}/code`)
+    return response.data
+  },
+
+  getAllAssets: async (): Promise<any> => {
+    const response = await api.get('/assets/admin/all')
+    return response.data
+  },
+
+  getCleanupCandidates: async (hoursOld: number = 1): Promise<any> => {
+    const response = await api.get('/assets/admin/cleanup-candidates', {
+      params: { hours_old: hoursOld },
+    })
+    return response.data
+  },
+}
+
 export default api

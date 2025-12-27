@@ -7,6 +7,7 @@ import Submission from './pages/Submission'
 import Results from './pages/Results'
 import AuthCallback from './pages/AuthCallback'
 import Login from './pages/Login'
+import AdminDashboard from './pages/AdminDashboard'
 
 /**
  * Protected route wrapper - redirects to login if not authenticated
@@ -73,6 +74,14 @@ function AppRoutes() {
           element={
             <ProtectedRoute>
               <Results />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="admin"
+          element={
+            <ProtectedRoute>
+              <AdminDashboard />
             </ProtectedRoute>
           }
         />

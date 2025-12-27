@@ -3,7 +3,7 @@
  */
 
 import { Outlet, Link, useNavigate } from "react-router-dom"
-import { LogOut, Moon, Sun, User } from "lucide-react"
+import { LogOut, Moon, Sun, User, Cloud } from "lucide-react"
 import { useAuth } from "./AuthContext"
 import { useTheme } from "@/hooks/useTheme"
 import { Button } from "@/components/ui/button"
@@ -40,6 +40,13 @@ export default function Layout() {
                   className="inline-flex items-center px-3 py-2 text-sm font-medium text-foreground/80 hover:text-foreground rounded-md hover:bg-muted transition-colors"
                 >
                   Problems
+                </Link>
+                <Link
+                  to="/admin"
+                  className="inline-flex items-center px-3 py-2 text-sm font-medium text-foreground/80 hover:text-foreground rounded-md hover:bg-muted transition-colors"
+                >
+                  <Cloud className="h-4 w-4 mr-1" />
+                  Admin
                 </Link>
               </div>
             </div>
