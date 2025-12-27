@@ -457,3 +457,141 @@ async def get_available_providers():
             "github": bool(settings.github_client_id and settings.github_client_secret),
         }
     }
+
+
+# =============================================================================
+# Data Management Routes (GDPR/CCPA Compliance)
+# =============================================================================
+
+@router.get("/download-data")
+async def download_user_data(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Download all user data (GDPR/CCPA compliance).
+
+    Returns all data associated with the user including:
+    - User profile information
+    - All submissions and designs
+    - Test results
+
+    Args:
+        current_user: Authenticated user
+        db: Database session
+
+    Returns:
+        Complete user data export
+    """
+    from backend.models.submission import Submission
+    from backend.models.test_result import TestResult
+    from backend.models.problem import Problem
+    from datetime import datetime
+
+    # Get all user submissions with problem titles
+    submissions = (
+        db.query(Submission, Problem.title)
+        .join(Problem, Submission.problem_id == Problem.id)
+        .filter(Submission.user_id == current_user.id)
+        .all()
+    )
+
+    # Get all test results for user's submissions
+    submission_ids = [s[0].id for s in submissions]
+    test_results = (
+        db.query(TestResult)
+        .filter(TestResult.submission_id.in_(submission_ids))
+        .all()
+        if submission_ids
+        else []
+    )
+
+    return {
+        "user": {
+            "id": current_user.id,
+            "email": current_user.email,
+            "name": current_user.name,
+            "avatar_url": current_user.avatar_url,
+            "created_at": current_user.created_at.isoformat() if current_user.created_at else None,
+            "linked_providers": current_user.get_oauth_providers(),
+        },
+        "submissions": [
+            {
+                "id": sub.id,
+                "problem_id": sub.problem_id,
+                "problem_title": title,
+                "status": sub.status,
+                "created_at": sub.created_at.isoformat() if sub.created_at else None,
+                "design_text": sub.design_text,
+                "schema_input": sub.schema_input,
+                "api_spec_input": sub.api_spec_input,
+            }
+            for sub, title in submissions
+        ],
+        "test_results": [
+            {
+                "id": tr.id,
+                "submission_id": tr.submission_id,
+                "test_type": tr.test_type,
+                "test_name": tr.test_name,
+                "status": tr.status,
+                "created_at": tr.created_at.isoformat() if tr.created_at else None,
+            }
+            for tr in test_results
+        ],
+        "exported_at": datetime.utcnow().isoformat(),
+    }
+
+
+@router.delete("/delete-account")
+async def delete_user_account(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Delete user account and all associated data.
+
+    This is a destructive operation that permanently removes:
+    - User profile and account
+    - All submissions and designs
+    - All test results
+    - All chat history (if stored)
+
+    Args:
+        current_user: Authenticated user
+        db: Database session
+
+    Returns:
+        Confirmation message
+    """
+    from backend.models.submission import Submission
+    from backend.models.test_result import TestResult
+
+    try:
+        # Get all user submissions
+        submissions = db.query(Submission).filter(Submission.user_id == current_user.id).all()
+        submission_ids = [s.id for s in submissions]
+
+        # Delete all test results for user's submissions
+        if submission_ids:
+            db.query(TestResult).filter(TestResult.submission_id.in_(submission_ids)).delete(
+                synchronize_session=False
+            )
+
+        # Delete all user submissions
+        db.query(Submission).filter(Submission.user_id == current_user.id).delete(
+            synchronize_session=False
+        )
+
+        # Delete the user
+        db.delete(current_user)
+        db.commit()
+
+        return {"message": "Account and all associated data have been permanently deleted."}
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete account: {str(e)}",
+        )

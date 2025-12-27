@@ -10,7 +10,7 @@
 
 import { useState } from "react"
 import { Outlet, Link, useNavigate, useLocation } from "react-router-dom"
-import { LogOut, Moon, Sun, User, Cloud, Menu, X, Home, FileText } from "lucide-react"
+import { LogOut, Moon, Sun, User, Cloud, Menu, X, Home, FileText, Settings } from "lucide-react"
 import { useAuth } from "./AuthContext"
 import { useTheme } from "@/hooks/useTheme"
 import { Button } from "@/components/ui/button"
@@ -139,6 +139,16 @@ export default function Layout() {
                     </div>
                   </div>
                   <Button
+                    asChild
+                    variant="ghost"
+                    size="sm"
+                    aria-label="Account Settings"
+                  >
+                    <Link to="/settings">
+                      <Settings className="h-4 w-4" aria-hidden="true" />
+                    </Link>
+                  </Button>
+                  <Button
                     variant="ghost"
                     size="sm"
                     onClick={handleLogout}
@@ -217,6 +227,14 @@ export default function Layout() {
                       )}
                     </div>
                   </div>
+                  <Link
+                    to="/settings"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="flex items-center w-full px-3 py-2 text-base font-medium text-foreground/80 hover:text-foreground hover:bg-muted rounded-md transition-colors"
+                  >
+                    <Settings className="h-5 w-5 mr-3" aria-hidden="true" />
+                    Account Settings
+                  </Link>
                   <button
                     onClick={() => {
                       setMobileMenuOpen(false)
@@ -246,9 +264,19 @@ export default function Layout() {
       {/* Footer */}
       <footer className="border-t bg-card" role="contentinfo">
         <div className="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8">
-          <p className="text-center text-sm text-muted-foreground">
-            System Design Interview Platform - Practice and master system design
-          </p>
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-2">
+            <p className="text-sm text-muted-foreground">
+              System Design Interview Platform - Practice and master system design
+            </p>
+            <div className="flex items-center gap-4 text-sm text-muted-foreground">
+              <Link to="/terms" className="hover:text-primary hover:underline">
+                Terms
+              </Link>
+              <Link to="/privacy" className="hover:text-primary hover:underline">
+                Privacy
+              </Link>
+            </div>
+          </div>
         </div>
       </footer>
 

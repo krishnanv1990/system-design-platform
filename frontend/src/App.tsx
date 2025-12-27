@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './components/AuthContext'
 import { ConfirmProvider } from './components/ui/confirm-dialog'
+import CookieNotice from './components/CookieNotice'
 import Layout from './components/Layout'
 import ProblemList from './pages/ProblemList'
 import ProblemDetail from './pages/ProblemDetail'
@@ -9,6 +10,9 @@ import Results from './pages/Results'
 import AuthCallback from './pages/AuthCallback'
 import Login from './pages/Login'
 import AdminDashboard from './pages/AdminDashboard'
+import TermsOfService from './pages/TermsOfService'
+import PrivacyPolicy from './pages/PrivacyPolicy'
+import AccountSettings from './pages/AccountSettings'
 
 /**
  * Protected route wrapper - redirects to login if not authenticated
@@ -87,6 +91,18 @@ function AppRoutes() {
             </ProtectedRoute>
           }
         />
+        {/* Account settings - protected */}
+        <Route
+          path="settings"
+          element={
+            <ProtectedRoute>
+              <AccountSettings />
+            </ProtectedRoute>
+          }
+        />
+        {/* Legal pages - public but within layout */}
+        <Route path="terms" element={<TermsOfService />} />
+        <Route path="privacy" element={<PrivacyPolicy />} />
       </Route>
     </Routes>
   )
@@ -97,6 +113,7 @@ export default function App() {
     <AuthProvider>
       <ConfirmProvider>
         <AppRoutes />
+        <CookieNotice />
       </ConfirmProvider>
     </AuthProvider>
   )

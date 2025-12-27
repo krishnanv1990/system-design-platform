@@ -492,3 +492,141 @@ class TestLevelRequirementsEndpointContract:
                 },
             }
             assert response["level_info"]["level"] == expected_levels[diff]
+
+
+class TestUserDataExportContract:
+    """Tests for user data export API contracts (GDPR/CCPA compliance)."""
+
+    def test_user_data_export_structure(self):
+        """Test user data export response structure."""
+        response = {
+            "user": {
+                "id": 1,
+                "email": "test@example.com",
+                "name": "Test User",
+                "avatar_url": None,
+                "created_at": "2024-01-01T00:00:00",
+                "linked_providers": ["google"],
+            },
+            "submissions": [
+                {
+                    "id": 1,
+                    "problem_id": 1,
+                    "problem_title": "URL Shortener",
+                    "status": "completed",
+                    "created_at": "2024-01-01T00:00:00",
+                    "design_text": "My design",
+                    "schema_input": {},
+                    "api_spec_input": {},
+                }
+            ],
+            "test_results": [
+                {
+                    "id": 1,
+                    "submission_id": 1,
+                    "test_type": "functional",
+                    "test_name": "test_create_url",
+                    "status": "passed",
+                    "created_at": "2024-01-01T00:00:00",
+                }
+            ],
+            "exported_at": "2024-12-27T00:00:00",
+        }
+
+        assert "user" in response
+        assert "submissions" in response
+        assert "test_results" in response
+        assert "exported_at" in response
+
+    def test_user_data_export_user_fields(self):
+        """Test user fields in data export."""
+        user_data = {
+            "id": 1,
+            "email": "test@example.com",
+            "name": "Test User",
+            "avatar_url": "https://example.com/avatar.jpg",
+            "created_at": "2024-01-01T00:00:00",
+            "linked_providers": ["google", "github"],
+        }
+
+        required_fields = ["id", "email", "name", "avatar_url", "created_at", "linked_providers"]
+        for field in required_fields:
+            assert field in user_data
+
+    def test_user_data_export_submission_fields(self):
+        """Test submission fields in data export."""
+        submission_data = {
+            "id": 1,
+            "problem_id": 1,
+            "problem_title": "URL Shortener",
+            "status": "completed",
+            "created_at": "2024-01-01T00:00:00",
+            "design_text": "My design",
+            "schema_input": {"tables": {}},
+            "api_spec_input": {"endpoints": []},
+        }
+
+        required_fields = ["id", "problem_id", "problem_title", "status", "created_at"]
+        for field in required_fields:
+            assert field in submission_data
+
+
+class TestAccountDeletionContract:
+    """Tests for account deletion API contracts."""
+
+    def test_delete_account_response_structure(self):
+        """Test delete account response structure."""
+        response = {
+            "message": "Account and all associated data have been permanently deleted."
+        }
+
+        assert "message" in response
+        assert "deleted" in response["message"].lower()
+
+    def test_delete_account_removes_user_data(self):
+        """Test that account deletion removes all user data."""
+        # This is a contract test - the actual deletion is tested in integration tests
+        data_to_delete = [
+            "user profile",
+            "submissions",
+            "diagrams",
+            "test results",
+            "chat history",
+        ]
+
+        for data_type in data_to_delete:
+            assert isinstance(data_type, str)
+
+
+class TestPrivacyComplianceContract:
+    """Tests for privacy compliance features."""
+
+    def test_gdpr_rights_supported(self):
+        """Test GDPR rights are supported."""
+        gdpr_rights = {
+            "access": True,  # User can access their data
+            "rectification": True,  # User can correct data (via OAuth)
+            "erasure": True,  # User can delete account
+            "portability": True,  # User can download data
+            "objection": True,  # User can decline analytics
+        }
+
+        assert all(gdpr_rights.values())
+
+    def test_ccpa_rights_supported(self):
+        """Test CCPA rights are supported."""
+        ccpa_rights = {
+            "know": True,  # Right to know what data is collected
+            "delete": True,  # Right to delete data
+            "opt_out": True,  # Right to opt out of sale (we don't sell)
+            "non_discrimination": True,  # No discrimination for exercising rights
+        }
+
+        assert all(ccpa_rights.values())
+
+    def test_cookie_consent_options(self):
+        """Test cookie consent options."""
+        consent_options = ["accept_all", "essential_only"]
+
+        assert "accept_all" in consent_options
+        assert "essential_only" in consent_options

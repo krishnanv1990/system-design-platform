@@ -63,6 +63,39 @@ const api = createApiClient()
 export type OAuthProvider = 'google' | 'facebook' | 'linkedin' | 'github'
 
 /**
+ * User data export for GDPR/CCPA compliance
+ */
+export interface UserDataExport {
+  user: {
+    id: number
+    email: string
+    name: string | null
+    avatar_url: string | null
+    created_at: string
+    linked_providers: string[]
+  }
+  submissions: Array<{
+    id: number
+    problem_id: number
+    problem_title: string
+    status: string
+    created_at: string
+    design_text: string | null
+    schema_input: any
+    api_spec_input: any
+  }>
+  test_results: Array<{
+    id: number
+    submission_id: number
+    test_type: string
+    test_name: string
+    status: string
+    created_at: string
+  }>
+  exported_at: string
+}
+
+/**
  * Authentication API
  * Supports multiple OAuth providers: Google, Facebook, LinkedIn, GitHub
  */
@@ -108,6 +141,22 @@ export const authApi = {
    */
   getAvailableProviders: async (): Promise<{ providers: Record<OAuthProvider, boolean> }> => {
     const response = await api.get('/auth/providers')
+    return response.data
+  },
+
+  /**
+   * Download all user data (GDPR/CCPA compliance)
+   */
+  downloadUserData: async (): Promise<UserDataExport> => {
+    const response = await api.get('/auth/download-data')
+    return response.data
+  },
+
+  /**
+   * Delete user account and all associated data
+   */
+  deleteAccount: async (): Promise<{ message: string }> => {
+    const response = await api.delete('/auth/delete-account')
     return response.data
   },
 }

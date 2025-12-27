@@ -190,6 +190,51 @@ describe('API Client', () => {
       expect(mockAxios.get).toHaveBeenCalledWith('/auth/demo-status')
       expect(result.demo_mode).toBe(true)
     })
+
+    it('downloadUserData - downloads user data export', async () => {
+      const mockExport = {
+        user: {
+          id: 1,
+          email: 'test@example.com',
+          name: 'Test User',
+          avatar_url: null,
+          created_at: '2024-01-01T00:00:00Z',
+          linked_providers: ['google'],
+        },
+        submissions: [
+          {
+            id: 1,
+            problem_id: 1,
+            problem_title: 'URL Shortener',
+            status: 'completed',
+            created_at: '2024-01-01T00:00:00Z',
+            design_text: 'My design',
+            schema_input: {},
+            api_spec_input: {},
+          },
+        ],
+        test_results: [],
+        exported_at: '2024-01-01T00:00:00Z',
+      }
+      mockAxios.get.mockResolvedValueOnce({ data: mockExport })
+
+      const result = await authApi.downloadUserData()
+
+      expect(mockAxios.get).toHaveBeenCalledWith('/auth/download-data')
+      expect(result.user.email).toBe('test@example.com')
+      expect(result.submissions).toHaveLength(1)
+      expect(result.exported_at).toBeDefined()
+    })
+
+    it('deleteAccount - deletes user account', async () => {
+      const mockResponse = { message: 'Account deleted successfully' }
+      mockAxios.delete.mockResolvedValueOnce({ data: mockResponse })
+
+      const result = await authApi.deleteAccount()
+
+      expect(mockAxios.delete).toHaveBeenCalledWith('/auth/delete-account')
+      expect(result.message).toContain('deleted')
+    })
   })
 
   describe('assetsApi', () => {
