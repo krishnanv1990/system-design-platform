@@ -19,7 +19,10 @@ import {
   Cloud,
   Users,
   Globe,
+  Undo2,
+  Redo2,
 } from "lucide-react"
+import { useHistory } from "@/hooks/useHistory"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
@@ -106,7 +109,15 @@ export default function DesignCanvas({
   onChange,
   readOnly = false,
 }: DesignCanvasProps) {
-  const [elements, setElements] = useState<CanvasElement[]>([])
+  // Use history hook for undo/redo support
+  const {
+    state: elements,
+    setState: setElements,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+  } = useHistory<CanvasElement[]>([])
   const [selectedTool, setSelectedTool] = useState<Tool>("select")
   const [selectedElement, setSelectedElement] = useState<string | null>(null)
   const [strokeColor, setStrokeColor] = useState("#1a1a1a")
@@ -127,13 +138,14 @@ export default function DesignCanvas({
       try {
         const parsed = JSON.parse(value)
         if (Array.isArray(parsed.elements)) {
-          setElements(parsed.elements)
+          // Skip history when loading initial/external value
+          setElements(parsed.elements, { skipHistory: true })
         }
       } catch {
         // Invalid JSON, ignore
       }
     }
-  }, [value])
+  }, [value, setElements])
 
   // Save to value
   useEffect(() => {
@@ -320,6 +332,20 @@ export default function DesignCanvas({
     (e: KeyboardEvent) => {
       if (readOnly) return
 
+      // Undo: Ctrl+Z (or Cmd+Z on Mac)
+      if ((e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey) {
+        e.preventDefault()
+        undo()
+        return
+      }
+
+      // Redo: Ctrl+Y or Ctrl+Shift+Z (or Cmd+Y / Cmd+Shift+Z on Mac)
+      if ((e.ctrlKey || e.metaKey) && (e.key === "y" || (e.key === "z" && e.shiftKey))) {
+        e.preventDefault()
+        redo()
+        return
+      }
+
       if (e.key === "Delete" || e.key === "Backspace") {
         if (selectedElement && !editingText) {
           setElements(elements.filter((el) => el.id !== selectedElement))
@@ -332,7 +358,7 @@ export default function DesignCanvas({
         setSelectedTool("select")
       }
     },
-    [elements, selectedElement, editingText, readOnly]
+    [elements, selectedElement, editingText, readOnly, undo, redo, setElements]
   )
 
   useEffect(() => {
@@ -730,6 +756,29 @@ export default function DesignCanvas({
 
           {/* Actions */}
           <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 w-8 p-0"
+              onClick={undo}
+              disabled={!canUndo}
+              title="Undo (Ctrl+Z)"
+              aria-label="Undo"
+            >
+              <Undo2 className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 w-8 p-0"
+              onClick={redo}
+              disabled={!canRedo}
+              title="Redo (Ctrl+Y)"
+              aria-label="Redo"
+            >
+              <Redo2 className="h-4 w-4" />
+            </Button>
+            <div className="w-px h-4 bg-border mx-1" />
             <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={clearCanvas} title="Clear canvas">
               <RotateCcw className="h-4 w-4" />
             </Button>
@@ -824,7 +873,7 @@ export default function DesignCanvas({
         ) : (
           <span>
             Click to select • Drag to move • Double-click to edit text • Delete/Backspace to remove •
-            Escape to deselect
+            Ctrl+Z to undo • Ctrl+Y to redo • Escape to deselect
           </span>
         )}
       </div>
