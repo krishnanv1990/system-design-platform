@@ -3,12 +3,13 @@ Design chat API - Claude-based chatbot for system design guidance.
 Provides real-time feedback and coaching for candidates.
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional, Dict, Any, List
+from sqlalchemy.orm import Session
 
 from backend.services.ai_service import AIService
-from backend.database import get_db_session
+from backend.database import get_db
 from backend.models.problem import Problem
 
 router = APIRouter()
@@ -96,7 +97,10 @@ def get_solution_reference(problem_title: str) -> str:
 
 
 @router.post("/", response_model=ChatResponse)
-async def chat_about_design(request: ChatRequest):
+async def chat_about_design(
+    request: ChatRequest,
+    db: Session = Depends(get_db),
+):
     """
     Chat with AI about system design.
 
@@ -107,13 +111,12 @@ async def chat_about_design(request: ChatRequest):
     - Provide constructive criticism and suggestions
     """
     # Get the problem details
-    with get_db_session() as session:
-        problem = session.query(Problem).filter(Problem.id == request.problem_id).first()
-        if not problem:
-            raise HTTPException(status_code=404, detail="Problem not found")
+    problem = db.query(Problem).filter(Problem.id == request.problem_id).first()
+    if not problem:
+        raise HTTPException(status_code=404, detail="Problem not found")
 
-        problem_description = problem.description
-        problem_title = problem.title
+    problem_description = problem.description
+    problem_title = problem.title
 
     # Get reference solution
     solution_reference = get_solution_reference(problem_title)
@@ -158,6 +161,7 @@ async def chat_about_design(request: ChatRequest):
 async def evaluate_diagram(
     problem_id: int,
     diagram_data: Dict[str, Any],
+    db: Session = Depends(get_db),
 ):
     """
     Evaluate a diagram and provide structured feedback.
@@ -166,19 +170,19 @@ async def evaluate_diagram(
     separate from the conversational chat.
     """
     # Get the problem details
-    with get_db_session() as session:
-        problem = session.query(Problem).filter(Problem.id == problem_id).first()
-        if not problem:
-            raise HTTPException(status_code=404, detail="Problem not found")
+    problem = db.query(Problem).filter(Problem.id == problem_id).first()
+    if not problem:
+        raise HTTPException(status_code=404, detail="Problem not found")
 
-        problem_title = problem.title
+    problem_title = problem.title
+    problem_description = problem.description
 
     # Get reference solution
     solution_reference = get_solution_reference(problem_title)
 
     # Call the AI service with just the diagram
     result = await ai_service.chat_about_design(
-        problem_description=problem.description,
+        problem_description=problem_description,
         problem_title=problem_title,
         candidate_message="Please evaluate my diagram and provide detailed feedback.",
         conversation_history=[],
