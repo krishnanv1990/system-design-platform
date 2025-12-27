@@ -209,4 +209,52 @@ export const assetsApi = {
   },
 }
 
+/**
+ * Chat API - Design coaching chatbot
+ */
+export interface ChatMessage {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+export interface ChatRequest {
+  problem_id: number
+  message: string
+  conversation_history: ChatMessage[]
+  current_schema?: any
+  current_api_spec?: any
+  current_diagram?: any
+}
+
+export interface DiagramFeedback {
+  strengths: string[]
+  weaknesses: string[]
+  suggested_improvements: string[]
+  is_on_track: boolean
+  score?: number
+}
+
+export interface ChatResponse {
+  response: string
+  diagram_feedback?: DiagramFeedback
+  suggested_improvements: string[]
+  is_on_track: boolean
+  demo_mode: boolean
+}
+
+export const chatApi = {
+  sendMessage: async (request: ChatRequest): Promise<ChatResponse> => {
+    const response = await api.post('/chat/', request)
+    return response.data
+  },
+
+  evaluateDiagram: async (problemId: number, diagramData: any): Promise<any> => {
+    const response = await api.post('/chat/evaluate-diagram', null, {
+      params: { problem_id: problemId },
+      data: diagramData,
+    })
+    return response.data
+  },
+}
+
 export default api

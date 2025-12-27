@@ -590,3 +590,180 @@ The code must be syntactically valid and immediately runnable."""
             code = code[:-3]
 
         return code.strip()
+
+    async def chat_about_design(
+        self,
+        problem_description: str,
+        problem_title: str,
+        candidate_message: str,
+        conversation_history: list[Dict[str, str]],
+        current_schema: Optional[Dict[str, Any]] = None,
+        current_api_spec: Optional[Dict[str, Any]] = None,
+        current_diagram: Optional[Dict[str, Any]] = None,
+        solution_reference: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Chat with a candidate about their system design, providing guidance
+        toward a correct solution and evaluating their diagram.
+
+        Args:
+            problem_description: The problem being solved
+            problem_title: Title of the problem
+            candidate_message: The candidate's latest message
+            conversation_history: Previous messages in the conversation
+            current_schema: Current database schema design (if any)
+            current_api_spec: Current API specification (if any)
+            current_diagram: Current diagram data (if any)
+            solution_reference: Reference solution for guiding candidates
+
+        Returns:
+            AI response with feedback and guidance
+        """
+        # Return mock response in demo mode
+        if self.demo_mode:
+            return {
+                "response": f"""I see you're working on the **{problem_title}** problem. Let me help guide you!
+
+Based on your question, here are some key considerations:
+
+1. **Architecture**: Think about separating concerns - you'll need a service layer, a data layer, and likely a caching layer for high performance.
+
+2. **Database Design**: For this type of system, consider what data you need to store and how it will be queried. Think about indexing strategies.
+
+3. **Scalability**: How will your system handle millions of requests? Consider:
+   - Horizontal scaling
+   - Caching (Redis is great for this)
+   - Database sharding strategies
+
+4. **Reliability**: What happens when components fail? Consider:
+   - Graceful degradation
+   - Retry mechanisms
+   - Circuit breakers
+
+Would you like me to elaborate on any of these points? Or share what you have so far and I can provide specific feedback!
+
+*Demo mode: In production, Claude would provide more detailed, context-specific guidance based on your actual design.*""",
+                "diagram_feedback": None,
+                "suggested_improvements": [
+                    "Consider adding a caching layer",
+                    "Think about data partitioning for scale",
+                    "Add health check endpoints"
+                ],
+                "is_on_track": True,
+                "demo_mode": True
+            }
+
+        # Build the system prompt for design coaching
+        system_prompt = f"""You are an expert system design coach helping candidates design distributed systems. Your role is to:
+
+1. **Guide candidates toward a correct solution** - Don't give away the answer directly, but ask probing questions and provide hints that lead them in the right direction.
+
+2. **Evaluate their current design** - If they share a diagram or schema, provide constructive feedback on what's good and what needs improvement.
+
+3. **Be encouraging but honest** - Praise good ideas, but point out potential issues with scalability, reliability, or performance.
+
+4. **Focus on key concepts**:
+   - Scalability (horizontal vs vertical, sharding, replication)
+   - Reliability (redundancy, failover, graceful degradation)
+   - Performance (caching, CDNs, database optimization)
+   - Data consistency (CAP theorem, eventual consistency)
+
+5. **Provide specific, actionable feedback** - Don't just say "this is wrong", explain why and suggest alternatives.
+
+6. **Reference the solution requirements** when appropriate to ensure they're meeting all test scenarios.
+
+PROBLEM: {problem_title}
+DESCRIPTION:
+{problem_description}
+
+REFERENCE SOLUTION (use this to guide the candidate, but don't reveal it directly):
+{solution_reference or "A good solution should include proper database schema, caching layer, API design, and consideration for scale and reliability."}
+
+When evaluating diagrams, look for:
+- Clear component separation (load balancers, API servers, databases, caches)
+- Proper data flow arrows
+- Scalability considerations (multiple instances, replicas)
+- Caching strategy
+- Error handling/failover paths
+
+Respond in a conversational, helpful tone. Use markdown for formatting. Be specific and actionable in your feedback."""
+
+        # Build the conversation context
+        messages = []
+
+        # Add conversation history
+        for msg in conversation_history:
+            messages.append({
+                "role": msg.get("role", "user"),
+                "content": msg.get("content", "")
+            })
+
+        # Build current context
+        current_context = f"**Candidate's message:** {candidate_message}\n\n"
+
+        if current_schema:
+            current_context += f"**Current Database Schema:**\n```json\n{json.dumps(current_schema, indent=2)}\n```\n\n"
+
+        if current_api_spec:
+            current_context += f"**Current API Specification:**\n```json\n{json.dumps(current_api_spec, indent=2)}\n```\n\n"
+
+        if current_diagram:
+            current_context += f"**Current Diagram Data:**\n```json\n{json.dumps(current_diagram, indent=2)}\n```\n\nPlease evaluate the diagram structure and provide feedback on the architecture shown.\n\n"
+
+        messages.append({"role": "user", "content": current_context})
+
+        # Call Claude
+        message = self.client.messages.create(
+            model=self.model,
+            max_tokens=2048,
+            system=system_prompt,
+            messages=messages
+        )
+
+        response_text = message.content[0].text
+
+        # Generate structured response
+        result = {
+            "response": response_text,
+            "diagram_feedback": None,
+            "suggested_improvements": [],
+            "is_on_track": True,
+            "demo_mode": False
+        }
+
+        # If there was a diagram, try to extract specific diagram feedback
+        if current_diagram:
+            # Make a follow-up call for structured diagram feedback
+            try:
+                diagram_prompt = f"""Analyze this system design diagram and provide structured feedback:
+
+Diagram data:
+{json.dumps(current_diagram, indent=2)}
+
+Respond with JSON in this exact format:
+{{
+    "strengths": ["list of good things about the design"],
+    "weaknesses": ["list of issues or missing elements"],
+    "suggested_improvements": ["specific actionable improvements"],
+    "is_on_track": true/false (is this design heading in the right direction for a {problem_title}?),
+    "score": 0-100 (how complete/correct is this design?)
+}}"""
+
+                diagram_message = self.client.messages.create(
+                    model=self.model,
+                    max_tokens=1024,
+                    messages=[{"role": "user", "content": diagram_prompt}]
+                )
+
+                diagram_response = diagram_message.content[0].text
+                try:
+                    diagram_feedback = json.loads(diagram_response)
+                    result["diagram_feedback"] = diagram_feedback
+                    result["suggested_improvements"] = diagram_feedback.get("suggested_improvements", [])
+                    result["is_on_track"] = diagram_feedback.get("is_on_track", True)
+                except json.JSONDecodeError:
+                    pass
+            except Exception:
+                pass
+
+        return result

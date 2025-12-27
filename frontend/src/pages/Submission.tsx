@@ -226,7 +226,15 @@ export default function Submission() {
         <CardContent className="pt-6">
           {step === "schema" && <SchemaEditor value={schemaInput} onChange={setSchemaInput} />}
           {step === "api" && <ApiSpecEditor value={apiSpecInput} onChange={setApiSpecInput} />}
-          {step === "design" && <DesignEditor value={designText} onChange={setDesignText} />}
+          {step === "design" && (
+            <DesignEditor
+              value={designText}
+              onChange={setDesignText}
+              problemId={problem?.id}
+              currentSchema={schemaInput}
+              currentApiSpec={apiSpecInput}
+            />
+          )}
           {step === "review" && (
             <div className="space-y-6">
               <div>
