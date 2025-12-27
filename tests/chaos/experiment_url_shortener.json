@@ -1,9 +1,21 @@
 {
-    "title": "URL Shortener Chaos Experiments",
-    "description": "Verify URL Shortener resilience under various failure conditions",
-    "tags": ["url-shortener", "resilience", "chaos"],
+    "title": "URL Shortener Chaos Experiments - L6/L7 Production Scenarios",
+    "description": "Comprehensive chaos experiments for enterprise URL shortener service. Tests resilience, failover, and recovery across all critical components.",
+    "tags": ["url-shortener", "resilience", "chaos", "production", "enterprise", "l6-l7"],
+    "configuration": {
+        "target_url": "${TARGET_URL}",
+        "admin_token": "${ADMIN_TOKEN}",
+        "test_org_id": "chaos-test-org",
+        "metrics_endpoint": "${METRICS_URL:-http://localhost:9090}"
+    },
+    "secrets": {
+        "api_key": {
+            "type": "env",
+            "key": "CHAOS_API_KEY"
+        }
+    },
     "steady-state-hypothesis": {
-        "title": "Service is healthy and responsive",
+        "title": "Service is healthy, responsive, and meeting SLOs",
         "probes": [
             {
                 "name": "health-check-responds",
@@ -37,7 +49,7 @@
                 }
             },
             {
-                "name": "response-time-acceptable",
+                "name": "redirect-latency-under-slo",
                 "type": "probe",
                 "tolerance": true,
                 "provider": {
@@ -46,7 +58,24 @@
                     "func": "request_duration",
                     "arguments": {
                         "url": "${TARGET_URL}/health",
-                        "duration": 1.0
+                        "duration": 0.5
+                    }
+                }
+            },
+            {
+                "name": "error-rate-acceptable",
+                "type": "probe",
+                "tolerance": {
+                    "type": "range",
+                    "range": [0, 1]
+                },
+                "provider": {
+                    "type": "python",
+                    "module": "tests.chaos.probes",
+                    "func": "check_error_rate",
+                    "arguments": {
+                        "url": "${TARGET_URL}",
+                        "threshold_percent": 1
                     }
                 }
             }
@@ -55,13 +84,72 @@
     "method": [
         {
             "type": "action",
-            "name": "simulate-high-latency",
+            "name": "database-primary-failover",
+            "description": "Simulate database primary node failure to test failover",
             "provider": {
                 "type": "python",
                 "module": "tests.chaos.actions",
-                "func": "inject_latency",
+                "func": "simulate_database_failover",
                 "arguments": {
-                    "latency_ms": 500,
+                    "duration_seconds": 30,
+                    "failover_type": "primary"
+                }
+            },
+            "pauses": {
+                "after": 10
+            }
+        },
+        {
+            "type": "probe",
+            "name": "verify-reads-continue-during-db-failover",
+            "tolerance": {
+                "type": "range",
+                "range": [200, 399]
+            },
+            "provider": {
+                "type": "http",
+                "url": "${TARGET_URL}/health",
+                "timeout": 15
+            }
+        },
+        {
+            "type": "action",
+            "name": "cache-layer-failure",
+            "description": "Simulate Redis cache cluster failure",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "simulate_cache_failure",
+                "arguments": {
+                    "cache_type": "redis",
+                    "failure_mode": "connection_refused",
+                    "duration_seconds": 60
+                }
+            },
+            "pauses": {
+                "after": 5
+            }
+        },
+        {
+            "type": "probe",
+            "name": "verify-fallback-to-database",
+            "tolerance": 200,
+            "provider": {
+                "type": "http",
+                "url": "${TARGET_URL}/api/v1/urls/test-code",
+                "timeout": 30
+            }
+        },
+        {
+            "type": "action",
+            "name": "kgs-pool-exhaustion",
+            "description": "Simulate Key Generation Service pool exhaustion",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "exhaust_kgs_pool",
+                "arguments": {
+                    "drain_rate": 1000,
                     "duration_seconds": 30
                 }
             },
@@ -71,16 +159,447 @@
         },
         {
             "type": "probe",
-            "name": "verify-service-still-responds",
+            "name": "verify-graceful-degradation-on-kgs-exhaustion",
+            "tolerance": {
+                "type": "range",
+                "range": [200, 503]
+            },
+            "provider": {
+                "type": "http",
+                "url": "${TARGET_URL}/api/v1/urls",
+                "method": "POST",
+                "headers": {
+                    "Content-Type": "application/json"
+                },
+                "arguments": {
+                    "original_url": "https://kgs-exhaustion-test.example.com"
+                },
+                "timeout": 10
+            }
+        },
+        {
+            "type": "action",
+            "name": "network-partition-simulation",
+            "description": "Simulate network partition between services",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "inject_network_partition",
+                "arguments": {
+                    "partition_type": "api_to_database",
+                    "duration_seconds": 30,
+                    "packet_loss_percent": 100
+                }
+            },
+            "pauses": {
+                "after": 5
+            }
+        },
+        {
+            "type": "probe",
+            "name": "verify-circuit-breaker-activates",
+            "tolerance": {
+                "type": "range",
+                "range": [200, 503]
+            },
+            "provider": {
+                "type": "http",
+                "url": "${TARGET_URL}/health",
+                "timeout": 5
+            }
+        },
+        {
+            "type": "action",
+            "name": "high-latency-injection",
+            "description": "Inject high latency to test timeout handling",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "inject_latency",
+                "arguments": {
+                    "latency_ms": 2000,
+                    "duration_seconds": 45,
+                    "target": "database"
+                }
+            },
+            "pauses": {
+                "after": 10
+            }
+        },
+        {
+            "type": "probe",
+            "name": "verify-timeout-handling",
+            "tolerance": true,
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.probes",
+                "func": "verify_request_timeout",
+                "arguments": {
+                    "url": "${TARGET_URL}/api/v1/urls",
+                    "expected_timeout_seconds": 5
+                }
+            }
+        },
+        {
+            "type": "action",
+            "name": "rate-limiter-failure",
+            "description": "Simulate rate limiter component failure",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "simulate_rate_limiter_failure",
+                "arguments": {
+                    "failure_mode": "bypass",
+                    "duration_seconds": 30
+                }
+            },
+            "pauses": {
+                "after": 5
+            }
+        },
+        {
+            "type": "probe",
+            "name": "verify-service-survives-without-rate-limiter",
+            "tolerance": 200,
+            "provider": {
+                "type": "http",
+                "url": "${TARGET_URL}/health",
+                "timeout": 5
+            }
+        },
+        {
+            "type": "action",
+            "name": "event-queue-backpressure",
+            "description": "Simulate Kafka/event queue backpressure",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "simulate_queue_backpressure",
+                "arguments": {
+                    "queue_type": "kafka",
+                    "backpressure_level": "high",
+                    "duration_seconds": 60
+                }
+            },
+            "pauses": {
+                "after": 10
+            }
+        },
+        {
+            "type": "probe",
+            "name": "verify-writes-continue-during-queue-backpressure",
+            "tolerance": {
+                "type": "range",
+                "range": [200, 202]
+            },
+            "provider": {
+                "type": "http",
+                "url": "${TARGET_URL}/api/v1/urls",
+                "method": "POST",
+                "headers": {
+                    "Content-Type": "application/json"
+                },
+                "arguments": {
+                    "original_url": "https://queue-backpressure-test.example.com"
+                },
+                "timeout": 15
+            }
+        },
+        {
+            "type": "action",
+            "name": "memory-pressure",
+            "description": "Simulate memory pressure on API servers",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "inject_memory_pressure",
+                "arguments": {
+                    "memory_percent": 85,
+                    "duration_seconds": 45
+                }
+            },
+            "pauses": {
+                "after": 10
+            }
+        },
+        {
+            "type": "probe",
+            "name": "verify-service-under-memory-pressure",
             "tolerance": 200,
             "provider": {
                 "type": "http",
                 "url": "${TARGET_URL}/health",
                 "timeout": 10
             }
+        },
+        {
+            "type": "action",
+            "name": "cpu-spike",
+            "description": "Simulate CPU spike to test autoscaling",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "inject_cpu_spike",
+                "arguments": {
+                    "cpu_percent": 90,
+                    "duration_seconds": 60
+                }
+            },
+            "pauses": {
+                "after": 15
+            }
+        },
+        {
+            "type": "probe",
+            "name": "verify-autoscaling-triggered",
+            "tolerance": true,
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.probes",
+                "func": "verify_autoscaling_event",
+                "arguments": {
+                    "metrics_url": "${METRICS_URL}",
+                    "expected_scale_up": true
+                }
+            }
+        },
+        {
+            "type": "action",
+            "name": "dns-failure",
+            "description": "Simulate DNS resolution failure",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "inject_dns_failure",
+                "arguments": {
+                    "failure_type": "timeout",
+                    "duration_seconds": 20
+                }
+            },
+            "pauses": {
+                "after": 5
+            }
+        },
+        {
+            "type": "probe",
+            "name": "verify-cached-dns-works",
+            "tolerance": 200,
+            "provider": {
+                "type": "http",
+                "url": "${TARGET_URL}/health",
+                "timeout": 10
+            }
+        },
+        {
+            "type": "action",
+            "name": "certificate-expiry-simulation",
+            "description": "Simulate certificate issues",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "simulate_cert_issue",
+                "arguments": {
+                    "issue_type": "about_to_expire",
+                    "duration_seconds": 30
+                }
+            },
+            "pauses": {
+                "after": 5
+            }
+        },
+        {
+            "type": "probe",
+            "name": "verify-cert-monitoring-alerts",
+            "tolerance": true,
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.probes",
+                "func": "check_alert_fired",
+                "arguments": {
+                    "alert_name": "CertificateExpiryWarning",
+                    "metrics_url": "${METRICS_URL}"
+                }
+            }
+        },
+        {
+            "type": "action",
+            "name": "regional-failover-test",
+            "description": "Simulate entire region failure for DR testing",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "simulate_region_failure",
+                "arguments": {
+                    "region": "us-east-1",
+                    "duration_seconds": 120,
+                    "failover_region": "us-west-2"
+                }
+            },
+            "pauses": {
+                "after": 30
+            }
+        },
+        {
+            "type": "probe",
+            "name": "verify-traffic-rerouted-to-secondary-region",
+            "tolerance": true,
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.probes",
+                "func": "verify_region_traffic",
+                "arguments": {
+                    "expected_region": "us-west-2",
+                    "url": "${TARGET_URL}/health"
+                }
+            }
+        },
+        {
+            "type": "action",
+            "name": "cascading-failure-simulation",
+            "description": "Simulate cascading failure across services",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "trigger_cascading_failure",
+                "arguments": {
+                    "start_component": "cache",
+                    "propagation_delay_seconds": 5,
+                    "duration_seconds": 60
+                }
+            },
+            "pauses": {
+                "after": 20
+            }
+        },
+        {
+            "type": "probe",
+            "name": "verify-bulkheads-prevent-total-failure",
+            "tolerance": true,
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.probes",
+                "func": "verify_partial_availability",
+                "arguments": {
+                    "url": "${TARGET_URL}",
+                    "min_availability_percent": 50
+                }
+            }
+        },
+        {
+            "type": "action",
+            "name": "slow-consumer-simulation",
+            "description": "Simulate slow analytics consumer causing backlog",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "simulate_slow_consumer",
+                "arguments": {
+                    "consumer_group": "analytics",
+                    "processing_delay_ms": 5000,
+                    "duration_seconds": 90
+                }
+            },
+            "pauses": {
+                "after": 15
+            }
+        },
+        {
+            "type": "probe",
+            "name": "verify-producer-not-blocked",
+            "tolerance": {
+                "type": "range",
+                "range": [200, 202]
+            },
+            "provider": {
+                "type": "http",
+                "url": "${TARGET_URL}/api/v1/urls",
+                "method": "POST",
+                "headers": {
+                    "Content-Type": "application/json"
+                },
+                "arguments": {
+                    "original_url": "https://slow-consumer-test.example.com"
+                },
+                "timeout": 5
+            }
+        },
+        {
+            "type": "action",
+            "name": "disk-io-saturation",
+            "description": "Simulate disk I/O saturation",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "inject_disk_io_pressure",
+                "arguments": {
+                    "io_pressure_percent": 95,
+                    "duration_seconds": 45
+                }
+            },
+            "pauses": {
+                "after": 10
+            }
+        },
+        {
+            "type": "probe",
+            "name": "verify-service-with-disk-pressure",
+            "tolerance": {
+                "type": "range",
+                "range": [200, 503]
+            },
+            "provider": {
+                "type": "http",
+                "url": "${TARGET_URL}/health",
+                "timeout": 15
+            }
         }
     ],
     "rollbacks": [
+        {
+            "type": "action",
+            "name": "restore-database-primary",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "restore_database",
+                "arguments": {
+                    "component": "primary"
+                }
+            }
+        },
+        {
+            "type": "action",
+            "name": "restore-cache-layer",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "restore_cache",
+                "arguments": {
+                    "cache_type": "redis"
+                }
+            }
+        },
+        {
+            "type": "action",
+            "name": "replenish-kgs-pool",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "replenish_kgs_pool",
+                "arguments": {
+                    "pool_size": 10000
+                }
+            }
+        },
+        {
+            "type": "action",
+            "name": "remove-network-partition",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "remove_network_partition"
+            }
+        },
         {
             "type": "action",
             "name": "remove-latency-injection",
@@ -89,6 +608,154 @@
                 "module": "tests.chaos.actions",
                 "func": "remove_latency_injection"
             }
+        },
+        {
+            "type": "action",
+            "name": "restore-rate-limiter",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "restore_rate_limiter"
+            }
+        },
+        {
+            "type": "action",
+            "name": "restore-event-queue",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "restore_event_queue",
+                "arguments": {
+                    "queue_type": "kafka"
+                }
+            }
+        },
+        {
+            "type": "action",
+            "name": "release-memory-pressure",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "release_memory_pressure"
+            }
+        },
+        {
+            "type": "action",
+            "name": "release-cpu-pressure",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "release_cpu_pressure"
+            }
+        },
+        {
+            "type": "action",
+            "name": "restore-dns",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "restore_dns"
+            }
+        },
+        {
+            "type": "action",
+            "name": "restore-region",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "restore_region",
+                "arguments": {
+                    "region": "us-east-1"
+                }
+            }
+        },
+        {
+            "type": "action",
+            "name": "stop-cascading-failure",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "stop_cascading_failure"
+            }
+        },
+        {
+            "type": "action",
+            "name": "restore-consumer-speed",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "restore_consumer_speed",
+                "arguments": {
+                    "consumer_group": "analytics"
+                }
+            }
+        },
+        {
+            "type": "action",
+            "name": "release-disk-io-pressure",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "release_disk_io_pressure"
+            }
+        }
+    ],
+    "experiments": [
+        {
+            "name": "database-resilience",
+            "description": "Test database failover and recovery",
+            "tags": ["database", "failover", "critical"],
+            "steady-state-hypothesis": "Service maintains read availability during DB failover",
+            "method": ["database-primary-failover", "verify-reads-continue-during-db-failover"]
+        },
+        {
+            "name": "cache-resilience",
+            "description": "Test cache failure and fallback to database",
+            "tags": ["cache", "redis", "fallback"],
+            "steady-state-hypothesis": "Service falls back to database when cache fails",
+            "method": ["cache-layer-failure", "verify-fallback-to-database"]
+        },
+        {
+            "name": "kgs-resilience",
+            "description": "Test Key Generation Service under stress",
+            "tags": ["kgs", "writes", "capacity"],
+            "steady-state-hypothesis": "Service degrades gracefully when KGS exhausted",
+            "method": ["kgs-pool-exhaustion", "verify-graceful-degradation-on-kgs-exhaustion"]
+        },
+        {
+            "name": "network-resilience",
+            "description": "Test network partition handling",
+            "tags": ["network", "partition", "circuit-breaker"],
+            "steady-state-hypothesis": "Circuit breaker activates during network partition",
+            "method": ["network-partition-simulation", "verify-circuit-breaker-activates"]
+        },
+        {
+            "name": "latency-resilience",
+            "description": "Test high latency handling",
+            "tags": ["latency", "timeout", "slo"],
+            "steady-state-hypothesis": "Requests timeout gracefully under high latency",
+            "method": ["high-latency-injection", "verify-timeout-handling"]
+        },
+        {
+            "name": "regional-dr",
+            "description": "Test regional disaster recovery",
+            "tags": ["dr", "region", "failover", "critical"],
+            "steady-state-hypothesis": "Traffic reroutes to secondary region during regional failure",
+            "method": ["regional-failover-test", "verify-traffic-rerouted-to-secondary-region"]
+        },
+        {
+            "name": "cascading-failure-protection",
+            "description": "Test bulkhead and isolation patterns",
+            "tags": ["cascading", "bulkhead", "isolation"],
+            "steady-state-hypothesis": "Bulkheads prevent cascading failures",
+            "method": ["cascading-failure-simulation", "verify-bulkheads-prevent-total-failure"]
+        },
+        {
+            "name": "resource-pressure",
+            "description": "Test behavior under resource pressure",
+            "tags": ["memory", "cpu", "autoscaling"],
+            "steady-state-hypothesis": "Service autoscales under resource pressure",
+            "method": ["memory-pressure", "cpu-spike", "verify-autoscaling-triggered"]
         }
     ]
 }
