@@ -16,14 +16,16 @@ import {
   TestSummary,
 } from '../types'
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+// Use relative URL in production (when served from load balancer)
+// or explicit URL in development
+const API_URL = import.meta.env.VITE_API_URL
 
 /**
  * Create axios instance with default config
  */
 const createApiClient = (): AxiosInstance => {
   const client = axios.create({
-    baseURL: `${API_URL}/api`,
+    baseURL: API_URL ? `${API_URL}/api` : '/api',
     headers: {
       'Content-Type': 'application/json',
     },
@@ -59,7 +61,7 @@ const api = createApiClient()
  * Authentication API
  */
 export const authApi = {
-  getGoogleAuthUrl: () => `${API_URL}/api/auth/google`,
+  getGoogleAuthUrl: () => API_URL ? `${API_URL}/api/auth/google` : '/api/auth/google',
 
   getCurrentUser: async (): Promise<User> => {
     const response = await api.get('/auth/me')
