@@ -217,26 +217,34 @@ interface SchemaEditorProps {
 // Generate unique ID
 const generateId = () => Math.random().toString(36).substring(2, 11)
 
+// Valid database type IDs
+const VALID_DB_TYPES = DATABASE_TYPES.map(t => t.id)
+
 // Parse JSON schema to internal format
 const parseSchema = (jsonStr: string): TableStore[] => {
   try {
     const data = JSON.parse(jsonStr)
     if (data.stores && Array.isArray(data.stores)) {
-      return data.stores.map((store: any) => ({
-        id: generateId(),
-        name: store.name || "",
-        dbType: store.type || "sql",
-        description: store.description || "",
-        columns: (store.fields || store.columns || []).map((col: any) => ({
+      return data.stores.map((store: any) => {
+        // Validate and normalize dbType
+        const rawType = store.type || "sql"
+        const dbType = VALID_DB_TYPES.includes(rawType) ? rawType : "sql"
+        return {
           id: generateId(),
-          name: col.name || "",
-          type: col.type || "varchar",
-          constraints: col.constraints || [],
-          description: col.description || "",
-        })),
-        indexes: store.indexes || [],
-        expanded: true,
-      }))
+          name: store.name || "",
+          dbType,
+          description: store.description || "",
+          columns: (store.fields || store.columns || []).map((col: any) => ({
+            id: generateId(),
+            name: col.name || "",
+            type: col.type || "varchar",
+            constraints: col.constraints || [],
+            description: col.description || "",
+          })),
+          indexes: store.indexes || [],
+          expanded: true,
+        }
+      })
     }
     // Legacy format
     if (data.tables) {
@@ -482,7 +490,7 @@ export default function SchemaEditor({
   }
 
   const getDbTypeInfo = (dbType: DatabaseType) =>
-    DATABASE_TYPES.find((t) => t.id === dbType)!
+    DATABASE_TYPES.find((t) => t.id === dbType) || DATABASE_TYPES[0] // Default to SQL if type not found
 
   return (
     <div className="space-y-4">
