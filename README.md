@@ -263,6 +263,32 @@ Submit → Validate → Generate Terraform → Deploy → Test → Report
                                                   Chaos Toolkit
 ```
 
+## Example Solution: URL Shortener
+
+Below is a reference architecture for the URL Shortener problem - one of the classic system design interview questions.
+
+![URL Shortener System Design](docs/url-shortener-design.png)
+
+### Key Components
+
+| Component | Purpose | Technology Options |
+|-----------|---------|-------------------|
+| **Load Balancer** | Distribute traffic across API servers | NGINX, AWS ALB, GCP Cloud LB |
+| **API Servers** | Handle URL creation and redirection | Node.js, Python, Go |
+| **Redis Cache** | Fast URL lookups, rate limiting | Redis Cluster |
+| **PostgreSQL** | Persistent storage with replication | PostgreSQL 15 |
+| **Key Generation Service** | Pre-generate unique short codes | Custom service |
+| **Message Queue** | Async analytics processing | Kafka, RabbitMQ |
+| **CDN** | Cache redirects at edge locations | CloudFlare, Fastly |
+
+### Design Decisions
+
+1. **Base62 Encoding**: Use characters `[a-zA-Z0-9]` for short codes (62 chars = 6 char code supports 56B URLs)
+2. **Cache-First**: Check Redis before database for O(1) lookups
+3. **Read Replicas**: Scale reads horizontally with PostgreSQL replicas
+4. **Async Analytics**: Log clicks to message queue, process asynchronously
+5. **Pre-generated Keys**: Avoid collision checking by pre-generating unique IDs
+
 ## Chaos Engineering Scenarios
 
 The platform tests solutions against various failure scenarios:
