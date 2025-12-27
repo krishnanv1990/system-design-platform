@@ -4,7 +4,7 @@ Provides real-time feedback and coaching for candidates.
 """
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from typing import Optional, Dict, Any, List
 
 from backend.services.ai_service import AIService
@@ -17,30 +17,18 @@ ai_service = AIService()
 
 class ChatMessage(BaseModel):
     """A single message in the conversation."""
-    role: str = Field(..., description="'user' or 'assistant'")
-    content: str = Field(..., description="Message content")
+    role: str
+    content: str
 
 
 class ChatRequest(BaseModel):
     """Request to chat about a system design."""
-    problem_id: int = Field(..., description="ID of the problem being worked on")
-    message: str = Field(..., min_length=1, max_length=4000, description="User's message")
-    conversation_history: List[ChatMessage] = Field(
-        default=[],
-        description="Previous messages in the conversation"
-    )
-    current_schema: Optional[Dict[str, Any]] = Field(
-        default=None,
-        description="Current database schema design"
-    )
-    current_api_spec: Optional[Dict[str, Any]] = Field(
-        default=None,
-        description="Current API specification"
-    )
-    current_diagram: Optional[Dict[str, Any]] = Field(
-        default=None,
-        description="Current diagram data (from canvas)"
-    )
+    problem_id: int
+    message: str
+    conversation_history: List[ChatMessage] = []
+    current_schema: Optional[Dict[str, Any]] = None
+    current_api_spec: Optional[Dict[str, Any]] = None
+    current_diagram: Optional[Dict[str, Any]] = None
 
 
 class DiagramFeedback(BaseModel):
@@ -54,23 +42,11 @@ class DiagramFeedback(BaseModel):
 
 class ChatResponse(BaseModel):
     """Response from the design chat."""
-    response: str = Field(..., description="AI's response message")
-    diagram_feedback: Optional[DiagramFeedback] = Field(
-        default=None,
-        description="Structured feedback about the diagram if provided"
-    )
-    suggested_improvements: List[str] = Field(
-        default=[],
-        description="List of suggested improvements"
-    )
-    is_on_track: bool = Field(
-        default=True,
-        description="Whether the candidate is heading in the right direction"
-    )
-    demo_mode: bool = Field(
-        default=False,
-        description="Whether this is a demo mode response"
-    )
+    response: str
+    diagram_feedback: Optional[DiagramFeedback] = None
+    suggested_improvements: List[str] = []
+    is_on_track: bool = True
+    demo_mode: bool = False
 
 
 # Reference solutions for different problem types
