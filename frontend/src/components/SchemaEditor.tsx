@@ -342,6 +342,23 @@ export default function SchemaEditor({
     }
   }
 
+  // Prevent form submission on paste or key events
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Prevent Enter from triggering any parent form submission
+    // (textarea should handle Enter normally for newlines)
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault()
+      e.stopPropagation()
+    }
+  }
+
+  // Handle paste event explicitly
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    // Stop event from bubbling up to prevent any form-like behavior
+    e.stopPropagation()
+    // Let the paste happen naturally - onChange will handle the new value
+  }
+
   // Toggle JSON editor visibility
   const toggleJsonEditor = () => {
     if (!showJsonEditor) {
@@ -522,6 +539,8 @@ export default function SchemaEditor({
               <textarea
                 value={jsonText}
                 onChange={(e) => handleJsonChange(e.target.value)}
+                onKeyDown={handleKeyDown}
+                onPaste={handlePaste}
                 readOnly={readOnly}
                 placeholder={`{
   "stores": [

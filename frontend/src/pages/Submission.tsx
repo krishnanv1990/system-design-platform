@@ -221,20 +221,21 @@ export default function Submission() {
         })}
       </div>
 
-      {/* Step content */}
-      <Card>
-        <CardContent className="pt-6">
-          {step === "schema" && <SchemaEditor value={schemaInput} onChange={setSchemaInput} />}
-          {step === "api" && <ApiSpecEditor value={apiSpecInput} onChange={setApiSpecInput} />}
-          {step === "design" && (
-            <DesignEditor
-              value={designText}
-              onChange={setDesignText}
-              problemId={problem?.id}
-              currentSchema={schemaInput}
-              currentApiSpec={apiSpecInput}
-            />
-          )}
+      {/* Step content - wrapped in form to prevent accidental submissions */}
+      <form onSubmit={(e) => e.preventDefault()}>
+        <Card>
+          <CardContent className="pt-6">
+            {step === "schema" && <SchemaEditor value={schemaInput} onChange={setSchemaInput} />}
+            {step === "api" && <ApiSpecEditor value={apiSpecInput} onChange={setApiSpecInput} />}
+            {step === "design" && (
+              <DesignEditor
+                value={designText}
+                onChange={setDesignText}
+                problemId={problem?.id}
+                currentSchema={schemaInput}
+                currentApiSpec={apiSpecInput}
+              />
+            )}
           {step === "review" && (
             <div className="space-y-6">
               <div>
@@ -359,8 +360,9 @@ export default function Submission() {
               )}
             </div>
           )}
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      </form>
 
       {/* Navigation buttons */}
       <div className="flex justify-between">
