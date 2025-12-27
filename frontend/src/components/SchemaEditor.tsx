@@ -22,12 +22,10 @@ import {
   ToggleLeft,
   Sparkles,
   Code,
-  LayoutGrid,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { cn } from "@/lib/utils"
 
 // Database types with their icons and colors
@@ -294,7 +292,7 @@ export default function SchemaEditor({
 }: SchemaEditorProps) {
   const [stores, setStores] = useState<TableStore[]>([])
   const [showTypeSelector, setShowTypeSelector] = useState(false)
-  const [editorMode, setEditorMode] = useState<"visual" | "json">("visual")
+  const [showJsonEditor, setShowJsonEditor] = useState(false)
   const [jsonText, setJsonText] = useState("")
   const [jsonError, setJsonError] = useState<string | null>(null)
 
@@ -344,18 +342,14 @@ export default function SchemaEditor({
     }
   }
 
-  // Switch between modes
-  const handleModeChange = (mode: "visual" | "json") => {
-    if (mode === "json" && editorMode === "visual") {
-      // Switching to JSON - update JSON text from current stores
+  // Toggle JSON editor visibility
+  const toggleJsonEditor = () => {
+    if (!showJsonEditor) {
+      // Opening JSON editor - sync text from stores
       const jsonOutput = toJsonSchema(stores)
       setJsonText(jsonOutput)
-    } else if (mode === "visual" && editorMode === "json" && !jsonError) {
-      // Switching to visual - parse JSON if valid
-      const newStores = parseSchema(jsonText)
-      setStores(newStores)
     }
-    setEditorMode(mode)
+    setShowJsonEditor(!showJsonEditor)
   }
 
   const addStore = (dbType: DatabaseType) => {
@@ -482,24 +476,11 @@ export default function SchemaEditor({
             Data Storage Schema
           </h3>
           <p className="text-sm text-muted-foreground">
-            Define your data stores, tables, and their structures
+            Define your data stores using the visual builder or edit JSON directly
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {/* Mode Toggle */}
-          <Tabs value={editorMode} onValueChange={(v) => handleModeChange(v as "visual" | "json")}>
-            <TabsList className="h-9">
-              <TabsTrigger value="visual" className="gap-1.5 px-3">
-                <LayoutGrid className="h-3.5 w-3.5" />
-                Visual
-              </TabsTrigger>
-              <TabsTrigger value="json" className="gap-1.5 px-3">
-                <Code className="h-3.5 w-3.5" />
-                JSON
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
-          {!readOnly && editorMode === "visual" && (
+          {!readOnly && (
             <Button
               variant="outline"
               size="sm"
@@ -510,12 +491,32 @@ export default function SchemaEditor({
               Add Data Store
             </Button>
           )}
+          <Button
+            variant={showJsonEditor ? "secondary" : "outline"}
+            size="sm"
+            onClick={toggleJsonEditor}
+            className="gap-2"
+          >
+            <Code className="h-4 w-4" />
+            {showJsonEditor ? "Hide JSON" : "Edit as JSON"}
+          </Button>
         </div>
       </div>
 
-      {/* JSON Editor Mode */}
-      {editorMode === "json" && (
-        <Card className="overflow-hidden">
+      {/* JSON Editor Section (Collapsible) */}
+      {showJsonEditor && (
+        <Card className="overflow-hidden border-2 border-primary/20">
+          <div className="bg-primary/5 px-4 py-2 border-b flex items-center justify-between">
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <Code className="h-4 w-4 text-primary" />
+              JSON Editor
+            </div>
+            {jsonError && (
+              <Badge variant="destructive" className="text-xs">
+                Invalid JSON
+              </Badge>
+            )}
+          </div>
           <CardContent className="p-0">
             <div className="relative">
               <textarea
@@ -537,27 +538,26 @@ export default function SchemaEditor({
   ]
 }`}
                 className={cn(
-                  "w-full min-h-[400px] p-4 font-mono text-sm bg-muted/30 focus:outline-none focus:ring-2 focus:ring-primary/30 resize-y",
-                  jsonError && "border-2 border-destructive",
+                  "w-full min-h-[250px] p-4 font-mono text-sm bg-muted/30 focus:outline-none focus:ring-2 focus:ring-primary/30 resize-y",
+                  jsonError && "border-l-4 border-l-destructive",
                   readOnly && "cursor-default"
                 )}
               />
               {jsonError && (
-                <div className="absolute bottom-0 left-0 right-0 p-2 bg-destructive/10 border-t border-destructive text-destructive text-xs font-mono">
+                <div className="p-2 bg-destructive/10 border-t border-destructive text-destructive text-xs font-mono">
                   Error: {jsonError}
                 </div>
               )}
             </div>
             <div className="p-3 bg-muted/20 border-t text-xs text-muted-foreground">
-              <span className="font-medium">Tip:</span> You can define stores with type: "sql", "kv", "document", "graph", "timeseries", or "search"
+              <span className="font-medium">Tip:</span> Changes here will update the visual editor above. Supported types: "sql", "kv", "document", "graph", "timeseries", "search"
             </div>
           </CardContent>
         </Card>
       )}
 
-      {/* Visual Editor Mode */}
-      {editorMode === "visual" && (
-        <>
+      {/* Visual Editor - Always shown */}
+      <>
 
       {/* Database Type Selector */}
       {showTypeSelector && (
@@ -947,7 +947,6 @@ export default function SchemaEditor({
         </div>
       )}
       </>
-      )}
     </div>
   )
 }
