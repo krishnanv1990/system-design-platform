@@ -8,7 +8,15 @@ from functools import lru_cache
 
 
 class Settings(BaseSettings):
-    """Application settings loaded from environment variables."""
+    """
+    Application settings loaded from environment variables.
+
+    Supports multiple OAuth providers for authentication:
+    - Google OAuth 2.0
+    - Facebook OAuth 2.0
+    - LinkedIn OAuth 2.0
+    - GitHub OAuth 2.0
+    """
 
     # Application
     app_name: str = "System Design Platform"
@@ -18,12 +26,26 @@ class Settings(BaseSettings):
     # Database
     database_url: str = "postgresql://postgres:postgres@localhost:5432/system_design_db"
 
-    # Authentication
-    google_client_id: str = ""
-    google_client_secret: str = ""
+    # JWT Authentication
     jwt_secret_key: str = "your-super-secret-key-change-in-production"
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 60 * 24 * 7  # 7 days
+
+    # Google OAuth
+    google_client_id: str = ""
+    google_client_secret: str = ""
+
+    # Facebook OAuth
+    facebook_client_id: str = ""
+    facebook_client_secret: str = ""
+
+    # LinkedIn OAuth
+    linkedin_client_id: str = ""
+    linkedin_client_secret: str = ""
+
+    # GitHub OAuth
+    github_client_id: str = ""
+    github_client_secret: str = ""
 
     # Claude AI
     anthropic_api_key: str = ""
@@ -33,7 +55,7 @@ class Settings(BaseSettings):
     gcp_region: str = "us-central1"
     gcp_credentials_path: str = ""
 
-    # Frontend URL (for OAuth redirect)
+    # URLs (for OAuth redirect)
     frontend_url: str = "http://localhost:5173"
     backend_url: str = "http://localhost:8000"
 

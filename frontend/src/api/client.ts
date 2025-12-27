@@ -58,10 +58,30 @@ const createApiClient = (): AxiosInstance => {
 const api = createApiClient()
 
 /**
+ * OAuth provider types
+ */
+export type OAuthProvider = 'google' | 'facebook' | 'linkedin' | 'github'
+
+/**
  * Authentication API
+ * Supports multiple OAuth providers: Google, Facebook, LinkedIn, GitHub
  */
 export const authApi = {
+  /**
+   * Get OAuth URL for the specified provider
+   */
+  getAuthUrl: (provider: OAuthProvider): string => {
+    const baseUrl = API_URL ? `${API_URL}/api/auth` : '/api/auth'
+    return `${baseUrl}/${provider}`
+  },
+
+  // Legacy method for backward compatibility
   getGoogleAuthUrl: () => API_URL ? `${API_URL}/api/auth/google` : '/api/auth/google',
+
+  // Convenience methods for each provider
+  getFacebookAuthUrl: () => API_URL ? `${API_URL}/api/auth/facebook` : '/api/auth/facebook',
+  getLinkedInAuthUrl: () => API_URL ? `${API_URL}/api/auth/linkedin` : '/api/auth/linkedin',
+  getGitHubAuthUrl: () => API_URL ? `${API_URL}/api/auth/github` : '/api/auth/github',
 
   getCurrentUser: async (): Promise<User> => {
     const response = await api.get('/auth/me')
@@ -80,6 +100,14 @@ export const authApi = {
 
   getDemoUser: async (): Promise<User> => {
     const response = await api.get('/auth/demo-user')
+    return response.data
+  },
+
+  /**
+   * Get available OAuth providers and their configuration status
+   */
+  getAvailableProviders: async (): Promise<{ providers: Record<OAuthProvider, boolean> }> => {
+    const response = await api.get('/auth/providers')
     return response.data
   },
 }
