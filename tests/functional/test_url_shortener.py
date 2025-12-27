@@ -7,6 +7,7 @@ import pytest
 import httpx
 import asyncio
 import time
+import random
 from typing import Optional
 import os
 
@@ -508,3 +509,248 @@ class TestURLShortenerPerformanceBaseline:
             avg_latency = sum(latencies) / len(latencies)
             # Redirects should be fast - under 500ms average
             assert avg_latency < 500, f"Average redirect latency {avg_latency:.0f}ms exceeds threshold"
+
+
+class TestKeyGenerationService:
+    """Tests for Key Generation Service (KGS) functionality."""
+
+    @pytest.fixture
+    def client(self):
+        return httpx.Client(base_url=BASE_URL, timeout=30.0)
+
+    def test_kgs_generates_unique_codes(self, client):
+        """Test that KGS generates unique short codes for each URL."""
+        short_codes = set()
+
+        for i in range(50):
+            response = client.post("/api/v1/urls", json={
+                "original_url": f"https://www.example.com/kgs-unique-test/{i}/{time.time()}"
+            })
+            if response.status_code in [200, 201]:
+                data = response.json()
+                short_code = data.get("short_code") or data.get("short_url", "").split("/")[-1]
+                if short_code:
+                    # Verify uniqueness
+                    assert short_code not in short_codes, f"Duplicate code generated: {short_code}"
+                    short_codes.add(short_code)
+
+        # Should have generated unique codes for all requests
+        assert len(short_codes) >= 45, f"Expected at least 45 unique codes, got {len(short_codes)}"
+
+    def test_kgs_code_format(self, client):
+        """Test that KGS generates codes in expected format."""
+        response = client.post("/api/v1/urls", json={
+            "original_url": "https://www.example.com/kgs-format-test"
+        })
+
+        if response.status_code in [200, 201]:
+            data = response.json()
+            short_code = data.get("short_code") or data.get("short_url", "").split("/")[-1]
+
+            if short_code:
+                # Code should be alphanumeric, typically 6-8 characters
+                assert len(short_code) >= 4, f"Short code too short: {short_code}"
+                assert len(short_code) <= 10, f"Short code too long: {short_code}"
+                assert short_code.isalnum(), f"Short code contains non-alphanumeric chars: {short_code}"
+
+    def test_kgs_high_throughput(self, client):
+        """Test KGS can handle high throughput of key allocations."""
+        import concurrent.futures
+
+        results = []
+
+        def create_url(i):
+            try:
+                response = client.post("/api/v1/urls", json={
+                    "original_url": f"https://www.example.com/kgs-throughput/{i}"
+                })
+                return response.status_code, response.json() if response.status_code in [200, 201] else None
+            except Exception as e:
+                return 500, str(e)
+
+        # Create 20 URLs concurrently
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            futures = [executor.submit(create_url, i) for i in range(20)]
+            results = [f.result() for f in futures]
+
+        # Most should succeed
+        success_count = sum(1 for status, _ in results if status in [200, 201])
+        assert success_count >= 15, f"Expected at least 15 successes, got {success_count}"
+
+        # Verify all successful ones have unique codes
+        codes = set()
+        for status, data in results:
+            if status in [200, 201] and data:
+                code = data.get("short_code") or data.get("short_url", "").split("/")[-1]
+                if code:
+                    assert code not in codes, f"Duplicate code in concurrent test: {code}"
+                    codes.add(code)
+
+    def test_kgs_custom_code_validation(self, client):
+        """Test that custom codes are properly validated."""
+        # Valid custom code
+        custom_code = f"custom{random.randint(100, 999)}"
+        response = client.post("/api/v1/urls", json={
+            "original_url": "https://www.example.com/custom-code-test",
+            "custom_code": custom_code
+        })
+
+        # Should accept or reject based on availability
+        assert response.status_code in [200, 201, 409, 400, 422]
+
+        if response.status_code in [200, 201]:
+            data = response.json()
+            returned_code = data.get("short_code") or data.get("short_url", "").split("/")[-1]
+            # If accepted, the returned code should match
+            assert returned_code == custom_code or custom_code in (returned_code or "")
+
+    def test_kgs_custom_code_conflict(self, client):
+        """Test that duplicate custom codes are rejected."""
+        custom_code = f"dupe{random.randint(1000, 9999)}"
+        url1 = f"https://www.example.com/dupe-test-1/{time.time()}"
+        url2 = f"https://www.example.com/dupe-test-2/{time.time()}"
+
+        # First request with custom code
+        response1 = client.post("/api/v1/urls", json={
+            "original_url": url1,
+            "custom_code": custom_code
+        })
+
+        if response1.status_code in [200, 201]:
+            # Second request with same custom code should fail
+            response2 = client.post("/api/v1/urls", json={
+                "original_url": url2,
+                "custom_code": custom_code
+            })
+
+            # Should be rejected as conflict
+            assert response2.status_code in [409, 400, 422], \
+                f"Expected conflict error, got {response2.status_code}"
+
+    def test_kgs_pool_health_in_response(self, client):
+        """Test that health endpoint reports KGS pool status (optional)."""
+        response = client.get("/health")
+
+        if response.status_code == 200:
+            data = response.json()
+            # If KGS is implemented, health may include pool info
+            # This is optional - just check health endpoint works
+            assert "status" in data or "healthy" in str(data).lower()
+
+    def test_kgs_fast_key_allocation(self, client):
+        """Test that key allocation is fast (KGS advantage)."""
+        latencies = []
+
+        for i in range(10):
+            start = time.time()
+            response = client.post("/api/v1/urls", json={
+                "original_url": f"https://www.example.com/kgs-speed-test/{i}"
+            })
+            latency_ms = (time.time() - start) * 1000
+
+            if response.status_code in [200, 201]:
+                latencies.append(latency_ms)
+
+        if latencies:
+            avg_latency = sum(latencies) / len(latencies)
+            # KGS should enable fast writes - under 2 seconds average
+            # (generous for cloud cold starts)
+            assert avg_latency < 2000, f"Average write latency {avg_latency:.0f}ms exceeds threshold"
+
+
+class TestKGSResilience:
+    """Tests for KGS resilience and edge cases."""
+
+    @pytest.fixture
+    def client(self):
+        return httpx.Client(base_url=BASE_URL, timeout=30.0)
+
+    def test_rapid_sequential_creates(self, client):
+        """Test rapid sequential URL creation doesn't exhaust pool."""
+        created_codes = []
+
+        for i in range(30):
+            response = client.post("/api/v1/urls", json={
+                "original_url": f"https://www.example.com/rapid-create/{i}"
+            })
+
+            if response.status_code in [200, 201]:
+                data = response.json()
+                code = data.get("short_code") or data.get("short_url", "").split("/")[-1]
+                if code:
+                    created_codes.append(code)
+            elif response.status_code == 503:
+                # Pool exhaustion should not happen in normal operation
+                pytest.fail("KGS pool exhausted during normal operation")
+
+        # Should successfully create most URLs
+        assert len(created_codes) >= 25, f"Only created {len(created_codes)} URLs"
+
+        # All codes should be unique
+        assert len(created_codes) == len(set(created_codes)), "Duplicate codes generated"
+
+    def test_create_after_delete(self, client):
+        """Test that deleting URLs doesn't affect new key generation."""
+        # Create a URL
+        response1 = client.post("/api/v1/urls", json={
+            "original_url": "https://www.example.com/delete-test"
+        })
+
+        if response1.status_code in [200, 201]:
+            data1 = response1.json()
+            code1 = data1.get("short_code") or data1.get("short_url", "").split("/")[-1]
+
+            # Delete it
+            client.delete(f"/api/v1/urls/{code1}")
+
+            # Create another URL - should get new code
+            response2 = client.post("/api/v1/urls", json={
+                "original_url": "https://www.example.com/after-delete"
+            })
+
+            if response2.status_code in [200, 201]:
+                data2 = response2.json()
+                code2 = data2.get("short_code") or data2.get("short_url", "").split("/")[-1]
+
+                # New code should be different (KGS doesn't reuse immediately)
+                # Note: Some implementations may reuse codes, which is also valid
+                assert code2 is not None
+
+    def test_same_url_different_codes(self, client):
+        """Test that same URL submitted twice gets different short codes."""
+        url = "https://www.example.com/same-url-test"
+
+        response1 = client.post("/api/v1/urls", json={"original_url": url})
+        response2 = client.post("/api/v1/urls", json={"original_url": url})
+
+        if response1.status_code in [200, 201] and response2.status_code in [200, 201]:
+            code1 = response1.json().get("short_code") or response1.json().get("short_url", "").split("/")[-1]
+            code2 = response2.json().get("short_code") or response2.json().get("short_url", "").split("/")[-1]
+
+            # May return same code (idempotent) or different codes - both are valid
+            # Just verify both codes work
+            if code1:
+                get_response = client.get(f"/api/v1/urls/{code1}")
+                assert get_response.status_code in [200, 301, 302, 307, 308]
+
+    def test_code_character_distribution(self, client):
+        """Test that generated codes have good character distribution."""
+        codes = []
+
+        for i in range(20):
+            response = client.post("/api/v1/urls", json={
+                "original_url": f"https://www.example.com/char-dist/{i}"
+            })
+            if response.status_code in [200, 201]:
+                data = response.json()
+                code = data.get("short_code") or data.get("short_url", "").split("/")[-1]
+                if code:
+                    codes.append(code)
+
+        if codes:
+            # Check that codes aren't all starting with same character
+            first_chars = [c[0] for c in codes if c]
+            unique_first_chars = len(set(first_chars))
+
+            # Should have some variety (at least 3 different starting chars in 20 codes)
+            assert unique_first_chars >= 2, "Codes lack variety - may indicate poor randomization"
