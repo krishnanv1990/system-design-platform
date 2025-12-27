@@ -477,29 +477,32 @@ class TestRunner:
 
             # Find chaos command - try shutil.which first, then common locations
             import shutil
+            import sys
             chaos_cmd = shutil.which("chaos")
             if not chaos_cmd:
-                for path in ["/usr/local/bin/chaos", "/home/appuser/.local/bin/chaos"]:
+                for path in ["/usr/local/bin/chaos", "/home/appuser/.local/bin/chaos",
+                             f"{sys.prefix}/bin/chaos"]:
                     if os.path.exists(path):
                         chaos_cmd = path
                         break
 
-            # Run chaos toolkit - use python -m if command not found
-            if chaos_cmd:
-                proc = await asyncio.create_subprocess_exec(
-                    chaos_cmd, "run", str(modified_file),
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                    cwd=str(workspace),
-                )
-            else:
-                # Use Python module directly
-                proc = await asyncio.create_subprocess_exec(
-                    "python", "-m", "chaoslib", "run", str(modified_file),
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                    cwd=str(workspace),
-                )
+            # If chaos command not found, skip the test
+            if not chaos_cmd:
+                return [{
+                    "test_type": TestType.CHAOS.value,
+                    "test_name": experiment.get("title", "chaos_experiment"),
+                    "status": TestStatus.SKIPPED.value,
+                    "duration_ms": 0,
+                    "chaos_scenario": "skipped",
+                    "details": {"error": "Chaos Toolkit CLI not found - skipping chaos tests"},
+                }]
+
+            proc = await asyncio.create_subprocess_exec(
+                chaos_cmd, "run", str(modified_file),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=str(workspace),
+            )
             stdout, stderr = await asyncio.wait_for(
                 proc.communicate(),
                 timeout=300,

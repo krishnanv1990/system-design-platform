@@ -36,8 +36,10 @@ ENV PATH="/usr/local/bin:${PATH}"
 # Verify locust is installed and accessible
 RUN locust --version
 
-# Verify chaostoolkit is installed - use pip show to check
+# Verify chaostoolkit is installed and find the chaos command
 RUN pip show chaostoolkit && python -c "import chaoslib; print('chaostoolkit installed')"
+RUN find /usr -name "chaos" -type f 2>/dev/null || echo "chaos CLI not found in /usr"
+RUN ls -la /usr/local/bin/chaos 2>/dev/null || echo "chaos not in /usr/local/bin"
 
 # Copy application code
 COPY backend/ ./backend/
