@@ -1,0 +1,146 @@
+{
+    "title": "URL Shortener - Cache Failure Resilience",
+    "description": "Tests service behavior when cache (Redis/Memcached) becomes unavailable or returns corrupted data",
+    "tags": ["url-shortener", "cache", "redis", "resilience"],
+    "configuration": {
+        "target_url": {
+            "type": "env",
+            "key": "TARGET_URL",
+            "default": "http://localhost:8000"
+        }
+    },
+    "steady-state-hypothesis": {
+        "title": "Service responds to read requests",
+        "probes": [
+            {
+                "name": "health-check",
+                "type": "probe",
+                "tolerance": 200,
+                "provider": {
+                    "type": "http",
+                    "url": "${target_url}/health",
+                    "timeout": 10
+                }
+            },
+            {
+                "name": "can-retrieve-urls",
+                "type": "probe",
+                "tolerance": {
+                    "type": "range",
+                    "range": [200, 404]
+                },
+                "provider": {
+                    "type": "http",
+                    "url": "${target_url}/api/v1/urls/test",
+                    "timeout": 10
+                }
+            }
+        ]
+    },
+    "method": [
+        {
+            "type": "action",
+            "name": "create-test-url-before-cache-failure",
+            "provider": {
+                "type": "http",
+                "url": "${target_url}/api/v1/urls",
+                "method": "POST",
+                "headers": {
+                    "Content-Type": "application/json"
+                },
+                "arguments": {
+                    "original_url": "https://cache-test-before.example.com"
+                },
+                "timeout": 15
+            }
+        },
+        {
+            "type": "action",
+            "name": "corrupt-cache-entries",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "corrupt_cache",
+                "arguments": {
+                    "cache_key_pattern": "url:*",
+                    "corruption_rate": 0.3
+                }
+            },
+            "pauses": {
+                "after": 3
+            }
+        },
+        {
+            "type": "probe",
+            "name": "verify-service-handles-cache-miss",
+            "tolerance": {
+                "type": "range",
+                "range": [200, 404]
+            },
+            "provider": {
+                "type": "http",
+                "url": "${target_url}/api/v1/urls/test",
+                "timeout": 15
+            }
+        },
+        {
+            "type": "probe",
+            "name": "verify-writes-still-work",
+            "tolerance": {
+                "type": "range",
+                "range": [200, 201]
+            },
+            "provider": {
+                "type": "http",
+                "url": "${target_url}/api/v1/urls",
+                "method": "POST",
+                "headers": {
+                    "Content-Type": "application/json"
+                },
+                "arguments": {
+                    "original_url": "https://cache-failure-write-test.example.com"
+                },
+                "timeout": 15
+            }
+        },
+        {
+            "type": "action",
+            "name": "simulate-cache-unavailable",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "simulate_cache_unavailable",
+                "arguments": {
+                    "duration_seconds": 30
+                }
+            },
+            "pauses": {
+                "after": 5
+            }
+        },
+        {
+            "type": "probe",
+            "name": "verify-fallback-to-database",
+            "tolerance": {
+                "type": "range",
+                "range": [200, 404]
+            },
+            "provider": {
+                "type": "http",
+                "url": "${target_url}/api/v1/urls/test",
+                "timeout": 20
+            }
+        }
+    ],
+    "rollbacks": [
+        {
+            "type": "action",
+            "name": "restore-cache",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "restore_cache"
+            }
+        }
+    ]
+}

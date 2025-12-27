@@ -1,0 +1,171 @@
+{
+    "title": "URL Shortener - Zonal Outage Resilience",
+    "description": "Tests service behavior during simulated zonal outages in cloud infrastructure",
+    "tags": ["url-shortener", "zonal-outage", "disaster-recovery", "multi-region", "resilience"],
+    "configuration": {
+        "target_url": {
+            "type": "env",
+            "key": "TARGET_URL",
+            "default": "http://localhost:8000"
+        },
+        "gcp_project": {
+            "type": "env",
+            "key": "GCP_PROJECT"
+        },
+        "cloud_run_region": {
+            "type": "env",
+            "key": "CLOUD_RUN_REGION",
+            "default": "us-central1"
+        }
+    },
+    "steady-state-hypothesis": {
+        "title": "Service is fully operational across zones",
+        "probes": [
+            {
+                "name": "service-healthy",
+                "type": "probe",
+                "tolerance": 200,
+                "provider": {
+                    "type": "http",
+                    "url": "${target_url}/health",
+                    "timeout": 10
+                }
+            },
+            {
+                "name": "can-create-urls",
+                "type": "probe",
+                "tolerance": {
+                    "type": "range",
+                    "range": [200, 201]
+                },
+                "provider": {
+                    "type": "http",
+                    "url": "${target_url}/api/v1/urls",
+                    "method": "POST",
+                    "headers": {
+                        "Content-Type": "application/json"
+                    },
+                    "arguments": {
+                        "original_url": "https://zonal-outage-baseline.example.com"
+                    },
+                    "timeout": 15
+                }
+            }
+        ]
+    },
+    "method": [
+        {
+            "type": "action",
+            "name": "simulate-zone-a-network-partition",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "simulate_network_partition",
+                "arguments": {
+                    "partition_duration_seconds": 60,
+                    "affected_percentage": 0.33
+                }
+            },
+            "pauses": {
+                "after": 10
+            }
+        },
+        {
+            "type": "probe",
+            "name": "verify-service-degraded-but-available",
+            "tolerance": {
+                "type": "range",
+                "range": [200, 503]
+            },
+            "provider": {
+                "type": "http",
+                "url": "${target_url}/health",
+                "timeout": 20
+            }
+        },
+        {
+            "type": "probe",
+            "name": "verify-writes-succeed-or-fail-gracefully",
+            "tolerance": {
+                "type": "range",
+                "range": [200, 503]
+            },
+            "provider": {
+                "type": "http",
+                "url": "${target_url}/api/v1/urls",
+                "method": "POST",
+                "headers": {
+                    "Content-Type": "application/json"
+                },
+                "arguments": {
+                    "original_url": "https://during-zonal-outage.example.com"
+                },
+                "timeout": 30
+            }
+        },
+        {
+            "type": "action",
+            "name": "simulate-complete-zone-failure",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "simulate_zone_failure",
+                "arguments": {
+                    "zone": "us-central1-a",
+                    "duration_seconds": 60
+                }
+            },
+            "pauses": {
+                "after": 15
+            }
+        },
+        {
+            "type": "probe",
+            "name": "verify-service-recovers-with-remaining-zones",
+            "tolerance": {
+                "type": "range",
+                "range": [200, 503]
+            },
+            "provider": {
+                "type": "http",
+                "url": "${target_url}/health",
+                "timeout": 30
+            }
+        },
+        {
+            "type": "probe",
+            "name": "verify-eventual-consistency-after-partition",
+            "tolerance": true,
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.probes",
+                "func": "verify_eventual_consistency",
+                "arguments": {
+                    "url": "${target_url}/health",
+                    "max_retries": 10,
+                    "retry_delay": 5
+                }
+            }
+        }
+    ],
+    "rollbacks": [
+        {
+            "type": "action",
+            "name": "restore-network",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "restore_network"
+            }
+        },
+        {
+            "type": "action",
+            "name": "restore-all-zones",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "restore_all_zones"
+            }
+        }
+    ]
+}

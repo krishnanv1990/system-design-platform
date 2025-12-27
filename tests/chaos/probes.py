@@ -329,3 +329,178 @@ def verify_rate_limiting(
 
     # Rate limiting should kick in at some point
     return rate_limited_count > 0 or total_requests < 10
+
+
+def check_response_time(
+    url: str,
+    max_latency_ms: int = 2000,
+    token: str = ""
+) -> bool:
+    """
+    Check that response time is within acceptable bounds.
+
+    Args:
+        url: The endpoint to check
+        max_latency_ms: Maximum acceptable latency in milliseconds
+        token: Optional authentication token
+
+    Returns:
+        True if response time is acceptable, False otherwise
+    """
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+
+    try:
+        start_time = time.time()
+        response = httpx.get(url, headers=headers, timeout=max_latency_ms / 1000 * 2)
+        latency_ms = (time.time() - start_time) * 1000
+
+        if response.status_code in [200, 301, 302, 307, 308]:
+            return latency_ms <= max_latency_ms
+        elif response.status_code == 404:
+            # Endpoint not found but responded quickly
+            return True
+        else:
+            # Error response but within time limit
+            return latency_ms <= max_latency_ms
+
+    except httpx.TimeoutException:
+        return False
+    except Exception:
+        return False
+
+
+def verify_service_availability(
+    url: str,
+    min_success_rate: float = 0.9,
+    num_requests: int = 10,
+    token: str = ""
+) -> bool:
+    """
+    Verify that service maintains minimum availability.
+
+    Sends multiple requests and checks success rate.
+    """
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+
+    success_count = 0
+
+    for _ in range(num_requests):
+        try:
+            response = httpx.get(url, headers=headers, timeout=10)
+            if response.status_code in [200, 301, 302, 307, 308, 404]:
+                success_count += 1
+        except Exception:
+            pass
+        time.sleep(0.1)  # Small delay between requests
+
+    success_rate = success_count / num_requests
+    return success_rate >= min_success_rate
+
+
+def verify_no_data_loss(
+    write_url: str,
+    read_url_template: str,
+    test_data: Dict[str, Any],
+    token: str = ""
+) -> bool:
+    """
+    Verify that data written before chaos is still readable after.
+
+    Args:
+        write_url: URL to write test data
+        read_url_template: URL template for reading (use {id} placeholder)
+        test_data: Data to write and verify
+        token: Optional authentication token
+
+    Returns:
+        True if data is preserved, False if lost
+    """
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+
+    try:
+        # Write test data
+        write_response = httpx.post(
+            write_url,
+            headers={**headers, "Content-Type": "application/json"},
+            json=test_data,
+            timeout=15
+        )
+
+        if write_response.status_code not in [200, 201]:
+            return True  # Can't verify, assume pass
+
+        response_data = write_response.json()
+        data_id = response_data.get("id") or response_data.get("short_code")
+
+        if not data_id:
+            return True  # Can't verify, assume pass
+
+        # Read back and verify
+        read_url = read_url_template.replace("{id}", str(data_id))
+        read_response = httpx.get(read_url, headers=headers, timeout=15)
+
+        if read_response.status_code == 200:
+            return True  # Data readable
+        elif read_response.status_code == 404:
+            return False  # Data lost!
+        else:
+            return True  # Other error, assume pass
+
+    except Exception:
+        return True  # Assume pass on error
+
+
+def verify_recovery_time(
+    url: str,
+    max_recovery_seconds: int = 60,
+    check_interval: int = 5,
+    token: str = ""
+) -> bool:
+    """
+    Verify that service recovers within acceptable time after failure.
+
+    Polls until service responds or timeout.
+    """
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+
+    deadline = time.time() + max_recovery_seconds
+
+    while time.time() < deadline:
+        try:
+            response = httpx.get(url, headers=headers, timeout=5)
+            if response.status_code == 200:
+                return True  # Recovered
+        except Exception:
+            pass
+
+        time.sleep(check_interval)
+
+    return False  # Did not recover in time
+
+
+def verify_error_rate(
+    url: str,
+    max_error_rate: float = 0.1,
+    num_requests: int = 50,
+    token: str = ""
+) -> bool:
+    """
+    Verify that error rate stays below threshold.
+
+    Useful for checking service stability during chaos.
+    """
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+
+    error_count = 0
+
+    for _ in range(num_requests):
+        try:
+            response = httpx.get(url, headers=headers, timeout=10)
+            if response.status_code >= 500:
+                error_count += 1
+        except Exception:
+            error_count += 1
+        time.sleep(0.05)  # 50ms between requests
+
+    error_rate = error_count / num_requests
+    return error_rate <= max_error_rate

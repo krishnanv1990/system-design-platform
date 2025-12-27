@@ -1,0 +1,152 @@
+{
+    "title": "URL Shortener - Instance/Server Failure Resilience",
+    "description": "Tests service behavior when individual instances fail or become unresponsive",
+    "tags": ["url-shortener", "instance-failure", "cloud-run", "resilience", "autoscaling"],
+    "configuration": {
+        "target_url": {
+            "type": "env",
+            "key": "TARGET_URL",
+            "default": "http://localhost:8000"
+        },
+        "gcp_project": {
+            "type": "env",
+            "key": "GCP_PROJECT"
+        },
+        "cloud_run_service": {
+            "type": "env",
+            "key": "CLOUD_RUN_SERVICE",
+            "default": "url-shortener"
+        }
+    },
+    "steady-state-hypothesis": {
+        "title": "Service is operational with multiple instances",
+        "probes": [
+            {
+                "name": "service-healthy",
+                "type": "probe",
+                "tolerance": 200,
+                "provider": {
+                    "type": "http",
+                    "url": "${target_url}/health",
+                    "timeout": 10
+                }
+            }
+        ]
+    },
+    "method": [
+        {
+            "type": "action",
+            "name": "scale-down-to-minimum",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "scale_cloud_run_instances",
+                "arguments": {
+                    "min_instances": 0,
+                    "max_instances": 1
+                }
+            },
+            "pauses": {
+                "after": 10
+            }
+        },
+        {
+            "type": "probe",
+            "name": "verify-cold-start-handling",
+            "tolerance": {
+                "type": "range",
+                "range": [200, 504]
+            },
+            "provider": {
+                "type": "http",
+                "url": "${target_url}/health",
+                "timeout": 60
+            }
+        },
+        {
+            "type": "action",
+            "name": "simulate-instance-crash",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "simulate_instance_crash",
+                "arguments": {
+                    "crash_percentage": 0.5,
+                    "duration_seconds": 30
+                }
+            },
+            "pauses": {
+                "after": 5
+            }
+        },
+        {
+            "type": "probe",
+            "name": "verify-load-balancing-reroutes",
+            "tolerance": {
+                "type": "range",
+                "range": [200, 503]
+            },
+            "provider": {
+                "type": "http",
+                "url": "${target_url}/api/v1/urls",
+                "method": "POST",
+                "headers": {
+                    "Content-Type": "application/json"
+                },
+                "arguments": {
+                    "original_url": "https://during-instance-failure.example.com"
+                },
+                "timeout": 30
+            }
+        },
+        {
+            "type": "action",
+            "name": "trigger-memory-pressure",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "trigger_gc_pressure",
+                "arguments": {
+                    "memory_pressure_mb": 256,
+                    "duration_seconds": 20
+                }
+            },
+            "pauses": {
+                "after": 5
+            }
+        },
+        {
+            "type": "probe",
+            "name": "verify-service-handles-memory-pressure",
+            "tolerance": {
+                "type": "range",
+                "range": [200, 503]
+            },
+            "provider": {
+                "type": "http",
+                "url": "${target_url}/health",
+                "timeout": 30
+            }
+        }
+    ],
+    "rollbacks": [
+        {
+            "type": "action",
+            "name": "restore-instances",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "restore_cloud_run_instances"
+            }
+        },
+        {
+            "type": "action",
+            "name": "restore-all",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "restore_all_services"
+            }
+        }
+    ]
+}

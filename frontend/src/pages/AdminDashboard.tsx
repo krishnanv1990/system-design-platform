@@ -12,7 +12,6 @@ import {
   Users,
   Clock,
   ExternalLink,
-  Trash2,
   RefreshCw,
   AlertTriangle,
   CheckCircle,

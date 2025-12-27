@@ -269,3 +269,236 @@ def trigger_gc_pressure(memory_pressure_mb: int = 512, duration_seconds: int = 3
         "duration_seconds": duration_seconds,
         "note": "Actual implementation requires access to target process"
     }
+
+
+# ==================== Cache Failure Actions ====================
+
+def simulate_cache_unavailable(duration_seconds: int = 30) -> dict:
+    """
+    Simulate cache (Redis/Memcached) being completely unavailable.
+
+    This tests:
+    - Fallback to database when cache is down
+    - Graceful degradation of read performance
+    - Write-through vs write-behind behavior
+    """
+    _injected_failures["cache_unavailable"] = {
+        "until": time.time() + duration_seconds
+    }
+
+    return {
+        "status": "cache_unavailable_simulated",
+        "duration_seconds": duration_seconds,
+        "note": "Service should fall back to database for reads"
+    }
+
+
+def restore_cache() -> dict:
+    """Restore cache to normal operation."""
+    _injected_failures["cache_unavailable"] = None
+    _injected_failures["cache_corruption"] = None
+    return {"status": "cache_restored"}
+
+
+# ==================== Zone Failure Actions ====================
+
+def simulate_zone_failure(zone: str = "us-central1-a", duration_seconds: int = 60) -> dict:
+    """
+    Simulate complete failure of a GCP zone.
+
+    This tests:
+    - Multi-zone redundancy
+    - Automatic failover to healthy zones
+    - Data replication and consistency
+    """
+    _injected_failures["zone_failure"] = {
+        "zone": zone,
+        "until": time.time() + duration_seconds
+    }
+
+    return {
+        "status": "zone_failure_simulated",
+        "zone": zone,
+        "duration_seconds": duration_seconds,
+        "note": "Simulates all resources in zone becoming unavailable"
+    }
+
+
+def restore_all_zones() -> dict:
+    """Restore all zones to normal operation."""
+    _injected_failures["zone_failure"] = None
+    return {"status": "all_zones_restored"}
+
+
+# ==================== Cloud Run Instance Actions ====================
+
+def scale_cloud_run_instances(
+    min_instances: int = 0,
+    max_instances: int = 10,
+    service_name: str = None,
+    region: str = "us-central1",
+    project: str = None
+) -> dict:
+    """
+    Scale Cloud Run service instances.
+
+    This tests:
+    - Cold start handling
+    - Autoscaling behavior
+    - Request queuing during scale-up
+    """
+    import os
+    import subprocess
+
+    project = project or os.getenv("GCP_PROJECT")
+    service_name = service_name or os.getenv("CLOUD_RUN_SERVICE", "url-shortener")
+
+    if not project:
+        return {
+            "status": "skipped",
+            "reason": "GCP_PROJECT not set"
+        }
+
+    try:
+        result = subprocess.run([
+            "gcloud", "run", "services", "update", service_name,
+            f"--min-instances={min_instances}",
+            f"--max-instances={max_instances}",
+            f"--region={region}",
+            f"--project={project}",
+            "--quiet"
+        ], capture_output=True, text=True, timeout=120)
+
+        return {
+            "status": "scaled" if result.returncode == 0 else "scale_failed",
+            "service": service_name,
+            "min_instances": min_instances,
+            "max_instances": max_instances,
+            "stdout": result.stdout,
+            "stderr": result.stderr
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e)
+        }
+
+
+def restore_cloud_run_instances(
+    min_instances: int = 1,
+    max_instances: int = 100,
+    service_name: str = None,
+    region: str = "us-central1",
+    project: str = None
+) -> dict:
+    """Restore Cloud Run service to normal scaling configuration."""
+    return scale_cloud_run_instances(
+        min_instances=min_instances,
+        max_instances=max_instances,
+        service_name=service_name,
+        region=region,
+        project=project
+    )
+
+
+def simulate_instance_crash(crash_percentage: float = 0.5, duration_seconds: int = 30) -> dict:
+    """
+    Simulate a percentage of instances crashing.
+
+    This tests:
+    - Load balancer health check detection
+    - Traffic rerouting to healthy instances
+    - Autoscaling response to unhealthy instances
+    """
+    _injected_failures["instance_crash"] = {
+        "percentage": crash_percentage,
+        "until": time.time() + duration_seconds
+    }
+
+    return {
+        "status": "instance_crash_simulated",
+        "crash_percentage": crash_percentage,
+        "duration_seconds": duration_seconds,
+        "note": f"{int(crash_percentage * 100)}% of instances simulated as crashed"
+    }
+
+
+# ==================== Network Partition Enhancements ====================
+
+def simulate_cross_region_latency(
+    latency_ms: int = 200,
+    jitter_ms: int = 50,
+    duration_seconds: int = 60
+) -> dict:
+    """
+    Simulate high latency between regions.
+
+    This tests:
+    - Cross-region replication lag
+    - Timeout handling for cross-region calls
+    - Eventual consistency behavior
+    """
+    _injected_failures["cross_region_latency"] = {
+        "latency_ms": latency_ms,
+        "jitter_ms": jitter_ms,
+        "until": time.time() + duration_seconds
+    }
+
+    return {
+        "status": "cross_region_latency_injected",
+        "latency_ms": latency_ms,
+        "jitter_ms": jitter_ms,
+        "duration_seconds": duration_seconds
+    }
+
+
+def simulate_packet_loss(loss_percentage: float = 0.1, duration_seconds: int = 30) -> dict:
+    """
+    Simulate network packet loss.
+
+    This tests:
+    - Retry logic
+    - Timeout handling
+    - Connection pooling behavior
+    """
+    _injected_failures["packet_loss"] = {
+        "percentage": loss_percentage,
+        "until": time.time() + duration_seconds
+    }
+
+    return {
+        "status": "packet_loss_injected",
+        "loss_percentage": loss_percentage,
+        "duration_seconds": duration_seconds
+    }
+
+
+# ==================== Dependency Failure Actions ====================
+
+def kill_external_dependency(dependency_name: str, duration_seconds: int = 30) -> dict:
+    """
+    Simulate failure of an external dependency (API, service, etc).
+
+    This tests:
+    - Circuit breaker patterns
+    - Fallback mechanisms
+    - Graceful degradation
+    """
+    _injected_failures[f"dependency_{dependency_name}"] = {
+        "until": time.time() + duration_seconds
+    }
+
+    return {
+        "status": "dependency_killed",
+        "dependency": dependency_name,
+        "duration_seconds": duration_seconds
+    }
+
+
+def restore_external_dependency(dependency_name: str) -> dict:
+    """Restore an external dependency to normal operation."""
+    _injected_failures[f"dependency_{dependency_name}"] = None
+    return {
+        "status": "dependency_restored",
+        "dependency": dependency_name
+    }

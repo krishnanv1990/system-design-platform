@@ -1,0 +1,77 @@
+{
+    "title": "URL Shortener Advanced Chaos Experiments",
+    "description": "Advanced resilience testing: zonal outages, database failures, cache failures, and recovery scenarios",
+    "tags": ["url-shortener", "resilience", "chaos", "advanced", "disaster-recovery"],
+    "configuration": {
+        "target_url": {
+            "type": "env",
+            "key": "TARGET_URL",
+            "default": "http://localhost:8000"
+        },
+        "gcp_project": {
+            "type": "env",
+            "key": "GCP_PROJECT"
+        },
+        "cloud_run_service": {
+            "type": "env",
+            "key": "CLOUD_RUN_SERVICE",
+            "default": "url-shortener"
+        },
+        "cloud_run_region": {
+            "type": "env",
+            "key": "CLOUD_RUN_REGION",
+            "default": "us-central1"
+        }
+    },
+    "steady-state-hypothesis": {
+        "title": "Service is healthy and can perform core operations",
+        "probes": [
+            {
+                "name": "health-check",
+                "type": "probe",
+                "tolerance": 200,
+                "provider": {
+                    "type": "http",
+                    "url": "${target_url}/health",
+                    "timeout": 10
+                }
+            },
+            {
+                "name": "can-create-url",
+                "type": "probe",
+                "tolerance": {
+                    "type": "range",
+                    "range": [200, 201]
+                },
+                "provider": {
+                    "type": "http",
+                    "url": "${target_url}/api/v1/urls",
+                    "method": "POST",
+                    "headers": {
+                        "Content-Type": "application/json"
+                    },
+                    "arguments": {
+                        "original_url": "https://chaos-steady-state-test.example.com"
+                    },
+                    "timeout": 15
+                }
+            },
+            {
+                "name": "response-time-under-2s",
+                "type": "probe",
+                "tolerance": true,
+                "provider": {
+                    "type": "python",
+                    "module": "tests.chaos.probes",
+                    "func": "check_response_time",
+                    "arguments": {
+                        "url": "${target_url}/health",
+                        "max_latency_ms": 2000
+                    }
+                }
+            }
+        ]
+    },
+    "method": [],
+    "rollbacks": []
+}

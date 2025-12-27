@@ -1,0 +1,124 @@
+{
+    "title": "URL Shortener - Database Failure Resilience",
+    "description": "Tests service behavior when database becomes unavailable or slow",
+    "tags": ["url-shortener", "database", "resilience", "disaster-recovery"],
+    "configuration": {
+        "target_url": {
+            "type": "env",
+            "key": "TARGET_URL",
+            "default": "http://localhost:8000"
+        }
+    },
+    "steady-state-hypothesis": {
+        "title": "Service responds to requests",
+        "probes": [
+            {
+                "name": "health-check-responds",
+                "type": "probe",
+                "tolerance": 200,
+                "provider": {
+                    "type": "http",
+                    "url": "${target_url}/health",
+                    "timeout": 10
+                }
+            }
+        ]
+    },
+    "method": [
+        {
+            "type": "action",
+            "name": "inject-database-latency",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "inject_database_latency",
+                "arguments": {
+                    "latency_ms": 5000,
+                    "duration_seconds": 30
+                }
+            },
+            "pauses": {
+                "after": 5
+            }
+        },
+        {
+            "type": "probe",
+            "name": "verify-read-operations-timeout-gracefully",
+            "tolerance": {
+                "type": "range",
+                "range": [200, 504]
+            },
+            "provider": {
+                "type": "http",
+                "url": "${target_url}/api/v1/urls/test123",
+                "timeout": 15
+            }
+        },
+        {
+            "type": "probe",
+            "name": "verify-health-still-responds",
+            "tolerance": 200,
+            "provider": {
+                "type": "http",
+                "url": "${target_url}/health",
+                "timeout": 10
+            }
+        },
+        {
+            "type": "action",
+            "name": "simulate-database-connection-failure",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "fail_storage_percentage",
+                "arguments": {
+                    "failure_rate": 0.5,
+                    "duration_seconds": 30
+                }
+            },
+            "pauses": {
+                "after": 5
+            }
+        },
+        {
+            "type": "probe",
+            "name": "verify-graceful-error-responses",
+            "tolerance": {
+                "type": "range",
+                "range": [200, 503]
+            },
+            "provider": {
+                "type": "http",
+                "url": "${target_url}/api/v1/urls",
+                "method": "POST",
+                "headers": {
+                    "Content-Type": "application/json"
+                },
+                "arguments": {
+                    "original_url": "https://db-failure-test.example.com"
+                },
+                "timeout": 15
+            }
+        }
+    ],
+    "rollbacks": [
+        {
+            "type": "action",
+            "name": "restore-database",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "restore_storage"
+            }
+        },
+        {
+            "type": "action",
+            "name": "restore-all",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "restore_all_services"
+            }
+        }
+    ]
+}

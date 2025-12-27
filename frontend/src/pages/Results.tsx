@@ -32,6 +32,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Progress } from "@/components/ui/progress"
 import { Skeleton } from "@/components/ui/skeleton"
 import TestResultCard from "@/components/TestResultCard"
+import TestScenarioDetails from "@/components/TestScenarioDetails"
+import DeployedComponentsCard from "@/components/DeployedComponentsCard"
 import { cn } from "@/lib/utils"
 import type { SubmissionDetail, TestSummary, SubmissionStatus, TestResult } from "@/types"
 
@@ -467,6 +469,17 @@ export default function Results() {
         </Card>
       )}
 
+      {/* Deployed Infrastructure Details */}
+      {gcpAssets && (
+        <DeployedComponentsCard
+          serviceName={gcpAssets.service_name || undefined}
+          region={gcpAssets.region}
+          endpointUrl={gcpAssets.endpoint_url || undefined}
+          containerImage={gcpAssets.container_image || undefined}
+          consoleLinks={gcpAssets.console_links}
+        />
+      )}
+
       {/* GCP Assets */}
       {gcpAssets && (
         <Card>
@@ -736,6 +749,15 @@ export default function Results() {
               </TabsContent>
 
               <TabsContent value="functional">
+                <TestScenarioDetails
+                  type="functional"
+                  passedTests={testSummary.functional_tests
+                    .filter((t) => t.status === "passed")
+                    .map((t) => t.test_name)}
+                  failedTests={testSummary.functional_tests
+                    .filter((t) => t.status === "failed" || t.status === "error")
+                    .map((t) => t.test_name)}
+                />
                 <div className="space-y-4">
                   {testSummary.functional_tests.length === 0 ? (
                     <p className="text-muted-foreground text-center py-8">
@@ -750,6 +772,15 @@ export default function Results() {
               </TabsContent>
 
               <TabsContent value="performance">
+                <TestScenarioDetails
+                  type="performance"
+                  passedTests={testSummary.performance_tests
+                    .filter((t) => t.status === "passed")
+                    .map((t) => t.test_name)}
+                  failedTests={testSummary.performance_tests
+                    .filter((t) => t.status === "failed" || t.status === "error")
+                    .map((t) => t.test_name)}
+                />
                 <div className="space-y-4">
                   {testSummary.performance_tests.length === 0 ? (
                     <p className="text-muted-foreground text-center py-8">
@@ -764,6 +795,15 @@ export default function Results() {
               </TabsContent>
 
               <TabsContent value="chaos">
+                <TestScenarioDetails
+                  type="chaos"
+                  passedTests={testSummary.chaos_tests
+                    .filter((t) => t.status === "passed")
+                    .map((t) => t.test_name)}
+                  failedTests={testSummary.chaos_tests
+                    .filter((t) => t.status === "failed" || t.status === "error")
+                    .map((t) => t.test_name)}
+                />
                 <div className="space-y-4">
                   {testSummary.chaos_tests.length === 0 ? (
                     <p className="text-muted-foreground text-center py-8">
