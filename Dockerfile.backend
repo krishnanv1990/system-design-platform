@@ -30,9 +30,14 @@ RUN curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | gpg --dearmor -
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Verify locust and chaos are installed and accessible
-RUN which locust && locust --version
-RUN which chaos && chaos --version
+# Add pip bin to PATH for all subsequent commands
+ENV PATH="/usr/local/bin:${PATH}"
+
+# Verify locust is installed and accessible
+RUN locust --version
+
+# Verify chaostoolkit is installed - use pip show to check
+RUN pip show chaostoolkit && python -c "import chaoslib; print('chaostoolkit installed')"
 
 # Copy application code
 COPY backend/ ./backend/

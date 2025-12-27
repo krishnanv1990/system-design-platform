@@ -456,19 +456,6 @@ class TestRunner:
                 "details": {"error": f"No chaos experiment file found at {chaos_file}"},
             }]
 
-        # Check if chaos command is available
-        import shutil
-        chaos_cmd = shutil.which("chaos")
-        if not chaos_cmd:
-            return [{
-                "test_type": TestType.CHAOS.value,
-                "test_name": "chaos_experiment",
-                "status": TestStatus.SKIPPED.value,
-                "duration_ms": 0,
-                "chaos_scenario": "none",
-                "details": {"error": "Chaos Toolkit command not found in PATH"},
-            }]
-
         try:
             workspace = self.test_dir / f"chaos_{submission_id}"
             workspace.mkdir(exist_ok=True)
@@ -488,12 +475,31 @@ class TestRunner:
             with open(modified_file, "w") as f:
                 json.dump(modified_experiment, f, indent=2)
 
-            proc = await asyncio.create_subprocess_exec(
-                chaos_cmd, "run", str(modified_file),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=str(workspace),
-            )
+            # Find chaos command - try shutil.which first, then common locations
+            import shutil
+            chaos_cmd = shutil.which("chaos")
+            if not chaos_cmd:
+                for path in ["/usr/local/bin/chaos", "/home/appuser/.local/bin/chaos"]:
+                    if os.path.exists(path):
+                        chaos_cmd = path
+                        break
+
+            # Run chaos toolkit - use python -m if command not found
+            if chaos_cmd:
+                proc = await asyncio.create_subprocess_exec(
+                    chaos_cmd, "run", str(modified_file),
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    cwd=str(workspace),
+                )
+            else:
+                # Use Python module directly
+                proc = await asyncio.create_subprocess_exec(
+                    "python", "-m", "chaoslib", "run", str(modified_file),
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    cwd=str(workspace),
+                )
             stdout, stderr = await asyncio.wait_for(
                 proc.communicate(),
                 timeout=300,
