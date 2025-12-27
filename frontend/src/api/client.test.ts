@@ -1,11 +1,23 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import axios from 'axios'
 import { problemsApi, submissionsApi, testsApi, authApi, assetsApi, chatApi } from './client'
+import type { Mock } from 'vitest'
+
+interface MockAxios {
+  create: Mock
+  get: Mock
+  post: Mock
+  delete: Mock
+  interceptors: {
+    request: { use: Mock }
+    response: { use: Mock }
+  }
+}
 
 // Mock axios
 vi.mock('axios', () => {
-  const mockAxios = {
-    create: vi.fn(() => mockAxios),
+  const mockAxiosInstance: MockAxios = {
+    create: vi.fn(),
     get: vi.fn(),
     post: vi.fn(),
     delete: vi.fn(),
@@ -14,15 +26,11 @@ vi.mock('axios', () => {
       response: { use: vi.fn() },
     },
   }
-  return { default: mockAxios }
+  mockAxiosInstance.create.mockReturnValue(mockAxiosInstance)
+  return { default: mockAxiosInstance }
 })
 
-const mockAxios = axios as unknown as {
-  create: ReturnType<typeof vi.fn>
-  get: ReturnType<typeof vi.fn>
-  post: ReturnType<typeof vi.fn>
-  delete: ReturnType<typeof vi.fn>
-}
+const mockAxios = axios as unknown as MockAxios
 
 describe('API Client', () => {
   beforeEach(() => {
@@ -68,7 +76,7 @@ describe('API Client', () => {
     })
 
     it('create - creates new problem', async () => {
-      const newProblem = { title: 'New Problem', difficulty: 'easy' }
+      const newProblem = { title: 'New Problem', difficulty: 'easy' as const }
       mockAxios.post.mockResolvedValueOnce({ data: { id: 3, ...newProblem } })
 
       const result = await problemsApi.create(newProblem)
