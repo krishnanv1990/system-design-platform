@@ -121,7 +121,7 @@ export default function DesignCanvas({
   const [textInput, setTextInput] = useState("")
   const svgRef = useRef<SVGSVGElement>(null)
 
-  // Load from value
+  // Load from value - only on initial mount or when value changes externally
   useEffect(() => {
     if (value) {
       try {
@@ -129,11 +129,11 @@ export default function DesignCanvas({
         if (Array.isArray(parsed.elements)) {
           setElements(parsed.elements)
         }
-      } catch (e) {
+      } catch {
         // Invalid JSON, ignore
       }
     }
-  }, [])
+  }, [value])
 
   // Save to value
   useEffect(() => {
@@ -143,7 +143,7 @@ export default function DesignCanvas({
     }
   }, [elements, onChange])
 
-  const generateId = () => Math.random().toString(36).substr(2, 9)
+  const generateId = () => Math.random().toString(36).substring(2, 11)
 
   const getMousePosition = (e: React.MouseEvent): Point => {
     if (!svgRef.current) return { x: 0, y: 0 }

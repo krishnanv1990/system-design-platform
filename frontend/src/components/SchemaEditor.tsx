@@ -215,7 +215,7 @@ interface SchemaEditorProps {
 }
 
 // Generate unique ID
-const generateId = () => Math.random().toString(36).substr(2, 9)
+const generateId = () => Math.random().toString(36).substring(2, 11)
 
 // Parse JSON schema to internal format
 const parseSchema = (jsonStr: string): TableStore[] => {
@@ -296,7 +296,7 @@ export default function SchemaEditor({
   const [jsonText, setJsonText] = useState("")
   const [jsonError, setJsonError] = useState<string | null>(null)
 
-  // Parse initial value
+  // Parse value - sync when value prop changes
   useEffect(() => {
     if (value) {
       const parsed = parseSchema(value)
@@ -311,7 +311,7 @@ export default function SchemaEditor({
         setJsonText(value)
       }
     }
-  }, [])
+  }, [value])
 
   // Update parent when stores change
   const updateParent = useCallback(

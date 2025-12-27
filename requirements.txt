@@ -30,6 +30,8 @@ grpcio==1.60.0
 pytest>=7.0.0,<8.0.0
 pytest-asyncio==0.23.4
 pytest-timeout==2.2.0
+pytest-cov>=4.0.0
+httpx>=0.26.0
 locust==2.23.1
 chaostoolkit==1.17.1
 chaostoolkit-kubernetes==0.26.3
