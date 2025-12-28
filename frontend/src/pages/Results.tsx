@@ -177,6 +177,7 @@ export default function Results() {
   const [loadingCode, setLoadingCode] = useState(false)
   const [copiedCode, setCopiedCode] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [tearingDown, setTearingDown] = useState(false)
 
   // Poll for updates while processing
@@ -217,8 +218,10 @@ export default function Results() {
             // Assets not available yet
           }
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error("Failed to load submission:", err)
+        const message = err.response?.data?.detail || err.message || "Failed to load submission"
+        setLoadError(message)
       } finally {
         setLoading(false)
       }
@@ -301,17 +304,28 @@ export default function Results() {
     return <ResultsSkeleton />
   }
 
-  if (!submission) {
+  if (loadError || !submission) {
     return (
       <div className="flex flex-col items-center justify-center py-12">
         <AlertCircle className="h-12 w-12 text-destructive mb-4" />
-        <p className="text-destructive font-medium mb-4">Submission not found</p>
-        <Button asChild variant="outline">
-          <Link to="/problems">
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to problems
-          </Link>
-        </Button>
+        <p className="text-destructive font-medium mb-2">
+          {loadError ? "Failed to load submission" : "Submission not found"}
+        </p>
+        {loadError && (
+          <p className="text-muted-foreground text-sm mb-4">{loadError}</p>
+        )}
+        <div className="flex gap-3">
+          <Button variant="outline" onClick={() => window.location.reload()}>
+            <Loader2 className="mr-2 h-4 w-4" />
+            Retry
+          </Button>
+          <Button asChild>
+            <Link to="/problems">
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Back to problems
+            </Link>
+          </Button>
+        </div>
       </div>
     )
   }

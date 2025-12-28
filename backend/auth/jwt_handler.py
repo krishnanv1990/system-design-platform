@@ -126,9 +126,15 @@ async def get_current_user(
         print("get_current_user: Token verification failed")
         raise credentials_exception
 
-    user_id: int = payload.get("sub")
-    if user_id is None:
+    user_id_str = payload.get("sub")
+    if user_id_str is None:
         print("get_current_user: No user_id in payload")
+        raise credentials_exception
+
+    try:
+        user_id = int(user_id_str)
+    except (ValueError, TypeError):
+        print(f"get_current_user: Invalid user_id format: {user_id_str}")
         raise credentials_exception
 
     user = db.query(User).filter(User.id == user_id).first()
@@ -170,8 +176,13 @@ async def get_current_user_optional(
     if payload is None:
         return None
 
-    user_id: int = payload.get("sub")
-    if user_id is None:
+    user_id_str = payload.get("sub")
+    if user_id_str is None:
+        return None
+
+    try:
+        user_id = int(user_id_str)
+    except (ValueError, TypeError):
         return None
 
     return db.query(User).filter(User.id == user_id).first()

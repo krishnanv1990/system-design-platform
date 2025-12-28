@@ -181,7 +181,7 @@ async def google_callback(code: str, db: Session = Depends(get_db)):
         )
 
         # Create JWT token
-        jwt_token = create_access_token(data={"sub": user.id})
+        jwt_token = create_access_token(data={"sub": str(user.id)})
         return create_auth_redirect(jwt_token)
 
     except Exception as e:
@@ -244,7 +244,7 @@ async def facebook_callback(code: str, db: Session = Depends(get_db)):
         )
 
         # Create JWT token
-        jwt_token = create_access_token(data={"sub": user.id})
+        jwt_token = create_access_token(data={"sub": str(user.id)})
         return create_auth_redirect(jwt_token)
 
     except Exception as e:
@@ -307,7 +307,7 @@ async def linkedin_callback(code: str, db: Session = Depends(get_db)):
         )
 
         # Create JWT token
-        jwt_token = create_access_token(data={"sub": user.id})
+        jwt_token = create_access_token(data={"sub": str(user.id)})
         return create_auth_redirect(jwt_token)
 
     except Exception as e:
@@ -370,7 +370,7 @@ async def github_callback(code: str, db: Session = Depends(get_db)):
         )
 
         # Create JWT token
-        jwt_token = create_access_token(data={"sub": user.id})
+        jwt_token = create_access_token(data={"sub": str(user.id)})
         return create_auth_redirect(jwt_token)
 
     except Exception as e:

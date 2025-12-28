@@ -10,11 +10,12 @@
 
 import { useState, useEffect } from "react"
 import { Link } from "react-router-dom"
-import { Search } from "lucide-react"
+import { Search, AlertCircle, RefreshCw } from "lucide-react"
 import { problemsApi } from "@/api/client"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Button } from "@/components/ui/button"
 import type { ProblemListItem } from "@/types"
 
 // Difficulty level variants for badge styling
@@ -59,19 +60,25 @@ function ProblemListSkeleton() {
 export default function ProblemList() {
   const [problems, setProblems] = useState<ProblemListItem[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [filter, setFilter] = useState<string>("")
 
-  useEffect(() => {
-    const loadProblems = async () => {
-      try {
-        const data = await problemsApi.list()
-        setProblems(data)
-      } catch (error) {
-        console.error("Failed to load problems:", error)
-      } finally {
-        setLoading(false)
-      }
+  const loadProblems = async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const data = await problemsApi.list()
+      setProblems(data)
+    } catch (err: any) {
+      console.error("Failed to load problems:", err)
+      const message = err.response?.data?.detail || err.message || "Failed to load problems"
+      setError(message)
+    } finally {
+      setLoading(false)
     }
+  }
+
+  useEffect(() => {
     loadProblems()
   }, [])
 
@@ -107,6 +114,16 @@ export default function ProblemList() {
       {/* Problem list */}
       {loading ? (
         <ProblemListSkeleton />
+      ) : error ? (
+        <div className="flex flex-col items-center justify-center py-12">
+          <AlertCircle className="h-12 w-12 text-destructive mb-4" />
+          <p className="text-destructive font-medium mb-2">Failed to load problems</p>
+          <p className="text-muted-foreground text-sm mb-4">{error}</p>
+          <Button onClick={loadProblems} variant="outline">
+            <RefreshCw className="mr-2 h-4 w-4" />
+            Try Again
+          </Button>
+        </div>
       ) : filteredProblems.length === 0 ? (
         <div className="text-center py-12">
           <p className="text-muted-foreground">

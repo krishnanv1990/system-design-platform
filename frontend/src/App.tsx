@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './components/AuthContext'
 import { ConfirmProvider } from './components/ui/confirm-dialog'
+import ErrorBoundary from './components/ErrorBoundary'
 import CookieNotice from './components/CookieNotice'
 import Layout from './components/Layout'
 import ProblemList from './pages/ProblemList'
@@ -13,6 +14,7 @@ import AdminDashboard from './pages/AdminDashboard'
 import TermsOfService from './pages/TermsOfService'
 import PrivacyPolicy from './pages/PrivacyPolicy'
 import AccountSettings from './pages/AccountSettings'
+import NotFound from './pages/NotFound'
 
 /**
  * Protected route wrapper - redirects to login if not authenticated
@@ -103,18 +105,26 @@ function AppRoutes() {
         {/* Legal pages - public but within layout */}
         <Route path="terms" element={<TermsOfService />} />
         <Route path="privacy" element={<PrivacyPolicy />} />
+
+        {/* 404 catch-all within layout */}
+        <Route path="*" element={<NotFound />} />
       </Route>
+
+      {/* Global 404 for routes outside layout */}
+      <Route path="*" element={<NotFound />} />
     </Routes>
   )
 }
 
 export default function App() {
   return (
-    <AuthProvider>
-      <ConfirmProvider>
-        <AppRoutes />
-        <CookieNotice />
-      </ConfirmProvider>
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <ConfirmProvider>
+          <AppRoutes />
+          <CookieNotice />
+        </ConfirmProvider>
+      </AuthProvider>
+    </ErrorBoundary>
   )
 }

@@ -137,7 +137,20 @@ export default function AdminDashboard() {
   }
 
   if (!summary) {
-    return null
+    return (
+      <div className="max-w-6xl mx-auto">
+        <div className="flex flex-col items-center justify-center py-12">
+          <AlertTriangle className="h-12 w-12 text-warning mb-4" />
+          <p className="text-muted-foreground font-medium mb-4">No data available</p>
+          <Button asChild variant="outline">
+            <Link to="/problems">
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Back to problems
+            </Link>
+          </Button>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -336,7 +349,7 @@ export default function AdminDashboard() {
         <CardContent>
           <div className="grid gap-3 md:grid-cols-3">
             <a
-              href={`https://console.cloud.google.com/run?project=sdp-demo-20251225`}
+              href={`https://console.cloud.google.com/run?project=system-design-platform-prod`}
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-2 p-3 bg-muted/50 rounded-lg hover:bg-muted transition-colors"
@@ -346,7 +359,7 @@ export default function AdminDashboard() {
               <ExternalLink className="h-3 w-3 ml-auto text-muted-foreground" />
             </a>
             <a
-              href={`https://console.cloud.google.com/cloud-build/builds?project=sdp-demo-20251225`}
+              href={`https://console.cloud.google.com/cloud-build/builds?project=system-design-platform-prod`}
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-2 p-3 bg-muted/50 rounded-lg hover:bg-muted transition-colors"
@@ -356,7 +369,7 @@ export default function AdminDashboard() {
               <ExternalLink className="h-3 w-3 ml-auto text-muted-foreground" />
             </a>
             <a
-              href={`https://console.cloud.google.com/artifacts?project=sdp-demo-20251225`}
+              href={`https://console.cloud.google.com/artifacts?project=system-design-platform-prod`}
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-2 p-3 bg-muted/50 rounded-lg hover:bg-muted transition-colors"
