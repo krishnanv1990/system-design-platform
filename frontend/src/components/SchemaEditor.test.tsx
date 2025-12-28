@@ -838,7 +838,7 @@ describe('SchemaEditor', () => {
         fireEvent.click(screen.getByRole('button', { name: /edit as json/i }))
       })
 
-      expect(screen.getByText(/Changes here will update the visual editor/i)).toBeInTheDocument()
+      expect(screen.getByText(/Changes here will update the visual editor below/i)).toBeInTheDocument()
     })
   })
 

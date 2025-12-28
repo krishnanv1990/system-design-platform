@@ -618,7 +618,7 @@ export default function SchemaEditor({
               )}
             </div>
             <div className="p-3 bg-muted/20 border-t text-xs text-muted-foreground">
-              <span className="font-medium">Tip:</span> Changes here will update the visual editor above. Supported types: "sql", "kv", "document", "graph", "timeseries", "search"
+              <span className="font-medium">Tip:</span> Changes here will update the visual editor below. Supported types: "sql", "kv", "document", "graph", "timeseries", "search"
             </div>
           </CardContent>
         </Card>
