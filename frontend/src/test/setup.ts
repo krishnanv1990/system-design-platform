@@ -43,10 +43,13 @@ Object.defineProperty(window, 'ResizeObserver', { value: ResizeObserverMock })
 // Mock scrollIntoView
 Element.prototype.scrollIntoView = vi.fn()
 
-// Mock clipboard API
-Object.defineProperty(navigator, 'clipboard', {
-  value: {
-    writeText: vi.fn().mockResolvedValue(undefined),
-    readText: vi.fn().mockResolvedValue(''),
-  },
-})
+// Mock clipboard API (only if not already defined)
+if (!navigator.clipboard) {
+  Object.defineProperty(navigator, 'clipboard', {
+    value: {
+      writeText: vi.fn().mockResolvedValue(undefined),
+      readText: vi.fn().mockResolvedValue(''),
+    },
+    configurable: true,
+  })
+}

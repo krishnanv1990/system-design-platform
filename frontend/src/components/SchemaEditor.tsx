@@ -3,7 +3,7 @@
  * Visual builder for defining database schemas with multiple store types
  */
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import {
   Plus,
   Trash2,
@@ -303,29 +303,43 @@ export default function SchemaEditor({
   const [showJsonEditor, setShowJsonEditor] = useState(false)
   const [jsonText, setJsonText] = useState("")
   const [jsonError, setJsonError] = useState<string | null>(null)
+  // Track if we're the source of changes to prevent feedback loops (use ref to avoid effect re-runs)
+  const isInternalUpdate = useRef(false)
 
-  // Parse value - sync when value prop changes
+  // Parse value - sync when value prop changes from external source
   useEffect(() => {
+    // Skip if this is our own update propagating back
+    if (isInternalUpdate.current) {
+      isInternalUpdate.current = false
+      return
+    }
+
     if (value) {
       const parsed = parseSchema(value)
-      if (parsed.length > 0) {
-        setStores(parsed)
-      }
-      // Also set json text for JSON mode
+      // Always update stores, even if empty (user might have cleared all stores)
+      setStores(parsed)
+      // Update JSON text for JSON mode
       try {
         const formatted = JSON.stringify(JSON.parse(value), null, 2)
         setJsonText(formatted)
+        setJsonError(null)
       } catch {
         setJsonText(value)
       }
+    } else {
+      // Handle empty/undefined value
+      setStores([])
+      setJsonText("")
     }
   }, [value])
 
-  // Update parent when stores change
+  // Update parent when stores change (from visual builder)
   const updateParent = useCallback(
     (newStores: TableStore[]) => {
       setStores(newStores)
       const jsonOutput = toJsonSchema(newStores)
+      // Mark as internal update to prevent useEffect feedback loop
+      isInternalUpdate.current = true
       onChange(jsonOutput)
       // Keep JSON text in sync
       setJsonText(jsonOutput)
@@ -334,18 +348,21 @@ export default function SchemaEditor({
     [onChange]
   )
 
-  // Handle JSON text changes
+  // Handle JSON text changes (from JSON editor)
   const handleJsonChange = (text: string) => {
     setJsonText(text)
     try {
       // Validate JSON by parsing it
       JSON.parse(text)
       setJsonError(null)
-      // Update stores from JSON
+      // Update stores from JSON - this syncs visual builder with JSON editor
       const newStores = parseSchema(text)
       setStores(newStores)
+      // Mark as internal update to prevent useEffect feedback loop
+      isInternalUpdate.current = true
       onChange(text)
     } catch (e) {
+      // Only set error, don't update stores - keeps visual builder showing last valid state
       setJsonError((e as Error).message)
     }
   }
@@ -545,6 +562,7 @@ export default function SchemaEditor({
           <CardContent className="p-0">
             <div className="relative">
               <textarea
+                data-testid="json-editor-textarea"
                 value={jsonText}
                 onChange={(e) => handleJsonChange(e.target.value)}
                 onKeyDown={handleKeyDown}
