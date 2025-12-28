@@ -71,7 +71,7 @@ export default function AccountSettings() {
       title: "Delete Account",
       message:
         "Are you sure you want to delete your account? This will permanently remove all your data including submissions, diagrams, and chat history.",
-      type: "destructive",
+      type: "danger",
       confirmLabel: "Continue",
     })
 
@@ -82,7 +82,7 @@ export default function AccountSettings() {
       title: "Final Confirmation",
       message:
         "This action is IRREVERSIBLE. All your data will be permanently deleted and cannot be recovered. Type DELETE to confirm.",
-      type: "destructive",
+      type: "danger",
       confirmLabel: "Delete Everything",
     })
 

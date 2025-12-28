@@ -14,6 +14,11 @@ export interface User {
   name: string | null
   avatar_url: string | null
   created_at: string
+  // OAuth provider IDs (optional, may not be present in all responses)
+  google_id?: string | null
+  facebook_id?: string | null
+  linkedin_id?: string | null
+  github_id?: string | null
 }
 
 // Difficulty level types

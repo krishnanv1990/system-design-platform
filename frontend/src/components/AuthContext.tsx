@@ -11,7 +11,7 @@ interface AuthContextType {
   user: User | null
   loading: boolean
   demoMode: boolean
-  login: (token: string) => void
+  login: (token: string) => Promise<void>
   logout: () => void
 }
 
@@ -59,10 +59,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     checkAuth()
   }, [])
 
-  const login = (token: string) => {
+  const login = async (token: string) => {
     localStorage.setItem('token', token)
-    // Fetch user data after login
-    authApi.getCurrentUser().then(setUser)
+    // Fetch and wait for user data before completing login
+    try {
+      const userData = await authApi.getCurrentUser()
+      setUser(userData)
+    } catch (error) {
+      // Remove invalid token and rethrow to let caller handle
+      localStorage.removeItem('token')
+      throw error
+    }
   }
 
   const logout = async () => {

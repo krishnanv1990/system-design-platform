@@ -13,21 +13,29 @@ export default function AuthCallback() {
   const { login } = useAuth()
 
   useEffect(() => {
-    const token = searchParams.get('token')
-    const error = searchParams.get('error')
+    const handleAuth = async () => {
+      const token = searchParams.get('token')
+      const error = searchParams.get('error')
 
-    if (error) {
-      console.error('Authentication error:', error)
-      navigate('/login?error=' + encodeURIComponent(error))
-      return
-    }
+      if (error) {
+        console.error('Authentication error:', error)
+        navigate('/login?error=' + encodeURIComponent(error))
+        return
+      }
 
-    if (token) {
-      login(token)
-      navigate('/problems')
-    } else {
-      navigate('/login')
+      if (token) {
+        try {
+          await login(token)
+          navigate('/problems')
+        } catch (err) {
+          console.error('Login failed:', err)
+          navigate('/login?error=auth_failed')
+        }
+      } else {
+        navigate('/login')
+      }
     }
+    handleAuth()
   }, [searchParams, login, navigate])
 
   return (

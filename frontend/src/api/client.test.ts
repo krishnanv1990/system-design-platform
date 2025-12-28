@@ -304,8 +304,8 @@ describe('API Client', () => {
         problem_id: 1,
         difficulty_level: 'medium' as const,
         conversation_history: [
-          { role: 'user', content: 'How should I design this?' },
-          { role: 'assistant', content: 'Start with KGS...' },
+          { role: 'user' as const, content: 'How should I design this?' },
+          { role: 'assistant' as const, content: 'Start with KGS...' },
         ],
       }
       const response = {

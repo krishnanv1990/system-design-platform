@@ -45,8 +45,13 @@ const createApiClient = (): AxiosInstance => {
     (response) => response,
     (error) => {
       if (error.response?.status === 401) {
-        localStorage.removeItem('token')
-        window.location.href = '/login'
+        // Don't redirect if we're on the auth callback page (during login flow)
+        const isAuthCallback = window.location.hash.includes('/auth/callback')
+        if (!isAuthCallback) {
+          localStorage.removeItem('token')
+          // Use hash-based URL for HashRouter compatibility
+          window.location.href = '/#/login'
+        }
       }
       return Promise.reject(error)
     }
