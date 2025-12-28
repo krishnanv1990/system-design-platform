@@ -38,6 +38,8 @@ steps:
       - '0'
       - '--max-instances'
       - '5'
+      - '--update-env-vars'
+      - 'BACKEND_URL=https://sdp-backend-zziiwqh26q-uc.a.run.app'
 
   # Build the backend container
   - name: 'gcr.io/cloud-builders/docker'
