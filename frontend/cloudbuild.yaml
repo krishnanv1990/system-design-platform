@@ -1,0 +1,24 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-f'
+      - 'Dockerfile.prod'
+      - '--build-arg'
+      - 'VITE_API_URL=${_VITE_API_URL}'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/${_SERVICE_NAME}:$BUILD_ID'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/${_SERVICE_NAME}:latest'
+      - '.'
+
+images:
+  - 'gcr.io/$PROJECT_ID/${_SERVICE_NAME}:$BUILD_ID'
+  - 'gcr.io/$PROJECT_ID/${_SERVICE_NAME}:latest'
+
+substitutions:
+  _VITE_API_URL: ''
+  _SERVICE_NAME: 'sdp-frontend'
+
+options:
+  logging: CLOUD_LOGGING_ONLY

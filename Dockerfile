@@ -1,0 +1,69 @@
+# Backend Dockerfile
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    libpq-dev \
+    curl \
+    unzip \
+    apt-transport-https \
+    ca-certificates \
+    gnupg \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Terraform
+RUN curl -fsSL https://releases.hashicorp.com/terraform/1.6.6/terraform_1.6.6_linux_amd64.zip -o terraform.zip \
+    && unzip terraform.zip \
+    && mv terraform /usr/local/bin/ \
+    && rm terraform.zip
+
+# Install Google Cloud SDK
+RUN curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | tee /etc/apt/sources.list.d/google-cloud-sdk.list \
+    && apt-get update && apt-get install -y google-cloud-cli \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Add pip bin to PATH for all subsequent commands
+ENV PATH="/usr/local/bin:${PATH}"
+
+# Verify locust is installed and accessible
+RUN locust --version
+
+# Verify chaostoolkit is installed and find the chaos command
+RUN pip show chaostoolkit && python -c "import chaoslib; print('chaostoolkit installed')"
+RUN find /usr -name "chaos" -type f 2>/dev/null || echo "chaos CLI not found in /usr"
+RUN ls -la /usr/local/bin/chaos 2>/dev/null || echo "chaos not in /usr/local/bin"
+
+# Copy application code
+COPY backend/ ./backend/
+COPY tests/ ./tests/
+
+# Set tests directory path as environment variable
+ENV TESTS_DIR=/app/tests
+
+# Ensure test files are readable
+RUN chmod -R 755 /app/tests
+
+# Create non-root user and set permissions
+RUN useradd -m appuser && chown -R appuser:appuser /app
+
+# Create temp directory for test workspaces
+RUN mkdir -p /tmp/test_workspaces && chown -R appuser:appuser /tmp/test_workspaces
+
+USER appuser
+
+# Ensure PATH includes pip installed binaries
+ENV PATH="/usr/local/bin:${PATH}"
+
+EXPOSE 8080
+
+ENV PORT=8080
+
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8080"]
