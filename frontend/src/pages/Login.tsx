@@ -233,44 +233,16 @@ export default function Login() {
               </div>
             </div>
 
-            {/* Other providers */}
-            <div className="grid grid-cols-3 gap-3">
-              {/* Facebook */}
-              <Button
-                onClick={() => handleOAuthLogin("facebook")}
-                variant="outline"
-                className={`h-12 ${providerConfigs.facebook.className}`}
-                aria-label={providerConfigs.facebook.ariaLabel}
-                title="Sign in with Facebook"
-              >
-                {providerConfigs.facebook.icon}
-                <span className="sr-only">Facebook</span>
-              </Button>
-
-              {/* LinkedIn */}
-              <Button
-                onClick={() => handleOAuthLogin("linkedin")}
-                variant="outline"
-                className={`h-12 ${providerConfigs.linkedin.className}`}
-                aria-label={providerConfigs.linkedin.ariaLabel}
-                title="Sign in with LinkedIn"
-              >
-                {providerConfigs.linkedin.icon}
-                <span className="sr-only">LinkedIn</span>
-              </Button>
-
-              {/* GitHub */}
-              <Button
-                onClick={() => handleOAuthLogin("github")}
-                variant="outline"
-                className={`h-12 ${providerConfigs.github.className}`}
-                aria-label={providerConfigs.github.ariaLabel}
-                title="Sign in with GitHub"
-              >
-                {providerConfigs.github.icon}
-                <span className="sr-only">GitHub</span>
-              </Button>
-            </div>
+            {/* GitHub - Secondary option */}
+            <Button
+              onClick={() => handleOAuthLogin("github")}
+              variant="outline"
+              className={`w-full h-12 ${providerConfigs.github.className}`}
+              aria-label={providerConfigs.github.ariaLabel}
+            >
+              {providerConfigs.github.icon}
+              Sign in with GitHub
+            </Button>
           </CardContent>
         </Card>
 

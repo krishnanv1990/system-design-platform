@@ -1,15 +1,25 @@
-# Frontend Dockerfile
-FROM node:20-alpine
+# Frontend Dockerfile - Production Build
+FROM node:20-alpine AS builder
 
 WORKDIR /app
 
 # Install dependencies
 COPY package*.json ./
-RUN npm install
+RUN npm ci
 
-# Copy source code
+# Copy source code and build
 COPY . .
+RUN npm run build
 
-EXPOSE 5173
+# Production stage - use nginx to serve static files
+FROM nginx:alpine
 
-CMD ["npm", "run", "dev", "--", "--host"]
+# Copy built assets from builder
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+# Copy custom nginx config
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+EXPOSE 8080
+
+CMD ["nginx", "-g", "daemon off;"]

@@ -3,9 +3,6 @@ import { render, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import NotFound from './NotFound'
 
-// Store original history
-const originalBack = window.history.back
-
 beforeEach(() => {
   window.history.back = vi.fn()
 })

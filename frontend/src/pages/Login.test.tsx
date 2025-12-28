@@ -74,19 +74,19 @@ describe('Login Page', () => {
       expect(screen.getByRole('button', { name: /sign in with google/i })).toBeInTheDocument()
     })
 
-    it('renders Facebook sign-in button', () => {
-      renderWithRouter()
-      expect(screen.getByRole('button', { name: /sign in with facebook/i })).toBeInTheDocument()
-    })
-
-    it('renders LinkedIn sign-in button', () => {
-      renderWithRouter()
-      expect(screen.getByRole('button', { name: /sign in with linkedin/i })).toBeInTheDocument()
-    })
-
     it('renders GitHub sign-in button', () => {
       renderWithRouter()
       expect(screen.getByRole('button', { name: /sign in with github/i })).toBeInTheDocument()
+    })
+
+    it('does not render Facebook sign-in button (not configured)', () => {
+      renderWithRouter()
+      expect(screen.queryByRole('button', { name: /sign in with facebook/i })).not.toBeInTheDocument()
+    })
+
+    it('does not render LinkedIn sign-in button (not configured)', () => {
+      renderWithRouter()
+      expect(screen.queryByRole('button', { name: /sign in with linkedin/i })).not.toBeInTheDocument()
     })
 
     it('clicking Google button redirects to Google OAuth', () => {
@@ -94,20 +94,6 @@ describe('Login Page', () => {
       const button = screen.getByRole('button', { name: /sign in with google/i })
       fireEvent.click(button)
       expect(mockLocation.href).toBe('http://test.com/auth/google')
-    })
-
-    it('clicking Facebook button redirects to Facebook OAuth', () => {
-      renderWithRouter()
-      const button = screen.getByRole('button', { name: /sign in with facebook/i })
-      fireEvent.click(button)
-      expect(mockLocation.href).toBe('http://test.com/auth/facebook')
-    })
-
-    it('clicking LinkedIn button redirects to LinkedIn OAuth', () => {
-      renderWithRouter()
-      const button = screen.getByRole('button', { name: /sign in with linkedin/i })
-      fireEvent.click(button)
-      expect(mockLocation.href).toBe('http://test.com/auth/linkedin')
     })
 
     it('clicking GitHub button redirects to GitHub OAuth', () => {
