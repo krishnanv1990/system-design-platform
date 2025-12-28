@@ -115,6 +115,7 @@ def find_or_create_user(
 def create_auth_redirect(token: str) -> RedirectResponse:
     """Create redirect to frontend with JWT token."""
     redirect_url = f"{settings.frontend_url}/#/auth/callback?token={token}"
+    print(f"OAuth redirect URL: {redirect_url[:100]}...")
     return RedirectResponse(url=redirect_url)
 
 

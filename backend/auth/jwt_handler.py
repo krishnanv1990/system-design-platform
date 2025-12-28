@@ -61,8 +61,10 @@ def verify_token(token: str) -> Optional[dict]:
             settings.jwt_secret_key,
             algorithms=[settings.jwt_algorithm]
         )
+        print(f"Token verified successfully, payload: {payload}")
         return payload
-    except JWTError:
+    except JWTError as e:
+        print(f"Token verification failed: {e}, token prefix: {token[:50] if token else 'None'}...")
         return None
 
 
@@ -113,22 +115,28 @@ async def get_current_user(
     )
 
     if credentials is None:
+        print("get_current_user: No credentials provided")
         raise credentials_exception
 
     token = credentials.credentials
+    print(f"get_current_user: Token received, length={len(token) if token else 0}")
     payload = verify_token(token)
 
     if payload is None:
+        print("get_current_user: Token verification failed")
         raise credentials_exception
 
     user_id: int = payload.get("sub")
     if user_id is None:
+        print("get_current_user: No user_id in payload")
         raise credentials_exception
 
     user = db.query(User).filter(User.id == user_id).first()
     if user is None:
+        print(f"get_current_user: User not found for id={user_id}")
         raise credentials_exception
 
+    print(f"get_current_user: User found - {user.email}")
     return user
 
 

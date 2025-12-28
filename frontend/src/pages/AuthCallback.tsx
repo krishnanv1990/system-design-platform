@@ -14,6 +14,9 @@ export default function AuthCallback() {
 
   useEffect(() => {
     const handleAuth = async () => {
+      // Clear any old tokens to prevent conflicts
+      localStorage.removeItem('token')
+
       const token = searchParams.get('token')
       const error = searchParams.get('error')
 
@@ -32,7 +35,7 @@ export default function AuthCallback() {
           navigate('/login?error=auth_failed')
         }
       } else {
-        navigate('/login')
+        navigate('/login?error=no_token')
       }
     }
     handleAuth()

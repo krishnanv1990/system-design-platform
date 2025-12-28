@@ -28,6 +28,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Check for demo mode and existing token on mount
   useEffect(() => {
     const checkAuth = async () => {
+      // Skip auth check if we're on the callback page - let AuthCallback handle it
+      if (window.location.hash.includes('/auth/callback')) {
+        setLoading(false)
+        return
+      }
+
       try {
         // First check if demo mode is enabled
         const demoStatus = await authApi.getDemoStatus()
