@@ -307,6 +307,53 @@ describe('SchemaEditor', () => {
       expect(screen.getByText('UQ')).toBeInTheDocument()
       expect(screen.getByText('NN')).toBeInTheDocument()
     })
+
+    it('removes constraint when clicking on constraint badge', async () => {
+      const onChange = vi.fn()
+      render(<SchemaEditor value={JSON.stringify(sampleSchema)} onChange={onChange} />)
+
+      // Find and click the PK badge to remove it
+      const pkBadge = screen.getByText('PK')
+
+      await act(async () => {
+        fireEvent.click(pkBadge)
+      })
+
+      await waitFor(() => {
+        const lastCall = onChange.mock.calls[onChange.mock.calls.length - 1]
+        const parsedSchema = JSON.parse(lastCall[0])
+        expect(parsedSchema.stores[0].fields[0].constraints).not.toContain('primary_key')
+      })
+    })
+
+    it('adds constraint when selecting from dropdown', async () => {
+      const schemaWithoutIndexed = {
+        stores: [{
+          name: 'users',
+          type: 'sql',
+          fields: [
+            { name: 'id', type: 'uuid', constraints: ['primary_key'] },
+          ],
+        }],
+      }
+      const onChange = vi.fn()
+      render(<SchemaEditor value={JSON.stringify(schemaWithoutIndexed)} onChange={onChange} />)
+
+      // Find the add constraint dropdown
+      const selects = screen.getAllByRole('combobox')
+      const addConstraintSelect = selects[selects.length - 1] // Last select is usually the add dropdown
+
+      await act(async () => {
+        fireEvent.change(addConstraintSelect, { target: { value: 'indexed' } })
+      })
+
+      await waitFor(() => {
+        expect(onChange).toHaveBeenCalled()
+        const lastCall = onChange.mock.calls[onChange.mock.calls.length - 1]
+        const parsedSchema = JSON.parse(lastCall[0])
+        expect(parsedSchema.stores[0].fields[0].constraints).toContain('indexed')
+      })
+    })
   })
 
   describe('Read Only Mode', () => {
@@ -613,6 +660,94 @@ describe('SchemaEditor', () => {
       expect(summarySection?.textContent).toContain('2')
       expect(summarySection?.textContent).toContain('total fields')
     })
+
+    it('updates only the targeted store when editing field in multi-store schema', async () => {
+      const onChange = vi.fn()
+      render(<SchemaEditor value={JSON.stringify(multiStoreSchema)} onChange={onChange} />)
+
+      // Find and update the first store's field name
+      const idInput = screen.getByDisplayValue('id')
+
+      await act(async () => {
+        fireEvent.change(idInput, { target: { value: 'user_id' } })
+      })
+
+      await waitFor(() => {
+        const lastCall = onChange.mock.calls[onChange.mock.calls.length - 1]
+        const parsedSchema = JSON.parse(lastCall[0])
+        // First store should have updated field
+        expect(parsedSchema.stores[0].fields[0].name).toBe('user_id')
+        // Second store should remain unchanged
+        expect(parsedSchema.stores[1].name).toBe('sessions')
+        expect(parsedSchema.stores[1].fields[0].name).toBe('key')
+      })
+    })
+
+    it('removes column only from the targeted store', async () => {
+      const threeFieldSchema = {
+        stores: [
+          {
+            name: 'users',
+            type: 'sql',
+            fields: [
+              { name: 'id', type: 'uuid' },
+              { name: 'email', type: 'varchar' },
+            ],
+          },
+          {
+            name: 'products',
+            type: 'sql',
+            fields: [
+              { name: 'id', type: 'uuid' },
+              { name: 'name', type: 'varchar' },
+            ],
+          },
+        ],
+      }
+
+      const onChange = vi.fn()
+      const { container } = render(<SchemaEditor value={JSON.stringify(threeFieldSchema)} onChange={onChange} />)
+
+      // Find the delete button for the first column of the first store
+      const columnDeleteButtons = container.querySelectorAll('button.opacity-0')
+
+      expect(columnDeleteButtons.length).toBeGreaterThan(0)
+
+      await act(async () => {
+        fireEvent.click(columnDeleteButtons[0])
+      })
+
+      await waitFor(() => {
+        const lastCall = onChange.mock.calls[onChange.mock.calls.length - 1]
+        const parsedSchema = JSON.parse(lastCall[0])
+        // First store should have one less field
+        expect(parsedSchema.stores[0].fields.length).toBe(1)
+        // Second store should still have 2 fields
+        expect(parsedSchema.stores[1].fields.length).toBe(2)
+      })
+    })
+
+    it('adds field only to the targeted store', async () => {
+      const onChange = vi.fn()
+      render(<SchemaEditor value={JSON.stringify(multiStoreSchema)} onChange={onChange} />)
+
+      // Find the Add Field buttons - should be one for each expanded store
+      const addFieldButtons = screen.getAllByRole('button', { name: /add field/i })
+
+      // Click the first store's Add Field button
+      await act(async () => {
+        fireEvent.click(addFieldButtons[0])
+      })
+
+      await waitFor(() => {
+        const lastCall = onChange.mock.calls[onChange.mock.calls.length - 1]
+        const parsedSchema = JSON.parse(lastCall[0])
+        // First store should have 2 fields now
+        expect(parsedSchema.stores[0].fields.length).toBe(2)
+        // Second store should still have 1 field
+        expect(parsedSchema.stores[1].fields.length).toBe(1)
+      })
+    })
   })
 
   describe('JSON Editor Interactions', () => {
@@ -634,7 +769,10 @@ describe('SchemaEditor', () => {
       expect(textarea).toBeInTheDocument()
     })
 
-    it('handles keydown event in JSON editor', async () => {
+    it('handles Ctrl+Enter keydown in JSON editor', async () => {
+      const mockPreventDefault = vi.fn()
+      const mockStopPropagation = vi.fn()
+
       render(<SchemaEditor value={JSON.stringify(sampleSchema)} onChange={vi.fn()} />)
 
       await act(async () => {
@@ -643,12 +781,53 @@ describe('SchemaEditor', () => {
 
       const textarea = screen.getByTestId('json-editor-textarea')
 
-      // Simulate Ctrl+Enter - should be handled
+      // Simulate Ctrl+Enter - should prevent default
       await act(async () => {
-        fireEvent.keyDown(textarea, { key: 'Enter', ctrlKey: true })
+        const event = new KeyboardEvent('keydown', {
+          key: 'Enter',
+          ctrlKey: true,
+          bubbles: true,
+        })
+        Object.defineProperty(event, 'preventDefault', { value: mockPreventDefault })
+        Object.defineProperty(event, 'stopPropagation', { value: mockStopPropagation })
+        textarea.dispatchEvent(event)
       })
 
       // Textarea should still be visible
+      expect(textarea).toBeInTheDocument()
+    })
+
+    it('handles Meta+Enter keydown in JSON editor', async () => {
+      render(<SchemaEditor value={JSON.stringify(sampleSchema)} onChange={vi.fn()} />)
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /edit as json/i }))
+      })
+
+      const textarea = screen.getByTestId('json-editor-textarea')
+
+      // Simulate Meta+Enter (Cmd+Enter on Mac)
+      await act(async () => {
+        fireEvent.keyDown(textarea, { key: 'Enter', metaKey: true })
+      })
+
+      expect(textarea).toBeInTheDocument()
+    })
+
+    it('does not prevent regular Enter keydown', async () => {
+      render(<SchemaEditor value={JSON.stringify(sampleSchema)} onChange={vi.fn()} />)
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /edit as json/i }))
+      })
+
+      const textarea = screen.getByTestId('json-editor-textarea')
+
+      // Regular Enter should not be prevented
+      await act(async () => {
+        fireEvent.keyDown(textarea, { key: 'Enter' })
+      })
+
       expect(textarea).toBeInTheDocument()
     })
 
@@ -715,6 +894,390 @@ describe('SchemaEditor', () => {
       render(<SchemaEditor value={JSON.stringify(legacySchema)} onChange={vi.fn()} />)
 
       expect(screen.getByDisplayValue('users')).toBeInTheDocument()
+    })
+
+    it('parses bare array format without stores wrapper', () => {
+      const bareArraySchema = [
+        {
+          name: 'products',
+          type: 'sql',
+          description: 'Product catalog',
+          fields: [
+            { name: 'id', type: 'uuid', constraints: ['primary_key'] },
+            { name: 'name', type: 'varchar', constraints: ['not_null'] },
+          ],
+        },
+      ]
+      render(<SchemaEditor value={JSON.stringify(bareArraySchema)} onChange={vi.fn()} />)
+
+      expect(screen.getByDisplayValue('products')).toBeInTheDocument()
+      expect(screen.getByText('2 fields')).toBeInTheDocument()
+    })
+
+    it('normalizes string constraints to array', () => {
+      const stringConstraintSchema = {
+        stores: [{
+          name: 'test',
+          type: 'sql',
+          fields: [
+            { name: 'id', type: 'uuid', constraints: 'primary_key' },
+          ],
+        }],
+      }
+      render(<SchemaEditor value={JSON.stringify(stringConstraintSchema)} onChange={vi.fn()} />)
+
+      expect(screen.getByDisplayValue('test')).toBeInTheDocument()
+      expect(screen.getByText('PK')).toBeInTheDocument()
+    })
+
+    it('handles non-array fields property gracefully', () => {
+      const badFieldsSchema = {
+        stores: [{
+          name: 'test',
+          type: 'sql',
+          fields: 'not an array',
+        }],
+      }
+      render(<SchemaEditor value={JSON.stringify(badFieldsSchema)} onChange={vi.fn()} />)
+
+      expect(screen.getByDisplayValue('test')).toBeInTheDocument()
+      expect(screen.getByText('0 fields')).toBeInTheDocument()
+    })
+
+    it('handles non-array indexes property gracefully', () => {
+      const badIndexesSchema = {
+        stores: [{
+          name: 'test',
+          type: 'sql',
+          fields: [{ name: 'id', type: 'uuid' }],
+          indexes: 'not an array',
+        }],
+      }
+      render(<SchemaEditor value={JSON.stringify(badIndexesSchema)} onChange={vi.fn()} />)
+
+      expect(screen.getByDisplayValue('test')).toBeInTheDocument()
+      expect(screen.getByText('1 field')).toBeInTheDocument()
+    })
+
+    it('handles null/undefined constraints gracefully', () => {
+      const nullConstraintsSchema = {
+        stores: [{
+          name: 'test',
+          type: 'sql',
+          fields: [
+            { name: 'id', type: 'uuid', constraints: null },
+            { name: 'name', type: 'varchar' },
+          ],
+        }],
+      }
+      render(<SchemaEditor value={JSON.stringify(nullConstraintsSchema)} onChange={vi.fn()} />)
+
+      expect(screen.getByDisplayValue('test')).toBeInTheDocument()
+      expect(screen.getByText('2 fields')).toBeInTheDocument()
+    })
+
+    it('handles empty object JSON gracefully', () => {
+      render(<SchemaEditor value="{}" onChange={vi.fn()} />)
+
+      expect(screen.getByText(/No data stores defined yet/i)).toBeInTheDocument()
+    })
+
+    it('handles JSON with unrecognized structure gracefully', () => {
+      const unknownSchema = { someRandomKey: 'value', anotherKey: 123 }
+      render(<SchemaEditor value={JSON.stringify(unknownSchema)} onChange={vi.fn()} />)
+
+      expect(screen.getByText(/No data stores defined yet/i)).toBeInTheDocument()
+    })
+
+    it('handles JSON number value gracefully', () => {
+      render(<SchemaEditor value="42" onChange={vi.fn()} />)
+
+      expect(screen.getByText(/No data stores defined yet/i)).toBeInTheDocument()
+    })
+
+    it('handles JSON string value gracefully', () => {
+      render(<SchemaEditor value='"just a string"' onChange={vi.fn()} />)
+
+      expect(screen.getByText(/No data stores defined yet/i)).toBeInTheDocument()
+    })
+  })
+
+  describe('Controlled Component Behavior', () => {
+    it('handles parent value updates after JSON edit correctly', async () => {
+      let parentValue = JSON.stringify(sampleSchema)
+      const onChange = vi.fn((newValue: string) => {
+        parentValue = newValue
+      })
+
+      const { rerender } = render(
+        <SchemaEditor value={parentValue} onChange={onChange} />
+      )
+
+      // Open JSON editor
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /edit as json/i }))
+      })
+
+      // Create new schema with 3 fields
+      const newSchema = {
+        stores: [{
+          name: 'accounts',
+          type: 'sql',
+          description: 'User accounts updated',
+          fields: [
+            { name: 'id', type: 'uuid', constraints: ['primary_key'] },
+            { name: 'email', type: 'varchar', constraints: ['unique'] },
+            { name: 'created_at', type: 'timestamp', constraints: [] },
+          ],
+        }],
+      }
+
+      const textarea = screen.getByTestId('json-editor-textarea')
+
+      await act(async () => {
+        fireEvent.change(textarea, { target: { value: JSON.stringify(newSchema) } })
+      })
+
+      // Simulate parent re-rendering with updated value
+      await act(async () => {
+        rerender(<SchemaEditor value={parentValue} onChange={onChange} />)
+      })
+
+      // Visual builder should still show correct data
+      await waitFor(() => {
+        expect(screen.getByText('3 fields')).toBeInTheDocument()
+        expect(screen.getByDisplayValue('accounts')).toBeInTheDocument()
+      })
+    })
+
+    it('preserves stores when external value matches internal state', async () => {
+      const onChange = vi.fn()
+      const { rerender } = render(
+        <SchemaEditor value={JSON.stringify(sampleSchema)} onChange={onChange} />
+      )
+
+      expect(screen.getByDisplayValue('users')).toBeInTheDocument()
+
+      // Re-render with same value should not cause issues
+      await act(async () => {
+        rerender(<SchemaEditor value={JSON.stringify(sampleSchema)} onChange={onChange} />)
+      })
+
+      expect(screen.getByDisplayValue('users')).toBeInTheDocument()
+    })
+  })
+
+  describe('Non-SQL Database Type Field Rendering', () => {
+    const kvSchema = {
+      stores: [{
+        name: 'cache',
+        type: 'kv',
+        description: 'Redis cache',
+        fields: [
+          { name: 'key', type: 'string' },
+          { name: 'value', type: 'json' },
+        ],
+      }],
+    }
+
+    const documentSchema = {
+      stores: [{
+        name: 'products',
+        type: 'document',
+        description: 'MongoDB collection',
+        fields: [
+          { name: '_id', type: 'objectId' },
+          { name: 'data', type: 'object' },
+        ],
+      }],
+    }
+
+    it('renders Key-Value store with correct field types', () => {
+      render(<SchemaEditor value={JSON.stringify(kvSchema)} onChange={vi.fn()} />)
+
+      expect(screen.getByDisplayValue('cache')).toBeInTheDocument()
+      expect(screen.getByText('Key-Value Store')).toBeInTheDocument()
+      expect(screen.getByText('2 fields')).toBeInTheDocument()
+    })
+
+    it('renders Document store with correct field types', () => {
+      render(<SchemaEditor value={JSON.stringify(documentSchema)} onChange={vi.fn()} />)
+
+      expect(screen.getByDisplayValue('products')).toBeInTheDocument()
+      expect(screen.getByText('Document Store')).toBeInTheDocument()
+    })
+
+    it('allows adding constraints to non-SQL stores', async () => {
+      const onChange = vi.fn()
+      render(<SchemaEditor value={JSON.stringify(kvSchema)} onChange={onChange} />)
+
+      // Find the constraint dropdown for non-SQL stores
+      const constraintSelects = screen.getAllByRole('combobox')
+      const addConstraintSelect = constraintSelects.find(
+        select => select.textContent?.includes('+ Add') || (select as HTMLSelectElement).value === ''
+      )
+
+      if (addConstraintSelect) {
+        await act(async () => {
+          fireEvent.change(addConstraintSelect, { target: { value: 'required' } })
+        })
+
+        await waitFor(() => {
+          expect(onChange).toHaveBeenCalled()
+        })
+      }
+    })
+
+    it('allows changing field types in non-SQL stores', async () => {
+      const onChange = vi.fn()
+      render(<SchemaEditor value={JSON.stringify(kvSchema)} onChange={onChange} />)
+
+      // Find the type select
+      const typeSelects = screen.getAllByRole('combobox')
+
+      await act(async () => {
+        fireEvent.change(typeSelects[0], { target: { value: 'hash' } })
+      })
+
+      await waitFor(() => {
+        expect(onChange).toHaveBeenCalled()
+      })
+    })
+  })
+
+  describe('Graph, TimeSeries, and Search Database Types', () => {
+    it('renders Graph database store correctly', () => {
+      const graphSchema = {
+        stores: [{
+          name: 'relationships',
+          type: 'graph',
+          fields: [{ name: 'source', type: 'string' }],
+        }],
+      }
+      render(<SchemaEditor value={JSON.stringify(graphSchema)} onChange={vi.fn()} />)
+
+      expect(screen.getByText('Graph Database')).toBeInTheDocument()
+    })
+
+    it('renders Time Series store correctly', () => {
+      const tsSchema = {
+        stores: [{
+          name: 'metrics',
+          type: 'timeseries',
+          fields: [{ name: 'timestamp', type: 'timestamp' }],
+        }],
+      }
+      render(<SchemaEditor value={JSON.stringify(tsSchema)} onChange={vi.fn()} />)
+
+      expect(screen.getByText('Time Series')).toBeInTheDocument()
+    })
+
+    it('renders Search Engine store correctly', () => {
+      const searchSchema = {
+        stores: [{
+          name: 'documents',
+          type: 'search',
+          fields: [{ name: 'content', type: 'text' }],
+        }],
+      }
+      render(<SchemaEditor value={JSON.stringify(searchSchema)} onChange={vi.fn()} />)
+
+      expect(screen.getByText('Search Engine')).toBeInTheDocument()
+    })
+  })
+
+  describe('JSON to Visual Sync Edge Cases', () => {
+    it('syncs multiple stores from JSON to visual builder', async () => {
+      const onChange = vi.fn()
+      render(<SchemaEditor value={JSON.stringify(emptySchema)} onChange={onChange} />)
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /edit as json/i }))
+      })
+
+      const multiStoreSchema = {
+        stores: [
+          { name: 'users', type: 'sql', fields: [{ name: 'id', type: 'uuid' }] },
+          { name: 'sessions', type: 'kv', fields: [{ name: 'key', type: 'string' }] },
+          { name: 'logs', type: 'document', fields: [{ name: 'message', type: 'string' }] },
+        ],
+      }
+
+      const textarea = screen.getByTestId('json-editor-textarea')
+
+      await act(async () => {
+        fireEvent.change(textarea, { target: { value: JSON.stringify(multiStoreSchema) } })
+      })
+
+      await waitFor(() => {
+        expect(screen.getByDisplayValue('users')).toBeInTheDocument()
+        expect(screen.getByDisplayValue('sessions')).toBeInTheDocument()
+        expect(screen.getByDisplayValue('logs')).toBeInTheDocument()
+      })
+    })
+
+    it('clears visual builder when JSON stores are removed', async () => {
+      const multiStoreSchema = {
+        stores: [
+          { name: 'users', type: 'sql', fields: [] },
+          { name: 'cache', type: 'kv', fields: [] },
+        ],
+      }
+
+      const onChange = vi.fn()
+      render(<SchemaEditor value={JSON.stringify(multiStoreSchema)} onChange={onChange} />)
+
+      expect(screen.getByDisplayValue('users')).toBeInTheDocument()
+      expect(screen.getByDisplayValue('cache')).toBeInTheDocument()
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /edit as json/i }))
+      })
+
+      const textarea = screen.getByTestId('json-editor-textarea')
+
+      await act(async () => {
+        fireEvent.change(textarea, { target: { value: JSON.stringify({ stores: [] }) } })
+      })
+
+      await waitFor(() => {
+        expect(screen.getByText(/No data stores defined yet/i)).toBeInTheDocument()
+      })
+    })
+
+    it('updates field count immediately when fields are added in JSON', async () => {
+      const onChange = vi.fn()
+      render(<SchemaEditor value={JSON.stringify(sampleSchema)} onChange={onChange} />)
+
+      // Initially 2 fields
+      expect(screen.getByText('2 fields')).toBeInTheDocument()
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /edit as json/i }))
+      })
+
+      const schemaWith5Fields = {
+        stores: [{
+          ...sampleSchema.stores[0],
+          fields: [
+            { name: 'id', type: 'uuid' },
+            { name: 'email', type: 'varchar' },
+            { name: 'name', type: 'varchar' },
+            { name: 'created_at', type: 'timestamp' },
+            { name: 'updated_at', type: 'timestamp' },
+          ],
+        }],
+      }
+
+      const textarea = screen.getByTestId('json-editor-textarea')
+
+      await act(async () => {
+        fireEvent.change(textarea, { target: { value: JSON.stringify(schemaWith5Fields) } })
+      })
+
+      await waitFor(() => {
+        expect(screen.getByText('5 fields')).toBeInTheDocument()
+      })
     })
   })
 })

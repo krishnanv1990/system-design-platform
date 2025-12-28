@@ -220,34 +220,56 @@ const generateId = () => Math.random().toString(36).substring(2, 11)
 // Valid database type IDs
 const VALID_DB_TYPES = DATABASE_TYPES.map(t => t.id)
 
+// Helper to parse a single store object
+const parseStoreObject = (store: any): TableStore => {
+  // Validate and normalize dbType
+  const rawType = store.type || "sql"
+  const dbType = VALID_DB_TYPES.includes(rawType) ? rawType : "sql"
+
+  // Get fields array - support both 'fields' and 'columns' property names
+  const fieldsArray = store.fields || store.columns || []
+
+  // Ensure constraints is always an array
+  const normalizeConstraints = (constraints: any): string[] => {
+    if (Array.isArray(constraints)) return constraints
+    if (typeof constraints === 'string') return [constraints]
+    return []
+  }
+
+  return {
+    id: generateId(),
+    name: store.name || "",
+    dbType,
+    description: store.description || "",
+    columns: (Array.isArray(fieldsArray) ? fieldsArray : []).map((col: any) => ({
+      id: generateId(),
+      name: col.name || "",
+      type: col.type || "varchar",
+      constraints: normalizeConstraints(col.constraints),
+      description: col.description || "",
+    })),
+    indexes: Array.isArray(store.indexes) ? store.indexes : [],
+    expanded: true,
+  }
+}
+
 // Parse JSON schema to internal format
 const parseSchema = (jsonStr: string): TableStore[] => {
   try {
     const data = JSON.parse(jsonStr)
-    if (data.stores && Array.isArray(data.stores)) {
-      return data.stores.map((store: any) => {
-        // Validate and normalize dbType
-        const rawType = store.type || "sql"
-        const dbType = VALID_DB_TYPES.includes(rawType) ? rawType : "sql"
-        return {
-          id: generateId(),
-          name: store.name || "",
-          dbType,
-          description: store.description || "",
-          columns: (store.fields || store.columns || []).map((col: any) => ({
-            id: generateId(),
-            name: col.name || "",
-            type: col.type || "varchar",
-            constraints: col.constraints || [],
-            description: col.description || "",
-          })),
-          indexes: store.indexes || [],
-          expanded: true,
-        }
-      })
+
+    // Handle bare array format: [{ name: "users", ... }]
+    if (Array.isArray(data)) {
+      return data.map(parseStoreObject)
     }
-    // Legacy format
-    if (data.tables) {
+
+    // Handle standard format: { stores: [...] }
+    if (data.stores && Array.isArray(data.stores)) {
+      return data.stores.map(parseStoreObject)
+    }
+
+    // Legacy format: { tables: { tableName: { columns: {...} } } }
+    if (data.tables && typeof data.tables === 'object') {
       return Object.entries(data.tables).map(([name, table]: [string, any]) => ({
         id: generateId(),
         name,
@@ -264,10 +286,11 @@ const parseSchema = (jsonStr: string): TableStore[] => {
           ].filter(Boolean) as string[],
           description: "",
         })),
-        indexes: table.indexes || [],
+        indexes: Array.isArray(table.indexes) ? table.indexes : [],
         expanded: true,
       }))
     }
+
     return []
   } catch {
     return []
