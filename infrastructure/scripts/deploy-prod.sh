@@ -61,7 +61,7 @@ gcloud run deploy $BACKEND_SERVICE \
     --region $REGION \
     --allow-unauthenticated \
     --add-cloudsql-instances $CLOUD_SQL_CONNECTION \
-    --set-secrets "DATABASE_URL=database-url:latest,JWT_SECRET_KEY=jwt-secret:latest,ANTHROPIC_API_KEY=anthropic-api-key:latest" \
+    --set-secrets "DATABASE_URL=database-url:latest,JWT_SECRET_KEY=jwt-secret:latest,ANTHROPIC_API_KEY=anthropic-api-key:latest,GOOGLE_CLIENT_ID=google-client-id:latest,GOOGLE_CLIENT_SECRET=google-client-secret:latest,GITHUB_CLIENT_ID=github-client-id:latest,GITHUB_CLIENT_SECRET=github-client-secret:latest" \
     --set-env-vars "DEMO_MODE=false,DEBUG=false,GCP_PROJECT_ID=$PROJECT,GCP_REGION=$REGION" \
     --memory 1Gi \
     --cpu 1 \
