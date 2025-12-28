@@ -1,13 +1,11 @@
 steps:
-  # Build the frontend container with API URL baked in
+  # Build the frontend container (uses nginx proxy for API requests)
   - name: 'gcr.io/cloud-builders/docker'
     dir: 'frontend'
     args:
       - 'build'
       - '-f'
       - 'Dockerfile.prod'
-      - '--build-arg'
-      - 'VITE_API_URL=https://sdp-backend-zziiwqh26q-uc.a.run.app'
       - '-t'
       - 'us-central1-docker.pkg.dev/$PROJECT_ID/sdp-repo/sdp-frontend:latest'
       - '.'
