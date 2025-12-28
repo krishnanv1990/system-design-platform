@@ -12,7 +12,7 @@
  */
 
 import { useState, useEffect, useCallback, useMemo } from "react"
-import { useParams, useNavigate, useBlocker, useSearchParams } from "react-router-dom"
+import { useParams, useNavigate, useSearchParams } from "react-router-dom"
 import {
   Check,
   ChevronLeft,
@@ -205,27 +205,7 @@ export default function Submission() {
     return () => clearTimeout(timeoutId)
   }, [id, schemaInput, apiSpecInput, designText, isDirty])
 
-  // Warn before navigating away with unsaved changes
-  const blocker = useBlocker(
-    ({ currentLocation, nextLocation }) =>
-      isDirty && currentLocation.pathname !== nextLocation.pathname
-  )
-
-  // Handle blocker state
-  useEffect(() => {
-    if (blocker.state === "blocked") {
-      const confirmed = window.confirm(
-        "You have unsaved changes. Are you sure you want to leave?"
-      )
-      if (confirmed) {
-        blocker.proceed()
-      } else {
-        blocker.reset()
-      }
-    }
-  }, [blocker])
-
-  // Warn on page unload
+  // Warn on page unload (browser close/refresh)
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (isDirty) {

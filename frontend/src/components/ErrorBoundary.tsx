@@ -35,7 +35,11 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('ErrorBoundary caught an error:', error, errorInfo)
+    // Log detailed error information for debugging
+    console.error('ErrorBoundary caught an error:', error)
+    console.error('Error message:', error.message)
+    console.error('Error stack:', error.stack)
+    console.error('Component stack:', errorInfo.componentStack)
     this.setState({ errorInfo })
   }
 
@@ -69,14 +73,19 @@ export class ErrorBoundary extends Component<Props, State> {
                 An unexpected error occurred. This has been logged and we'll look into it.
               </p>
 
-              {import.meta.env.DEV && this.state.error && (
+              {this.state.error && (
                 <div className="p-3 bg-destructive/10 rounded-lg border border-destructive/30">
                   <p className="text-sm font-mono text-destructive break-all">
-                    {this.state.error.message}
+                    {this.state.error.message || 'Unknown error'}
                   </p>
+                  {this.state.error.stack && (
+                    <pre className="mt-2 text-xs text-destructive/80 overflow-auto max-h-24">
+                      {this.state.error.stack}
+                    </pre>
+                  )}
                   {this.state.errorInfo?.componentStack && (
-                    <pre className="mt-2 text-xs text-destructive/80 overflow-auto max-h-32">
-                      {this.state.errorInfo.componentStack}
+                    <pre className="mt-2 text-xs text-destructive/80 overflow-auto max-h-32 border-t pt-2">
+                      Component Stack:{this.state.errorInfo.componentStack}
                     </pre>
                   )}
                 </div>
