@@ -39,3 +39,13 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def init_db():
+    """
+    Initialize database by creating all tables.
+    Safe to call multiple times - only creates tables that don't exist.
+    """
+    # Import all models to register them with Base.metadata
+    from backend.models import user, problem, submission, test_result  # noqa
+    Base.metadata.create_all(bind=engine)

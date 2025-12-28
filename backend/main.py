@@ -11,7 +11,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from backend.config import get_settings
-from backend.database import engine
+from backend.database import engine, init_db
 from backend.api import api_router
 from backend.middleware.rate_limiter import limiter, rate_limit_exceeded_handler
 from backend.websocket import websocket_router
@@ -32,10 +32,13 @@ async def lifespan(app: FastAPI):
     max_retries = 5
     for i in range(max_retries):
         try:
-            # Verify database connection (don't create tables - use Alembic)
+            # Verify database connection
             with engine.connect() as conn:
                 conn.execute(sa.text("SELECT 1"))
             print("Database connection verified successfully")
+            # Create tables if they don't exist
+            init_db()
+            print("Database tables initialized")
             break
         except Exception as e:
             if i < max_retries - 1:
@@ -68,15 +71,26 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Configure CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        settings.frontend_url,
+# Configure CORS - build origins list dynamically
+cors_origins = [
+    settings.frontend_url,
+]
+
+# Add localhost origins for development
+if settings.debug:
+    cors_origins.extend([
         "http://localhost:5173",
         "http://localhost:3000",
-        "http://34.36.167.190",
-    ],
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:3000",
+    ])
+
+# Remove duplicates and empty strings
+cors_origins = list(set(origin for origin in cors_origins if origin))
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
