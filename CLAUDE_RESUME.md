@@ -5,16 +5,32 @@ This file helps Claude resume work in case of a crash.
 ## Current State
 
 **Status**: COMPLETED
-**Last Updated**: 2025-12-29T16:52:00Z
+**Last Updated**: 2025-12-29T17:15:00Z
 
 ## Completed Tasks
 
-1. ✅ Fix "Failed to load usage data" error - was expected behavior (requires auth)
-2. ✅ Fix diagram tool clutter - moved 12 component buttons into dropdown menu
-3. ✅ Fix element fluttering - use skipHistory during drag, commit on mouse up
-4. ✅ Update tests for new dropdown UI
-5. ✅ Commit, push, and deploy
-6. ✅ Verify all functionality works
+1. ✅ Fix diagram tool clutter - moved 12 component buttons into dropdown menu
+2. ✅ Fix element fluttering - use skipHistory during drag, commit on mouse up
+3. ✅ Fix "Failed to load usage data" - ran missing database migration
+4. ✅ Add database migration step to Cloud Build deployment
+5. ✅ Verify all functionality works
+
+## Root Cause and Fix
+
+### Usage Dashboard Issue
+The "Failed to load usage data" error was caused by **missing database tables**:
+- `audit_logs` table did not exist
+- `usage_costs` table did not exist
+
+**Fix**: Added database migration step to `cloudbuild.yaml`:
+- Creates a Cloud Run Job to run `alembic upgrade head`
+- Runs before backend deployment
+- Successfully created the missing tables
+
+### Migration Log
+```
+INFO  [alembic.runtime.migration] Running upgrade 004 -> 005, Add audit log and usage cost tables
+```
 
 ## Fixes Applied
 
@@ -28,23 +44,20 @@ This file helps Claude resume work in case of a crash.
 - Commit to history only when drag ends (handleMouseUp)
 - Prevents excessive history entries and visual stuttering during drag
 
-### Usage Dashboard
-- The "Failed to load usage data" error is expected when not authenticated
-- The API requires authentication to access user usage data
-- Error handling is working correctly
+## Deployment
+
+- **Frontend**: https://sdp-frontend-875426505110.us-central1.run.app ✅
+- **Backend**: https://sdp-backend-875426505110.us-central1.run.app ✅
+- **Migration Job**: sdp-migration ✅ (1/1 complete)
+
+## Files Modified
+
+- `cloudbuild.yaml` - Added migration step
+- `frontend/src/components/DesignCanvas.tsx` - Fixed fluttering and added component dropdown
+- `frontend/src/components/DesignCanvas.test.tsx` - Updated tests for new dropdown UI
 
 ## Test Results
 
 - All 706 frontend tests passing
 - TypeScript check passing
-- Both services healthy after deployment
-
-## Deployment
-
-- **Frontend**: https://sdp-frontend-875426505110.us-central1.run.app ✅ Healthy
-- **Backend**: https://sdp-backend-875426505110.us-central1.run.app ✅ Healthy
-
-## Files Modified
-
-- `frontend/src/components/DesignCanvas.tsx` - Fixed fluttering and added component dropdown
-- `frontend/src/components/DesignCanvas.test.tsx` - Updated tests for new dropdown UI
+- Database migration successful
