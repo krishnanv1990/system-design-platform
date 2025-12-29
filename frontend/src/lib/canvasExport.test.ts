@@ -116,7 +116,7 @@ describe('canvasExport', () => {
         ...originalURL,
         createObjectURL: mockCreateObjectURL,
         revokeObjectURL: mockRevokeObjectURL,
-      } as typeof URL
+      } as unknown as typeof URL
     })
 
     afterEach(() => {
@@ -360,7 +360,7 @@ describe('canvasExport', () => {
         ...originalURL,
         createObjectURL: mockCreateObjectURL,
         revokeObjectURL: mockRevokeObjectURL,
-      } as typeof URL
+      } as unknown as typeof URL
 
       const originalCreateElement = document.createElement.bind(document)
       vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
