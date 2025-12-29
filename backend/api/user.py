@@ -562,3 +562,222 @@ async def ban_user(
         is_admin=user.is_admin,
         created_at=user.created_at,
     )
+
+
+# ============ Admin Usage & Activity Endpoints ============
+
+class UserUsageSummary(BaseModel):
+    """Usage summary for a single user."""
+    user_id: int
+    email: str
+    name: Optional[str]
+    total_cost_usd: float
+    total_actions: int
+    ai_input_tokens: float
+    ai_output_tokens: float
+
+
+class AdminUsageResponse(BaseModel):
+    """Aggregated usage response for admin."""
+    total_cost_usd: float
+    total_actions: int
+    total_users: int
+    start_date: datetime
+    end_date: datetime
+    by_category: List[UsageCostSummary]
+    by_user: List[UserUsageSummary]
+
+
+class AdminActivityResponse(BaseModel):
+    """Aggregated activity response for admin."""
+    total_actions: int
+    total_users: int
+    start_date: datetime
+    end_date: datetime
+    by_action: Dict[str, int]
+    recent_items: List[AuditLogItem]
+
+
+@router.get("/admin/usage", response_model=AdminUsageResponse)
+async def get_admin_usage(
+    days: int = Query(default=30, ge=1, le=365, description="Number of days to look back"),
+    db: Session = Depends(get_db),
+    admin_user: User = Depends(require_admin),
+):
+    """
+    Get aggregated usage costs for all users (admin only).
+
+    Returns total costs, breakdown by category, and per-user summary.
+    """
+    from sqlalchemy import func
+
+    end_date = datetime.utcnow()
+    start_date = end_date - timedelta(days=days)
+
+    # Get total costs by category
+    category_costs = (
+        db.query(
+            UsageCost.category,
+            func.sum(UsageCost.quantity).label("total_quantity"),
+            func.sum(UsageCost.total_cost_usd).label("total_cost"),
+        )
+        .filter(UsageCost.created_at >= start_date)
+        .filter(UsageCost.created_at <= end_date)
+        .group_by(UsageCost.category)
+        .all()
+    )
+
+    by_category = [
+        UsageCostSummary(
+            category=row.category,
+            total_quantity=float(row.total_quantity or 0),
+            unit="tokens" if "tokens" in row.category else "units",
+            total_cost_usd=float(row.total_cost or 0),
+        )
+        for row in category_costs
+    ]
+
+    total_cost = sum(c.total_cost_usd for c in by_category)
+
+    # Get per-user costs
+    user_costs = (
+        db.query(
+            User.id,
+            User.email,
+            User.name,
+            func.sum(UsageCost.total_cost_usd).label("total_cost"),
+            func.count(AuditLog.id.distinct()).label("action_count"),
+        )
+        .outerjoin(UsageCost, User.id == UsageCost.user_id)
+        .outerjoin(AuditLog, User.id == AuditLog.user_id)
+        .filter(
+            (UsageCost.created_at >= start_date) | (UsageCost.created_at.is_(None))
+        )
+        .group_by(User.id, User.email, User.name)
+        .order_by(func.sum(UsageCost.total_cost_usd).desc().nullslast())
+        .limit(50)
+        .all()
+    )
+
+    # Get token breakdown per user
+    user_tokens = {}
+    token_data = (
+        db.query(
+            UsageCost.user_id,
+            UsageCost.category,
+            func.sum(UsageCost.quantity).label("total_quantity"),
+        )
+        .filter(UsageCost.created_at >= start_date)
+        .filter(UsageCost.category.in_(["ai_input_tokens", "ai_output_tokens"]))
+        .group_by(UsageCost.user_id, UsageCost.category)
+        .all()
+    )
+    for row in token_data:
+        if row.user_id not in user_tokens:
+            user_tokens[row.user_id] = {"ai_input_tokens": 0, "ai_output_tokens": 0}
+        user_tokens[row.user_id][row.category] = float(row.total_quantity or 0)
+
+    by_user = [
+        UserUsageSummary(
+            user_id=row.id,
+            email=row.email,
+            name=row.name,
+            total_cost_usd=float(row.total_cost or 0),
+            total_actions=int(row.action_count or 0),
+            ai_input_tokens=user_tokens.get(row.id, {}).get("ai_input_tokens", 0),
+            ai_output_tokens=user_tokens.get(row.id, {}).get("ai_output_tokens", 0),
+        )
+        for row in user_costs
+    ]
+
+    # Count unique users with activity
+    total_users = db.query(func.count(User.id.distinct())).scalar() or 0
+
+    # Count total actions
+    total_actions = (
+        db.query(func.count(AuditLog.id))
+        .filter(AuditLog.created_at >= start_date)
+        .scalar() or 0
+    )
+
+    return AdminUsageResponse(
+        total_cost_usd=float(total_cost),
+        total_actions=total_actions,
+        total_users=total_users,
+        start_date=start_date,
+        end_date=end_date,
+        by_category=by_category,
+        by_user=by_user,
+    )
+
+
+@router.get("/admin/activity", response_model=AdminActivityResponse)
+async def get_admin_activity(
+    days: int = Query(default=7, ge=1, le=90, description="Number of days to look back"),
+    limit: int = Query(default=100, ge=1, le=500, description="Maximum recent items"),
+    db: Session = Depends(get_db),
+    admin_user: User = Depends(require_admin),
+):
+    """
+    Get aggregated activity logs for all users (admin only).
+
+    Returns action counts and recent activity items.
+    """
+    from sqlalchemy import func
+
+    end_date = datetime.utcnow()
+    start_date = end_date - timedelta(days=days)
+
+    # Get action counts
+    action_counts = (
+        db.query(
+            AuditLog.action,
+            func.count(AuditLog.id).label("count"),
+        )
+        .filter(AuditLog.created_at >= start_date)
+        .group_by(AuditLog.action)
+        .all()
+    )
+
+    by_action = {row.action: row.count for row in action_counts}
+    total_actions = sum(by_action.values())
+
+    # Count unique users
+    total_users = (
+        db.query(func.count(AuditLog.user_id.distinct()))
+        .filter(AuditLog.created_at >= start_date)
+        .filter(AuditLog.user_id.isnot(None))
+        .scalar() or 0
+    )
+
+    # Get recent items with user info
+    recent_logs = (
+        db.query(AuditLog)
+        .filter(AuditLog.created_at >= start_date)
+        .order_by(AuditLog.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+
+    return AdminActivityResponse(
+        total_actions=total_actions,
+        total_users=total_users,
+        start_date=start_date,
+        end_date=end_date,
+        by_action=by_action,
+        recent_items=[
+            AuditLogItem(
+                id=log.id,
+                action=log.action,
+                resource_type=log.resource_type,
+                resource_id=log.resource_id,
+                details={**(log.details or {}), "user_id": log.user_id},
+                request_path=log.request_path,
+                request_method=log.request_method,
+                response_status=log.response_status,
+                duration_ms=log.duration_ms,
+                created_at=log.created_at,
+            )
+            for log in recent_logs
+        ],
+    )

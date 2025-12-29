@@ -471,6 +471,85 @@ export interface ContactSupportResponse {
 }
 
 /**
+ * Usage cost types
+ */
+export interface UsageCostSummary {
+  category: string
+  total_quantity: number
+  unit: string
+  total_cost_usd: number
+}
+
+export interface UsageCostItem {
+  id: number
+  category: string
+  quantity: number
+  unit: string
+  unit_cost_usd: number
+  total_cost_usd: number
+  details: Record<string, unknown> | null
+  created_at: string
+}
+
+export interface UsageCostResponse {
+  total_cost_usd: number
+  start_date: string
+  end_date: string
+  by_category: UsageCostSummary[]
+  recent_items: UsageCostItem[]
+}
+
+export interface AuditLogItem {
+  id: number
+  action: string
+  resource_type: string | null
+  resource_id: number | null
+  details: Record<string, unknown> | null
+  request_path: string | null
+  request_method: string | null
+  response_status: number | null
+  duration_ms: number | null
+  created_at: string
+}
+
+export interface AuditLogResponse {
+  total_count: number
+  items: AuditLogItem[]
+}
+
+/**
+ * Admin usage types
+ */
+export interface UserUsageSummary {
+  user_id: number
+  email: string
+  name: string | null
+  total_cost_usd: number
+  total_actions: number
+  ai_input_tokens: number
+  ai_output_tokens: number
+}
+
+export interface AdminUsageResponse {
+  total_cost_usd: number
+  total_actions: number
+  total_users: number
+  start_date: string
+  end_date: string
+  by_category: UsageCostSummary[]
+  by_user: UserUsageSummary[]
+}
+
+export interface AdminActivityResponse {
+  total_actions: number
+  total_users: number
+  start_date: string
+  end_date: string
+  by_action: Record<string, number>
+  recent_items: AuditLogItem[]
+}
+
+/**
  * User Profile API
  */
 export const userApi = {
@@ -495,6 +574,43 @@ export const userApi = {
    */
   contactSupport: async (data: ContactSupportRequest): Promise<ContactSupportResponse> => {
     const response = await api.post('/user/contact-support', data)
+    return response.data
+  },
+
+  /**
+   * Get user's usage costs
+   */
+  getUsage: async (days: number = 30): Promise<UsageCostResponse> => {
+    const response = await api.get('/user/usage', { params: { days } })
+    return response.data
+  },
+
+  /**
+   * Get user's activity log
+   */
+  getActivity: async (days: number = 7, limit: number = 50): Promise<AuditLogResponse> => {
+    const response = await api.get('/user/activity', { params: { days, limit } })
+    return response.data
+  },
+}
+
+/**
+ * Admin API
+ */
+export const adminApi = {
+  /**
+   * Get aggregated usage for all users (admin only)
+   */
+  getUsage: async (days: number = 30): Promise<AdminUsageResponse> => {
+    const response = await api.get('/user/admin/usage', { params: { days } })
+    return response.data
+  },
+
+  /**
+   * Get aggregated activity for all users (admin only)
+   */
+  getActivity: async (days: number = 7, limit: number = 100): Promise<AdminActivityResponse> => {
+    const response = await api.get('/user/admin/activity', { params: { days, limit } })
     return response.data
   },
 }

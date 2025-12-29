@@ -75,7 +75,7 @@ describe('TestResultCard', () => {
     expect(screen.queryByText(/"status": 200/)).not.toBeInTheDocument()
 
     // Click to show
-    fireEvent.click(screen.getByText(/View Raw Details/i))
+    fireEvent.click(screen.getByText(/View Technical Details/i))
     expect(screen.getByText(/"status": 200/)).toBeInTheDocument()
 
     // Click to hide

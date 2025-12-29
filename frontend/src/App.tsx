@@ -11,6 +11,8 @@ import Results from './pages/Results'
 import AuthCallback from './pages/AuthCallback'
 import Login from './pages/Login'
 import AdminDashboard from './pages/AdminDashboard'
+import UsageDashboard from './pages/UsageDashboard'
+import AdminUsageDashboard from './pages/AdminUsageDashboard'
 import TermsOfService from './pages/TermsOfService'
 import PrivacyPolicy from './pages/PrivacyPolicy'
 import AccountSettings from './pages/AccountSettings'
@@ -90,6 +92,22 @@ function AppRoutes() {
           element={
             <ProtectedRoute>
               <AdminDashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="usage"
+          element={
+            <ProtectedRoute>
+              <UsageDashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="admin/usage"
+          element={
+            <ProtectedRoute>
+              <AdminUsageDashboard />
             </ProtectedRoute>
           }
         />

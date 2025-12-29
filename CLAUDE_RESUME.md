@@ -1,66 +1,57 @@
 # Claude Resume File - Task Progress
 
 ## Current Task
-COMPLETED - All tasks finished!
+1. Create User Dashboard for viewing own usage and audit logs
+2. Create Developer/Admin Dashboard for viewing all users' usage with aggregation
+3. Increase backend test coverage from 44% to 100%
+4. Improve test failure UI - show text summaries with actionable items instead of raw details
+5. Add unit and integration tests, ensure all pass with 100% coverage
+6. Commit, push, and deploy
+7. Verify all links, pages, and actions work
 
 ## Progress
-- Status: COMPLETED
-- Phase: All logging, auditing, and tests completed
+- Status: IN_PROGRESS
+- Phase: Starting dashboard implementation
 
 ## Production URLs
-- Frontend: https://sdp-frontend-zziiwqh26q-uc.a.run.app
-- Backend: https://sdp-backend-zziiwqh26q-uc.a.run.app
+- Frontend: https://sdp-frontend-875426505110.us-central1.run.app
+- Backend: https://sdp-backend-875426505110.us-central1.run.app
 
-## Completed Work This Session
+## Original Prompt (for crash recovery)
+```
+where to view the audit and billing usage data? need two separate dashboards, one for the user to view their own usage and audit logs and one for the developer to view the users' usage and audit logs - total and aggregated by users with breakdown etc. Also why is the backend coverage only 44%? Add tests to increase it to 100%. For the functional, performance and chaos test failures, instead of showing raw details in the UI, provide a text summary of why the test failed along with actionable items the user can do to fix the failing tests. Add unit and integration tests, ensure all tests pass (for all components) and no regressions. Ensure 100% code coverage. commit and push changes. deploy the changes and ensure everything (all links, all pages, all actions) works. Save this prompt before executing (and the intermediate states) to some file so that claude can resume this in the event of a crash.
+```
 
-### 1. Logging and Auditing System (Already Implemented)
-Verified comprehensive audit logging system already in place:
-- **Audit Middleware** (`middleware/audit_middleware.py`): Auto-logs HTTP requests
-- **Audit Service** (`services/audit_service.py`): Manual logging with context + cost tracking
-- **Models** (`models/audit_log.py`): AuditLog and UsageCost tables with indexes
-- **API Endpoints** (`api/user.py`): `/api/user/usage` and `/api/user/activity` for users to view their data
+## Subtasks
+### Dashboard Implementation
+- [ ] User Dashboard Page (frontend)
+  - View own usage costs by category
+  - View own activity/audit logs
+  - Date range filtering
+- [ ] Admin Dashboard Page (frontend)
+  - View all users' usage (aggregated)
+  - Breakdown by user
+  - Total costs and activity summary
+- [ ] Backend API endpoints (if not already exist)
 
-### 2. Usage Cost Tracking (Already Implemented)
-Verified cost tracking integrated in:
-- Chat API tracks AI token usage (`_track_ai_cost()` function)
-- Cost categories: AI_INPUT_TOKENS, AI_OUTPUT_TOKENS, GCP_COMPUTE, GCP_STORAGE, GCP_NETWORK, GCP_DATABASE
-- User API provides cost breakdown by category
+### Test Failure UI Improvements
+- [ ] Analyze current test failure display
+- [ ] Create text summary generation for failures
+- [ ] Add actionable items/suggestions
+- [ ] Update UI components
 
-### 3. Fixed Failing Backend Tests
-- Fixed `moderation_service.py` jailbreak/obscene patterns to match test cases
-- Fixed `test_user_api.py` to use FastAPI dependency overrides instead of patches
-- Fixed `test_nginx_proxy.py` to use absolute paths for file fixtures
-- All 281 backend tests now pass
+### Test Coverage Improvement
+- [ ] Identify uncovered code paths
+- [ ] Add tests for api/ modules
+- [ ] Add tests for services/ modules
+- [ ] Add tests for websocket/ modules
+- [ ] Achieve 100% coverage
 
-### 4. Test Results Summary
-- **Frontend**: 696 tests passing
-- **Backend**: 281 tests passing
-- **Backend Coverage**: 44% (core audit/moderation/validation services well-tested)
-
-## Previous Work Summary
-- Content moderation service with jailbreak/code execution/obscene detection
-- User ban functionality with auto-ban
-- User profile API with display name editing and contact support
-- Database migration for user profile fields
-- Tests for moderation and user API
-- Design text summary component
-- Image import support
-- Chat latency optimization
-
-## Test Files
-### Backend Tests (281 tests)
-- `test_audit_api.py` - 37 tests for audit middleware/API
-- `test_audit_service.py` - 19 tests for audit service
-- `test_moderation_service.py` - 24 tests for content moderation
-- `test_user_api.py` - 11 tests for user profile API
-- `test_validation_service.py` - 29 tests for validation
-- Plus: config, jwt, nginx, oauth, schemas tests
-
-### Frontend Tests (696 tests)
-- Component tests for all UI components
-- API client tests
-- Hook tests
-- Page tests
+### Final Steps
+- [ ] Run all tests (frontend + backend)
+- [ ] Commit and push
+- [ ] Deploy to Cloud Run
+- [ ] Verify all functionality
 
 ## Commands to Resume
 ```bash
