@@ -57,6 +57,7 @@ class Settings(BaseSettings):
 
     # URLs (for OAuth redirect)
     frontend_url: str = "http://localhost:5173"
+    admin_url: str = "http://localhost:5174"  # Admin portal URL
     backend_url: str = "http://localhost:8000"
 
     # Rate Limiting

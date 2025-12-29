@@ -6,6 +6,10 @@ import path from 'path'
 export default defineConfig({
   plugins: [react()],
   base: '/',
+  define: {
+    // Mark this as admin build for OAuth redirect handling
+    'import.meta.env.VITE_IS_ADMIN': JSON.stringify('true'),
+  },
   build: {
     sourcemap: true,
     outDir: 'dist-admin',

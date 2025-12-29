@@ -130,7 +130,7 @@ steps:
       - '--timeout'
       - '300'
       - '--update-env-vars'
-      - 'DEBUG=false,FRONTEND_URL=https://sdp-frontend-zziiwqh26q-uc.a.run.app,BACKEND_URL=https://sdp-backend-zziiwqh26q-uc.a.run.app'
+      - 'DEBUG=false,FRONTEND_URL=https://sdp-frontend-zziiwqh26q-uc.a.run.app,ADMIN_URL=https://sdp-admin-zziiwqh26q-uc.a.run.app,BACKEND_URL=https://sdp-backend-zziiwqh26q-uc.a.run.app'
       - '--update-secrets'
       - 'DATABASE_URL=database-url:latest,GOOGLE_CLIENT_ID=google-client-id:latest,GOOGLE_CLIENT_SECRET=google-client-secret:latest,JWT_SECRET_KEY=jwt-secret:latest,ANTHROPIC_API_KEY=anthropic-api-key:latest'
       - '--add-cloudsql-instances'

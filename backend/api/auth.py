@@ -5,7 +5,9 @@ Handles OAuth flows for multiple providers and JWT token management.
 Supports Google, Facebook, LinkedIn, and GitHub authentication.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+import base64
+import json
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 from typing import Optional
@@ -33,6 +35,30 @@ from backend.config import get_settings
 
 router = APIRouter()
 settings = get_settings()
+
+
+def encode_oauth_state(source: str = "user") -> str:
+    """Encode OAuth state with source info (user or admin)."""
+    state_data = {"source": source}
+    return base64.urlsafe_b64encode(json.dumps(state_data).encode()).decode()
+
+
+def decode_oauth_state(state: Optional[str]) -> str:
+    """Decode OAuth state to get source info. Returns 'user' by default."""
+    if not state:
+        return "user"
+    try:
+        state_data = json.loads(base64.urlsafe_b64decode(state.encode()).decode())
+        return state_data.get("source", "user")
+    except Exception:
+        return "user"
+
+
+def get_redirect_url(source: str) -> str:
+    """Get the appropriate frontend URL based on source."""
+    if source == "admin":
+        return settings.admin_url
+    return settings.frontend_url
 
 
 # =============================================================================
@@ -112,16 +138,18 @@ def find_or_create_user(
     return user
 
 
-def create_auth_redirect(token: str) -> RedirectResponse:
+def create_auth_redirect(token: str, source: str = "user") -> RedirectResponse:
     """Create redirect to frontend with JWT token."""
-    redirect_url = f"{settings.frontend_url}/#/auth/callback?token={token}"
+    frontend_url = get_redirect_url(source)
+    redirect_url = f"{frontend_url}/#/auth/callback?token={token}"
     print(f"OAuth redirect URL: {redirect_url[:100]}...")
     return RedirectResponse(url=redirect_url)
 
 
-def create_error_redirect(error: str) -> RedirectResponse:
+def create_error_redirect(error: str, source: str = "user") -> RedirectResponse:
     """Create redirect to frontend with error message."""
-    redirect_url = f"{settings.frontend_url}/#/auth/callback?error={error}"
+    frontend_url = get_redirect_url(source)
+    redirect_url = f"{frontend_url}/#/auth/callback?error={error}"
     return RedirectResponse(url=redirect_url)
 
 
@@ -130,35 +158,45 @@ def create_error_redirect(error: str) -> RedirectResponse:
 # =============================================================================
 
 @router.get("/google")
-async def google_auth():
+async def google_auth(source: str = Query("user", description="Login source: 'user' or 'admin'")):
     """
     Initiate Google OAuth flow.
     Redirects user to Google's authorization page.
+
+    Args:
+        source: Where the login originated from ('user' or 'admin')
     """
-    oauth_url = get_google_oauth_url()
+    state = encode_oauth_state(source)
+    oauth_url = get_google_oauth_url(state=state)
     return RedirectResponse(url=oauth_url)
 
 
 @router.get("/google/callback")
-async def google_callback(code: str, db: Session = Depends(get_db)):
+async def google_callback(
+    code: str,
+    state: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
     """
     Handle Google OAuth callback.
     Exchanges code for tokens, creates/updates user, and returns JWT.
 
     Args:
         code: Authorization code from Google
+        state: OAuth state containing source info
         db: Database session
 
     Returns:
         Redirect to frontend with JWT token in URL params
     """
+    source = decode_oauth_state(state)
     try:
         # Exchange code for tokens
         token_data = await exchange_google_code_for_token(code)
         access_token = token_data.get("access_token")
 
         if not access_token:
-            return create_error_redirect("Failed to get access token from Google")
+            return create_error_redirect("Failed to get access token from Google", source)
 
         # Get user info from Google
         user_info = await get_google_user_info(access_token)
@@ -168,7 +206,7 @@ async def google_callback(code: str, db: Session = Depends(get_db)):
         avatar_url = user_info.get("picture")
 
         if not google_id or not email:
-            return create_error_redirect("Failed to get user info from Google")
+            return create_error_redirect("Failed to get user info from Google", source)
 
         # Find or create user
         user = find_or_create_user(
@@ -182,10 +220,10 @@ async def google_callback(code: str, db: Session = Depends(get_db)):
 
         # Create JWT token
         jwt_token = create_access_token(data={"sub": str(user.id)})
-        return create_auth_redirect(jwt_token)
+        return create_auth_redirect(jwt_token, source)
 
     except Exception as e:
-        return create_error_redirect(str(e))
+        return create_error_redirect(str(e), source)
 
 
 # =============================================================================
@@ -193,35 +231,45 @@ async def google_callback(code: str, db: Session = Depends(get_db)):
 # =============================================================================
 
 @router.get("/facebook")
-async def facebook_auth():
+async def facebook_auth(source: str = Query("user", description="Login source: 'user' or 'admin'")):
     """
     Initiate Facebook OAuth flow.
     Redirects user to Facebook's authorization page.
+
+    Args:
+        source: Where the login originated from ('user' or 'admin')
     """
-    oauth_url = get_facebook_oauth_url()
+    state = encode_oauth_state(source)
+    oauth_url = get_facebook_oauth_url(state=state)
     return RedirectResponse(url=oauth_url)
 
 
 @router.get("/facebook/callback")
-async def facebook_callback(code: str, db: Session = Depends(get_db)):
+async def facebook_callback(
+    code: str,
+    state: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
     """
     Handle Facebook OAuth callback.
     Exchanges code for tokens, creates/updates user, and returns JWT.
 
     Args:
         code: Authorization code from Facebook
+        state: OAuth state containing source info
         db: Database session
 
     Returns:
         Redirect to frontend with JWT token in URL params
     """
+    source = decode_oauth_state(state)
     try:
         # Exchange code for tokens
         token_data = await exchange_facebook_code_for_token(code)
         access_token = token_data.get("access_token")
 
         if not access_token:
-            return create_error_redirect("Failed to get access token from Facebook")
+            return create_error_redirect("Failed to get access token from Facebook", source)
 
         # Get user info from Facebook
         user_info = await get_facebook_user_info(access_token)
@@ -231,7 +279,7 @@ async def facebook_callback(code: str, db: Session = Depends(get_db)):
         avatar_url = user_info.get("picture")
 
         if not facebook_id or not email:
-            return create_error_redirect("Failed to get user info from Facebook")
+            return create_error_redirect("Failed to get user info from Facebook", source)
 
         # Find or create user
         user = find_or_create_user(
@@ -245,10 +293,10 @@ async def facebook_callback(code: str, db: Session = Depends(get_db)):
 
         # Create JWT token
         jwt_token = create_access_token(data={"sub": str(user.id)})
-        return create_auth_redirect(jwt_token)
+        return create_auth_redirect(jwt_token, source)
 
     except Exception as e:
-        return create_error_redirect(str(e))
+        return create_error_redirect(str(e), source)
 
 
 # =============================================================================
@@ -256,35 +304,45 @@ async def facebook_callback(code: str, db: Session = Depends(get_db)):
 # =============================================================================
 
 @router.get("/linkedin")
-async def linkedin_auth():
+async def linkedin_auth(source: str = Query("user", description="Login source: 'user' or 'admin'")):
     """
     Initiate LinkedIn OAuth flow.
     Redirects user to LinkedIn's authorization page.
+
+    Args:
+        source: Where the login originated from ('user' or 'admin')
     """
-    oauth_url = get_linkedin_oauth_url()
+    state = encode_oauth_state(source)
+    oauth_url = get_linkedin_oauth_url(state=state)
     return RedirectResponse(url=oauth_url)
 
 
 @router.get("/linkedin/callback")
-async def linkedin_callback(code: str, db: Session = Depends(get_db)):
+async def linkedin_callback(
+    code: str,
+    state: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
     """
     Handle LinkedIn OAuth callback.
     Exchanges code for tokens, creates/updates user, and returns JWT.
 
     Args:
         code: Authorization code from LinkedIn
+        state: OAuth state containing source info
         db: Database session
 
     Returns:
         Redirect to frontend with JWT token in URL params
     """
+    source = decode_oauth_state(state)
     try:
         # Exchange code for tokens
         token_data = await exchange_linkedin_code_for_token(code)
         access_token = token_data.get("access_token")
 
         if not access_token:
-            return create_error_redirect("Failed to get access token from LinkedIn")
+            return create_error_redirect("Failed to get access token from LinkedIn", source)
 
         # Get user info from LinkedIn
         user_info = await get_linkedin_user_info(access_token)
@@ -294,7 +352,7 @@ async def linkedin_callback(code: str, db: Session = Depends(get_db)):
         avatar_url = user_info.get("picture")
 
         if not linkedin_id or not email:
-            return create_error_redirect("Failed to get user info from LinkedIn")
+            return create_error_redirect("Failed to get user info from LinkedIn", source)
 
         # Find or create user
         user = find_or_create_user(
@@ -308,10 +366,10 @@ async def linkedin_callback(code: str, db: Session = Depends(get_db)):
 
         # Create JWT token
         jwt_token = create_access_token(data={"sub": str(user.id)})
-        return create_auth_redirect(jwt_token)
+        return create_auth_redirect(jwt_token, source)
 
     except Exception as e:
-        return create_error_redirect(str(e))
+        return create_error_redirect(str(e), source)
 
 
 # =============================================================================
@@ -319,35 +377,45 @@ async def linkedin_callback(code: str, db: Session = Depends(get_db)):
 # =============================================================================
 
 @router.get("/github")
-async def github_auth():
+async def github_auth(source: str = Query("user", description="Login source: 'user' or 'admin'")):
     """
     Initiate GitHub OAuth flow.
     Redirects user to GitHub's authorization page.
+
+    Args:
+        source: Where the login originated from ('user' or 'admin')
     """
-    oauth_url = get_github_oauth_url()
+    state = encode_oauth_state(source)
+    oauth_url = get_github_oauth_url(state=state)
     return RedirectResponse(url=oauth_url)
 
 
 @router.get("/github/callback")
-async def github_callback(code: str, db: Session = Depends(get_db)):
+async def github_callback(
+    code: str,
+    state: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
     """
     Handle GitHub OAuth callback.
     Exchanges code for tokens, creates/updates user, and returns JWT.
 
     Args:
         code: Authorization code from GitHub
+        state: OAuth state containing source info
         db: Database session
 
     Returns:
         Redirect to frontend with JWT token in URL params
     """
+    source = decode_oauth_state(state)
     try:
         # Exchange code for tokens
         token_data = await exchange_github_code_for_token(code)
         access_token = token_data.get("access_token")
 
         if not access_token:
-            return create_error_redirect("Failed to get access token from GitHub")
+            return create_error_redirect("Failed to get access token from GitHub", source)
 
         # Get user info from GitHub
         user_info = await get_github_user_info(access_token)
@@ -357,7 +425,7 @@ async def github_callback(code: str, db: Session = Depends(get_db)):
         avatar_url = user_info.get("picture")
 
         if not github_id or not email:
-            return create_error_redirect("Failed to get user info from GitHub")
+            return create_error_redirect("Failed to get user info from GitHub", source)
 
         # Find or create user
         user = find_or_create_user(
@@ -371,10 +439,10 @@ async def github_callback(code: str, db: Session = Depends(get_db)):
 
         # Create JWT token
         jwt_token = create_access_token(data={"sub": str(user.id)})
-        return create_auth_redirect(jwt_token)
+        return create_auth_redirect(jwt_token, source)
 
     except Exception as e:
-        return create_error_redirect(str(e))
+        return create_error_redirect(str(e), source)
 
 
 # =============================================================================

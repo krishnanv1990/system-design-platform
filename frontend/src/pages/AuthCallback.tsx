@@ -7,6 +7,9 @@ import { useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../components/AuthContext'
 
+// Detect if we're running in admin mode (set by vite.config.admin.ts)
+const IS_ADMIN_APP = import.meta.env.VITE_IS_ADMIN === 'true'
+
 export default function AuthCallback() {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
@@ -29,7 +32,9 @@ export default function AuthCallback() {
       if (token) {
         try {
           await login(token)
-          navigate('/problems')
+          // Redirect to appropriate page based on app type
+          const redirectPath = IS_ADMIN_APP ? '/dashboard' : '/problems'
+          navigate(redirectPath)
         } catch (err) {
           console.error('Login failed:', err)
           navigate('/login?error=auth_failed')

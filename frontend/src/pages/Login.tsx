@@ -17,10 +17,14 @@
 import { useEffect, useState } from "react"
 import { useSearchParams, useNavigate } from "react-router-dom"
 import { CheckCircle, AlertCircle, Info } from "lucide-react"
-import { authApi, OAuthProvider } from "@/api/client"
+import { authApi, OAuthProvider, OAuthSource } from "@/api/client"
 import { useAuth } from "@/components/AuthContext"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+
+// Detect if we're running in admin mode (set by vite.config.admin.ts)
+const IS_ADMIN_APP = import.meta.env.VITE_IS_ADMIN === 'true'
+const OAUTH_SOURCE: OAuthSource = IS_ADMIN_APP ? 'admin' : 'user'
 
 // Error message mapping for user-friendly display
 const errorMessages: Record<string, { title: string; message: string }> = {
@@ -143,7 +147,9 @@ export default function Login() {
   // Redirect if already logged in
   useEffect(() => {
     if (user || demoMode) {
-      navigate("/problems", { replace: true })
+      // Redirect to appropriate page based on app type
+      const redirectPath = IS_ADMIN_APP ? "/dashboard" : "/problems"
+      navigate(redirectPath, { replace: true })
     }
   }, [user, demoMode, navigate])
 
@@ -154,7 +160,8 @@ export default function Login() {
     // Clear any existing errors
     setError(null)
     setInfo(null)
-    window.location.href = authApi.getAuthUrl(provider)
+    // Pass source (user/admin) to correctly redirect after OAuth
+    window.location.href = authApi.getAuthUrl(provider, OAUTH_SOURCE)
   }
 
   const features = [

@@ -23,56 +23,66 @@ describe('authApi', () => {
       vi.stubEnv('VITE_API_URL', '')
       const { authApi } = await import('./client')
 
-      expect(authApi.getGoogleAuthUrl()).toBe('/api/auth/google')
+      expect(authApi.getGoogleAuthUrl()).toBe('/api/auth/google?source=user')
     })
 
     it('generates correct Facebook OAuth URL without API_URL', async () => {
       vi.stubEnv('VITE_API_URL', '')
       const { authApi } = await import('./client')
 
-      expect(authApi.getFacebookAuthUrl()).toBe('/api/auth/facebook')
+      expect(authApi.getFacebookAuthUrl()).toBe('/api/auth/facebook?source=user')
     })
 
     it('generates correct LinkedIn OAuth URL without API_URL', async () => {
       vi.stubEnv('VITE_API_URL', '')
       const { authApi } = await import('./client')
 
-      expect(authApi.getLinkedInAuthUrl()).toBe('/api/auth/linkedin')
+      expect(authApi.getLinkedInAuthUrl()).toBe('/api/auth/linkedin?source=user')
     })
 
     it('generates correct GitHub OAuth URL without API_URL', async () => {
       vi.stubEnv('VITE_API_URL', '')
       const { authApi } = await import('./client')
 
-      expect(authApi.getGitHubAuthUrl()).toBe('/api/auth/github')
+      expect(authApi.getGitHubAuthUrl()).toBe('/api/auth/github?source=user')
     })
 
     it('generates correct Google OAuth URL with API_URL', async () => {
       vi.stubEnv('VITE_API_URL', 'http://api.example.com')
       const { authApi } = await import('./client')
 
-      expect(authApi.getGoogleAuthUrl()).toBe('http://api.example.com/api/auth/google')
+      expect(authApi.getGoogleAuthUrl()).toBe('http://api.example.com/api/auth/google?source=user')
     })
 
     it('generates correct Facebook OAuth URL with API_URL', async () => {
       vi.stubEnv('VITE_API_URL', 'http://api.example.com')
       const { authApi } = await import('./client')
 
-      expect(authApi.getFacebookAuthUrl()).toBe('http://api.example.com/api/auth/facebook')
+      expect(authApi.getFacebookAuthUrl()).toBe('http://api.example.com/api/auth/facebook?source=user')
     })
 
     it('generates correct LinkedIn OAuth URL with API_URL', async () => {
       vi.stubEnv('VITE_API_URL', 'http://api.example.com')
       const { authApi } = await import('./client')
 
-      expect(authApi.getLinkedInAuthUrl()).toBe('http://api.example.com/api/auth/linkedin')
+      expect(authApi.getLinkedInAuthUrl()).toBe('http://api.example.com/api/auth/linkedin?source=user')
     })
 
     it('generates correct GitHub OAuth URL with API_URL', async () => {
       vi.stubEnv('VITE_API_URL', 'http://api.example.com')
       const { authApi } = await import('./client')
 
-      expect(authApi.getGitHubAuthUrl()).toBe('http://api.example.com/api/auth/github')
+      expect(authApi.getGitHubAuthUrl()).toBe('http://api.example.com/api/auth/github?source=user')
+    })
+
+    it('generates correct OAuth URL with admin source', async () => {
+      vi.stubEnv('VITE_API_URL', '')
+      const { authApi } = await import('./client')
+
+      expect(authApi.getGoogleAuthUrl('admin')).toBe('/api/auth/google?source=admin')
+      expect(authApi.getFacebookAuthUrl('admin')).toBe('/api/auth/facebook?source=admin')
+      expect(authApi.getLinkedInAuthUrl('admin')).toBe('/api/auth/linkedin?source=admin')
+      expect(authApi.getGitHubAuthUrl('admin')).toBe('/api/auth/github?source=admin')
     })
   })
 
@@ -81,38 +91,48 @@ describe('authApi', () => {
       vi.stubEnv('VITE_API_URL', '')
       const { authApi } = await import('./client')
 
-      expect(authApi.getAuthUrl('google')).toBe('/api/auth/google')
+      expect(authApi.getAuthUrl('google')).toBe('/api/auth/google?source=user')
     })
 
     it('generates correct URL for facebook provider', async () => {
       vi.stubEnv('VITE_API_URL', '')
       const { authApi } = await import('./client')
 
-      expect(authApi.getAuthUrl('facebook')).toBe('/api/auth/facebook')
+      expect(authApi.getAuthUrl('facebook')).toBe('/api/auth/facebook?source=user')
     })
 
     it('generates correct URL for linkedin provider', async () => {
       vi.stubEnv('VITE_API_URL', '')
       const { authApi } = await import('./client')
 
-      expect(authApi.getAuthUrl('linkedin')).toBe('/api/auth/linkedin')
+      expect(authApi.getAuthUrl('linkedin')).toBe('/api/auth/linkedin?source=user')
     })
 
     it('generates correct URL for github provider', async () => {
       vi.stubEnv('VITE_API_URL', '')
       const { authApi } = await import('./client')
 
-      expect(authApi.getAuthUrl('github')).toBe('/api/auth/github')
+      expect(authApi.getAuthUrl('github')).toBe('/api/auth/github?source=user')
     })
 
     it('generates correct URL with API_URL prefix', async () => {
       vi.stubEnv('VITE_API_URL', 'https://api.test.com')
       const { authApi } = await import('./client')
 
-      expect(authApi.getAuthUrl('google')).toBe('https://api.test.com/api/auth/google')
-      expect(authApi.getAuthUrl('facebook')).toBe('https://api.test.com/api/auth/facebook')
-      expect(authApi.getAuthUrl('linkedin')).toBe('https://api.test.com/api/auth/linkedin')
-      expect(authApi.getAuthUrl('github')).toBe('https://api.test.com/api/auth/github')
+      expect(authApi.getAuthUrl('google')).toBe('https://api.test.com/api/auth/google?source=user')
+      expect(authApi.getAuthUrl('facebook')).toBe('https://api.test.com/api/auth/facebook?source=user')
+      expect(authApi.getAuthUrl('linkedin')).toBe('https://api.test.com/api/auth/linkedin?source=user')
+      expect(authApi.getAuthUrl('github')).toBe('https://api.test.com/api/auth/github?source=user')
+    })
+
+    it('generates correct URL with admin source', async () => {
+      vi.stubEnv('VITE_API_URL', '')
+      const { authApi } = await import('./client')
+
+      expect(authApi.getAuthUrl('google', 'admin')).toBe('/api/auth/google?source=admin')
+      expect(authApi.getAuthUrl('facebook', 'admin')).toBe('/api/auth/facebook?source=admin')
+      expect(authApi.getAuthUrl('linkedin', 'admin')).toBe('/api/auth/linkedin?source=admin')
+      expect(authApi.getAuthUrl('github', 'admin')).toBe('/api/auth/github?source=admin')
     })
   })
 })

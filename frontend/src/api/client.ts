@@ -101,25 +101,36 @@ export interface UserDataExport {
 }
 
 /**
+ * OAuth source type: user portal or admin portal
+ */
+export type OAuthSource = 'user' | 'admin'
+
+/**
  * Authentication API
  * Supports multiple OAuth providers: Google, Facebook, LinkedIn, GitHub
  */
 export const authApi = {
   /**
    * Get OAuth URL for the specified provider
+   * @param provider - The OAuth provider (google, facebook, linkedin, github)
+   * @param source - The login source (user or admin portal)
    */
-  getAuthUrl: (provider: OAuthProvider): string => {
+  getAuthUrl: (provider: OAuthProvider, source: OAuthSource = 'user'): string => {
     const baseUrl = API_URL ? `${API_URL}/api/auth` : '/api/auth'
-    return `${baseUrl}/${provider}`
+    return `${baseUrl}/${provider}?source=${source}`
   },
 
   // Legacy method for backward compatibility
-  getGoogleAuthUrl: () => API_URL ? `${API_URL}/api/auth/google` : '/api/auth/google',
+  getGoogleAuthUrl: (source: OAuthSource = 'user') =>
+    API_URL ? `${API_URL}/api/auth/google?source=${source}` : `/api/auth/google?source=${source}`,
 
   // Convenience methods for each provider
-  getFacebookAuthUrl: () => API_URL ? `${API_URL}/api/auth/facebook` : '/api/auth/facebook',
-  getLinkedInAuthUrl: () => API_URL ? `${API_URL}/api/auth/linkedin` : '/api/auth/linkedin',
-  getGitHubAuthUrl: () => API_URL ? `${API_URL}/api/auth/github` : '/api/auth/github',
+  getFacebookAuthUrl: (source: OAuthSource = 'user') =>
+    API_URL ? `${API_URL}/api/auth/facebook?source=${source}` : `/api/auth/facebook?source=${source}`,
+  getLinkedInAuthUrl: (source: OAuthSource = 'user') =>
+    API_URL ? `${API_URL}/api/auth/linkedin?source=${source}` : `/api/auth/linkedin?source=${source}`,
+  getGitHubAuthUrl: (source: OAuthSource = 'user') =>
+    API_URL ? `${API_URL}/api/auth/github?source=${source}` : `/api/auth/github?source=${source}`,
 
   getCurrentUser: async (): Promise<User> => {
     const response = await api.get('/auth/me')
