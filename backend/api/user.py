@@ -233,7 +233,7 @@ async def list_users(
     """
     query = db.query(User)
     if banned_only:
-        query = query.filter(User.is_banned == True)
+        query = query.filter(User.is_banned.is_(True))
 
     users = query.order_by(User.created_at.desc()).all()
 
