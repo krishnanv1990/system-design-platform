@@ -6,19 +6,29 @@ Supports three difficulty levels:
 - Easy (L5): Senior SWE - Core functionality with basic scalability
 - Medium (L6): Staff Engineer - Production-ready with high availability
 - Hard (L7): Principal Engineer - Global-scale with advanced optimizations
+
+Includes content moderation to ensure appropriate usage.
 """
 
+from datetime import datetime
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional, Dict, Any, List
 from sqlalchemy.orm import Session
 
 from backend.services.ai_service import AIService
+from backend.services.moderation_service import get_moderation_service, ModerationResult
 from backend.database import get_db
 from backend.models.problem import Problem, DIFFICULTY_LEVELS
+from backend.models.user import User
+from backend.auth.jwt_handler import get_current_user_optional
 
 router = APIRouter()
 ai_service = AIService()
+moderation_service = get_moderation_service()
+
+# Track user violations in memory (in production, use Redis or database)
+_user_violations: Dict[int, List[ModerationResult]] = {}
 
 
 class ChatMessage(BaseModel):
@@ -326,10 +336,42 @@ def get_level_info(difficulty: str) -> Dict[str, str]:
     return {"level": "", "title": "", "description": ""}
 
 
+def _check_and_ban_user(user_id: int, violation: ModerationResult, db: Session) -> bool:
+    """
+    Check if user should be banned and ban them if necessary.
+
+    Args:
+        user_id: User ID to check
+        violation: The moderation violation
+        db: Database session
+
+    Returns:
+        True if user was banned, False otherwise
+    """
+    if user_id not in _user_violations:
+        _user_violations[user_id] = []
+
+    _user_violations[user_id].append(violation)
+
+    should_ban, ban_reason = moderation_service.should_ban_user(_user_violations[user_id])
+
+    if should_ban:
+        user = db.query(User).filter(User.id == user_id).first()
+        if user and not user.is_banned:
+            user.is_banned = True
+            user.ban_reason = ban_reason
+            user.banned_at = datetime.utcnow()
+            db.commit()
+            return True
+
+    return False
+
+
 @router.post("/", response_model=ChatResponse)
 async def chat_about_design(
     request: ChatRequest,
     db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """
     Chat with AI about system design.
@@ -344,7 +386,52 @@ async def chat_about_design(
     - easy (L5): Senior SWE - Core functionality
     - medium (L6): Staff Engineer - Production-ready
     - hard (L7): Principal Engineer - Global-scale
+
+    Includes content moderation to block:
+    - Off-topic messages unrelated to system design
+    - Jailbreak/prompt injection attempts
+    - Code execution attempts
+    - Inappropriate/obscene content
     """
+    # Check if user is banned
+    if current_user and current_user.is_banned:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "banned",
+                "message": "Your account has been suspended due to policy violations.",
+                "reason": current_user.ban_reason,
+                "contact": "Please contact support@system-design-platform.com if you believe this is an error."
+            }
+        )
+
+    # Moderate the user's message
+    moderation_result, moderation_message = moderation_service.check_message(request.message)
+
+    if moderation_result != ModerationResult.ALLOWED:
+        # Track violation if user is logged in
+        if current_user:
+            was_banned = _check_and_ban_user(current_user.id, moderation_result, db)
+            if was_banned:
+                raise HTTPException(
+                    status_code=403,
+                    detail={
+                        "error": "banned",
+                        "message": "Your account has been suspended due to repeated policy violations.",
+                        "reason": current_user.ban_reason,
+                        "contact": "Please contact support@system-design-platform.com to appeal."
+                    }
+                )
+
+        # Return moderation message instead of AI response
+        return ChatResponse(
+            response=f"⚠️ **Message Blocked**\n\n{moderation_message}",
+            diagram_feedback=None,
+            suggested_improvements=[],
+            is_on_track=True,
+            demo_mode=False,
+        )
+
     # Get the problem details
     problem = db.query(Problem).filter(Problem.id == request.problem_id).first()
     if not problem:

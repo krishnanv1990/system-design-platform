@@ -13,6 +13,7 @@ interface AuthContextType {
   demoMode: boolean
   login: (token: string) => Promise<void>
   logout: () => void
+  refreshUser: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -88,8 +89,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null)
   }
 
+  const refreshUser = async () => {
+    try {
+      if (demoMode) {
+        const demoUser = await authApi.getDemoUser()
+        setUser(demoUser)
+      } else {
+        const userData = await authApi.getCurrentUser()
+        setUser(userData)
+      }
+    } catch (error) {
+      console.error('Failed to refresh user:', error)
+    }
+  }
+
   return (
-    <AuthContext.Provider value={{ user, loading, demoMode, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, demoMode, login, logout, refreshUser }}>
       {children}
     </AuthContext.Provider>
   )

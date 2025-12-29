@@ -439,4 +439,65 @@ export const chatApi = {
   },
 }
 
+/**
+ * User Profile API types
+ */
+export interface UserProfile {
+  id: number
+  email: string
+  name: string | null
+  display_name: string | null
+  avatar_url: string | null
+  is_banned: boolean
+  ban_reason: string | null
+  banned_at: string | null
+  created_at: string
+  linked_providers: string[]
+}
+
+export interface UpdateProfileRequest {
+  display_name?: string | null
+}
+
+export interface ContactSupportRequest {
+  subject: string
+  message: string
+  contact_email?: string
+}
+
+export interface ContactSupportResponse {
+  success: boolean
+  message: string
+  ticket_id?: string
+}
+
+/**
+ * User Profile API
+ */
+export const userApi = {
+  /**
+   * Get current user's profile
+   */
+  getProfile: async (): Promise<UserProfile> => {
+    const response = await api.get('/user/profile')
+    return response.data
+  },
+
+  /**
+   * Update user profile
+   */
+  updateProfile: async (data: UpdateProfileRequest): Promise<UserProfile> => {
+    const response = await api.put('/user/profile', data)
+    return response.data
+  },
+
+  /**
+   * Contact support
+   */
+  contactSupport: async (data: ContactSupportRequest): Promise<ContactSupportResponse> => {
+    const response = await api.post('/user/contact-support', data)
+    return response.data
+  },
+}
+
 export default api

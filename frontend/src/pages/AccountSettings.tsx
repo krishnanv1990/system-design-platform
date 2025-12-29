@@ -3,6 +3,8 @@
  *
  * Allows users to:
  * - View their account information
+ * - Edit their display name
+ * - Contact support
  * - See linked OAuth providers
  * - Download their data
  * - Delete their account and all data
@@ -20,22 +22,38 @@ import {
   AlertTriangle,
   CheckCircle,
   Loader2,
+  Edit2,
+  Save,
+  X,
+  MessageSquare,
+  Send,
 } from "lucide-react"
 import { useAuth } from "@/components/AuthContext"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { useConfirm } from "@/components/ui/confirm-dialog"
-import { authApi } from "@/api/client"
+import { authApi, userApi } from "@/api/client"
 
 export default function AccountSettings() {
-  const { user, logout, demoMode } = useAuth()
+  const { user, logout, demoMode, refreshUser } = useAuth()
   const navigate = useNavigate()
   const confirm = useConfirm()
   const [deleting, setDeleting] = useState(false)
   const [downloading, setDownloading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+
+  // Display name editing state
+  const [editingDisplayName, setEditingDisplayName] = useState(false)
+  const [displayName, setDisplayName] = useState(user?.display_name || user?.name || "")
+  const [savingDisplayName, setSavingDisplayName] = useState(false)
+
+  // Contact support state
+  const [showContactForm, setShowContactForm] = useState(false)
+  const [supportSubject, setSupportSubject] = useState("")
+  const [supportMessage, setSupportMessage] = useState("")
+  const [sendingSupport, setSendingSupport] = useState(false)
 
   const handleDownloadData = async () => {
     setDownloading(true)
@@ -62,6 +80,59 @@ export default function AccountSettings() {
       console.error("Download error:", err)
     } finally {
       setDownloading(false)
+    }
+  }
+
+  const handleSaveDisplayName = async () => {
+    setSavingDisplayName(true)
+    setError(null)
+    setSuccess(null)
+
+    try {
+      await userApi.updateProfile({ display_name: displayName.trim() || null })
+      setEditingDisplayName(false)
+      setSuccess("Display name updated successfully.")
+      // Refresh user data to reflect changes
+      if (refreshUser) {
+        await refreshUser()
+      }
+    } catch (err) {
+      setError("Failed to update display name. Please try again.")
+      console.error("Update display name error:", err)
+    } finally {
+      setSavingDisplayName(false)
+    }
+  }
+
+  const handleCancelEditDisplayName = () => {
+    setDisplayName(user?.display_name || user?.name || "")
+    setEditingDisplayName(false)
+  }
+
+  const handleContactSupport = async () => {
+    if (!supportSubject.trim() || !supportMessage.trim()) {
+      setError("Please fill in both subject and message.")
+      return
+    }
+
+    setSendingSupport(true)
+    setError(null)
+    setSuccess(null)
+
+    try {
+      const response = await userApi.contactSupport({
+        subject: supportSubject.trim(),
+        message: supportMessage.trim(),
+      })
+      setSuccess(`${response.message} (Ticket ID: ${response.ticket_id})`)
+      setShowContactForm(false)
+      setSupportSubject("")
+      setSupportMessage("")
+    } catch (err) {
+      setError("Failed to send support request. Please try again.")
+      console.error("Contact support error:", err)
+    } finally {
+      setSendingSupport(false)
     }
   }
 
@@ -188,7 +259,7 @@ export default function AccountSettings() {
             <User className="h-5 w-5 text-primary" />
             Profile Information
           </CardTitle>
-          <CardDescription>Your account details from OAuth provider</CardDescription>
+          <CardDescription>Your account details and display preferences</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center gap-4">
@@ -203,8 +274,53 @@ export default function AccountSettings() {
                 <User className="h-8 w-8 text-muted-foreground" />
               </div>
             )}
-            <div>
-              <p className="font-medium text-lg">{user.name || "No name set"}</p>
+            <div className="flex-1">
+              {editingDisplayName ? (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                    placeholder="Enter display name"
+                    className="flex-1 px-3 py-1.5 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                    maxLength={100}
+                    autoFocus
+                  />
+                  <Button
+                    size="sm"
+                    onClick={handleSaveDisplayName}
+                    disabled={savingDisplayName}
+                  >
+                    {savingDisplayName ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Save className="h-4 w-4" />
+                    )}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={handleCancelEditDisplayName}
+                    disabled={savingDisplayName}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <p className="font-medium text-lg">
+                    {user.display_name || user.name || "No name set"}
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setEditingDisplayName(true)}
+                    className="h-7 w-7 p-0"
+                  >
+                    <Edit2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              )}
               <p className="text-muted-foreground">{user.email}</p>
             </div>
           </div>
@@ -224,6 +340,86 @@ export default function AccountSettings() {
               Account created: {new Date(user.created_at).toLocaleDateString()}
             </p>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Contact Support */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <MessageSquare className="h-5 w-5 text-primary" />
+            Contact Support
+          </CardTitle>
+          <CardDescription>Need help? Send us a message</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {showContactForm ? (
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Subject</label>
+                <input
+                  type="text"
+                  value={supportSubject}
+                  onChange={(e) => setSupportSubject(e.target.value)}
+                  placeholder="What do you need help with?"
+                  className="w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                  maxLength={200}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Message</label>
+                <textarea
+                  value={supportMessage}
+                  onChange={(e) => setSupportMessage(e.target.value)}
+                  placeholder="Describe your issue or question..."
+                  className="w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary min-h-[120px] resize-y"
+                  maxLength={2000}
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowContactForm(false)
+                    setSupportSubject("")
+                    setSupportMessage("")
+                  }}
+                  disabled={sendingSupport}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleContactSupport}
+                  disabled={sendingSupport || !supportSubject.trim() || !supportMessage.trim()}
+                >
+                  {sendingSupport ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Sending...
+                    </>
+                  ) : (
+                    <>
+                      <Send className="mr-2 h-4 w-4" />
+                      Send Message
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between p-4 border rounded-lg">
+              <div>
+                <p className="font-medium">Get Help</p>
+                <p className="text-sm text-muted-foreground">
+                  Submit a support request and we'll respond within 24-48 hours
+                </p>
+              </div>
+              <Button onClick={() => setShowContactForm(true)}>
+                <MessageSquare className="mr-2 h-4 w-4" />
+                Contact Support
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
 

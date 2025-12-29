@@ -3,7 +3,7 @@ User-related Pydantic schemas.
 """
 
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 from pydantic import BaseModel, EmailStr
 
 
@@ -20,8 +20,17 @@ class UserResponse(BaseModel):
     id: int
     email: str
     name: Optional[str]
+    display_name: Optional[str] = None
     avatar_url: Optional[str]
     created_at: datetime
+    # Optional fields for OAuth provider IDs
+    google_id: Optional[str] = None
+    facebook_id: Optional[str] = None
+    linkedin_id: Optional[str] = None
+    github_id: Optional[str] = None
+    # Ban status (optional in some contexts)
+    is_banned: Optional[bool] = None
+    ban_reason: Optional[str] = None
 
     class Config:
         from_attributes = True

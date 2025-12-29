@@ -12,6 +12,7 @@ export interface User {
   id: number
   email: string
   name: string | null
+  display_name?: string | null
   avatar_url: string | null
   created_at: string
   // OAuth provider IDs (optional, may not be present in all responses)
@@ -19,6 +20,9 @@ export interface User {
   facebook_id?: string | null
   linkedin_id?: string | null
   github_id?: string | null
+  // Ban status (optional, may not be present in all responses)
+  is_banned?: boolean
+  ban_reason?: string | null
 }
 
 // Difficulty level types
