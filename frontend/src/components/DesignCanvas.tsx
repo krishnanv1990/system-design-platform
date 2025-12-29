@@ -40,6 +40,11 @@ import {
   exportCanvas,
   EXPORT_FORMATS,
   IMPORT_FORMATS,
+  getImportAcceptString,
+  readFileAsDataUrl,
+  readFileAsText,
+  getImageDimensions,
+  parseSvgFile,
   type ExportFormat,
 } from "@/lib/canvasExport"
 
@@ -90,7 +95,14 @@ interface IconElement extends BaseElement {
   label?: string
 }
 
-type CanvasElement = RectangleElement | EllipseElement | ArrowElement | TextElement | IconElement
+interface ImageElement extends BaseElement {
+  type: "image"
+  dataUrl: string
+  originalWidth: number
+  originalHeight: number
+}
+
+type CanvasElement = RectangleElement | EllipseElement | ArrowElement | TextElement | IconElement | ImageElement
 
 // Color palette
 const colors = [
@@ -481,25 +493,92 @@ export default function DesignCanvas({
     }
   }
 
-  const importCanvas = () => {
+  const importCanvas = async () => {
     const input = document.createElement("input")
     input.type = "file"
-    input.accept = ".json"
-    input.onchange = (e) => {
+    input.accept = getImportAcceptString()
+    input.onchange = async (e) => {
       const file = (e.target as HTMLInputElement).files?.[0]
-      if (file) {
-        const reader = new FileReader()
-        reader.onload = (e) => {
-          try {
-            const data = JSON.parse(e.target?.result as string)
-            if (Array.isArray(data.elements)) {
-              setElements(data.elements)
-            }
-          } catch (err) {
-            console.error("Failed to import:", err)
+      if (!file) return
+
+      const fileExtension = file.name.toLowerCase().split('.').pop()
+      const fileType = file.type.toLowerCase()
+
+      try {
+        // Handle JSON import
+        if (fileExtension === 'json' || fileType === 'application/json') {
+          const text = await readFileAsText(file)
+          const data = JSON.parse(text)
+          if (Array.isArray(data.elements)) {
+            setElements(data.elements)
           }
+          return
         }
-        reader.readAsText(file)
+
+        // Handle SVG import
+        if (fileExtension === 'svg' || fileType === 'image/svg+xml') {
+          const { dataUrl, width, height } = await parseSvgFile(file)
+
+          // Scale to fit canvas while maintaining aspect ratio
+          const maxWidth = 400
+          const maxHeight = 300
+          const scale = Math.min(maxWidth / width, maxHeight / height, 1)
+          const scaledWidth = width * scale
+          const scaledHeight = height * scale
+
+          const imageElement: ImageElement = {
+            id: generateId(),
+            type: "image",
+            x: 50,
+            y: 50,
+            width: scaledWidth,
+            height: scaledHeight,
+            fill: "transparent",
+            stroke: "transparent",
+            strokeWidth: 0,
+            dataUrl,
+            originalWidth: width,
+            originalHeight: height,
+          }
+          setElements([...elements, imageElement])
+          setSelectedElement(imageElement.id)
+          return
+        }
+
+        // Handle raster image import (PNG, JPG, GIF, WebP)
+        if (fileType.startsWith('image/')) {
+          const dataUrl = await readFileAsDataUrl(file)
+          const { width, height } = await getImageDimensions(dataUrl)
+
+          // Scale to fit canvas while maintaining aspect ratio
+          const maxWidth = 400
+          const maxHeight = 300
+          const scale = Math.min(maxWidth / width, maxHeight / height, 1)
+          const scaledWidth = width * scale
+          const scaledHeight = height * scale
+
+          const imageElement: ImageElement = {
+            id: generateId(),
+            type: "image",
+            x: 50,
+            y: 50,
+            width: scaledWidth,
+            height: scaledHeight,
+            fill: "transparent",
+            stroke: "transparent",
+            strokeWidth: 0,
+            dataUrl,
+            originalWidth: width,
+            originalHeight: height,
+          }
+          setElements([...elements, imageElement])
+          setSelectedElement(imageElement.id)
+          return
+        }
+
+        console.error("Unsupported file type:", fileType)
+      } catch (err) {
+        console.error("Failed to import:", err)
       }
     }
     input.click()
@@ -767,6 +846,42 @@ export default function DesignCanvas({
             >
               {iconEl.label}
             </text>
+          </g>
+        )
+      }
+
+      case "image": {
+        const imgEl = element as ImageElement
+        return (
+          <g {...commonProps}>
+            {isSelected && (
+              <rect
+                x={element.x - 2}
+                y={element.y - 2}
+                width={element.width + 4}
+                height={element.height + 4}
+                fill="none"
+                stroke="#3b82f6"
+                strokeWidth={2}
+                strokeDasharray="4,4"
+              />
+            )}
+            <image
+              href={imgEl.dataUrl}
+              x={element.x}
+              y={element.y}
+              width={element.width}
+              height={element.height}
+              preserveAspectRatio="xMidYMid meet"
+            />
+            {isSelected && (
+              <>
+                <rect x={element.x - 4} y={element.y - 4} width={8} height={8} fill="#3b82f6" />
+                <rect x={element.x + element.width - 4} y={element.y - 4} width={8} height={8} fill="#3b82f6" />
+                <rect x={element.x - 4} y={element.y + element.height - 4} width={8} height={8} fill="#3b82f6" />
+                <rect x={element.x + element.width - 4} y={element.y + element.height - 4} width={8} height={8} fill="#3b82f6" />
+              </>
+            )}
           </g>
         )
       }
@@ -1090,7 +1205,7 @@ export default function DesignCanvas({
               Ctrl+Z to undo • Ctrl+Y to redo
             </span>
             <span className="text-muted-foreground/70">
-              Export: PNG, JPG, SVG, JSON • Import: JSON
+              Export: PNG, JPG, SVG, JSON • Import: PNG, JPG, SVG, GIF, WebP, JSON
             </span>
           </>
         )}

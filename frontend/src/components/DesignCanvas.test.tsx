@@ -77,7 +77,7 @@ describe('DesignCanvas', () => {
     it('renders help text with format info', () => {
       render(<DesignCanvas value="" onChange={mockOnChange} />)
       expect(screen.getByText(/Export: PNG, JPG, SVG, JSON/)).toBeInTheDocument()
-      expect(screen.getByText(/Import: JSON/)).toBeInTheDocument()
+      expect(screen.getByText(/Import: PNG, JPG, SVG, GIF, WebP, JSON/)).toBeInTheDocument()
     })
 
     it('shows view only mode text when readOnly', () => {

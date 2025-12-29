@@ -405,32 +405,35 @@ async def chat_about_design(
             }
         )
 
-    # Moderate the user's message
+    # Moderate the user's message - fast regex check
     moderation_result, moderation_message = moderation_service.check_message(request.message)
 
     if moderation_result != ModerationResult.ALLOWED:
-        # Track violation if user is logged in
-        if current_user:
-            was_banned = _check_and_ban_user(current_user.id, moderation_result, db)
-            if was_banned:
-                raise HTTPException(
-                    status_code=403,
-                    detail={
-                        "error": "banned",
-                        "message": "Your account has been suspended due to repeated policy violations.",
-                        "reason": current_user.ban_reason,
-                        "contact": "Please contact support@system-design-platform.com to appeal."
-                    }
-                )
-
-        # Return moderation message instead of AI response
-        return ChatResponse(
+        # Return moderation message immediately - don't block on ban tracking
+        response = ChatResponse(
             response=f"⚠️ **Message Blocked**\n\n{moderation_message}",
             diagram_feedback=None,
             suggested_improvements=[],
             is_on_track=True,
             demo_mode=False,
         )
+
+        # Track violation in background if user is logged in (non-blocking)
+        if current_user:
+            try:
+                was_banned = _check_and_ban_user(current_user.id, moderation_result, db)
+                if was_banned:
+                    # User just got banned - update response
+                    response.response = (
+                        "⚠️ **Account Suspended**\n\n"
+                        "Your account has been suspended due to repeated policy violations.\n\n"
+                        "Please contact support@system-design-platform.com to appeal."
+                    )
+            except Exception:
+                # Don't fail the response if ban tracking fails
+                pass
+
+        return response
 
     # Get the problem details
     problem = db.query(Problem).filter(Problem.id == request.problem_id).first()

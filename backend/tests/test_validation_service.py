@@ -273,3 +273,216 @@ class TestValidationService:
             assert len(result.errors) >= 2  # At least schema error and AI error
             assert len(result.warnings) >= 2  # At least API spec warning and AI warning
             assert not result.is_valid  # Should be invalid due to errors
+
+
+class TestNormalization:
+    """Tests for schema normalization methods."""
+
+    @pytest.fixture
+    def validation_service(self):
+        """Create a validation service instance."""
+        return ValidationService()
+
+    # Tests for _normalize_tables
+
+    def test_normalize_tables_dict_format(self, validation_service):
+        """Test normalization of tables in dict format."""
+        schema_input = {
+            "tables": {
+                "users": {"columns": {"id": {"type": "int"}}},
+                "orders": {"columns": {"id": {"type": "int"}}}
+            }
+        }
+
+        result = validation_service._normalize_tables(schema_input)
+
+        assert isinstance(result, dict)
+        assert "users" in result
+        assert "orders" in result
+
+    def test_normalize_tables_array_format(self, validation_service):
+        """Test normalization of tables in array format."""
+        schema_input = {
+            "tables": [
+                {"name": "users", "columns": [{"name": "id", "type": "int"}]},
+                {"name": "orders", "columns": [{"name": "id", "type": "int"}]}
+            ]
+        }
+
+        result = validation_service._normalize_tables(schema_input)
+
+        assert isinstance(result, dict)
+        assert "users" in result
+        assert "orders" in result
+
+    def test_normalize_tables_with_tableName_key(self, validation_service):
+        """Test normalization with tableName instead of name."""
+        schema_input = {
+            "tables": [
+                {"tableName": "customers", "columns": []},
+            ]
+        }
+
+        result = validation_service._normalize_tables(schema_input)
+
+        assert "customers" in result
+
+    def test_normalize_tables_stores_format(self, validation_service):
+        """Test normalization when using 'stores' instead of 'tables'."""
+        schema_input = {
+            "stores": [
+                {"name": "cache_store", "type": "redis"},
+            ]
+        }
+
+        result = validation_service._normalize_tables(schema_input)
+
+        assert "cache_store" in result
+
+    def test_normalize_tables_empty_input(self, validation_service):
+        """Test normalization with empty input."""
+        result = validation_service._normalize_tables({})
+
+        assert result == {}
+
+    def test_normalize_tables_fallback_name(self, validation_service):
+        """Test normalization assigns fallback name when no name provided."""
+        schema_input = {
+            "tables": [
+                {"columns": []},  # No name or tableName
+            ]
+        }
+
+        result = validation_service._normalize_tables(schema_input)
+
+        assert "table_0" in result
+
+    # Tests for _normalize_columns
+
+    def test_normalize_columns_dict_format(self, validation_service):
+        """Test normalization of columns in dict format."""
+        table_def = {
+            "columns": {
+                "id": {"type": "int", "primary_key": True},
+                "name": {"type": "varchar"}
+            }
+        }
+
+        result = validation_service._normalize_columns(table_def)
+
+        assert isinstance(result, dict)
+        assert "id" in result
+        assert "name" in result
+
+    def test_normalize_columns_array_format(self, validation_service):
+        """Test normalization of columns in array format."""
+        table_def = {
+            "columns": [
+                {"name": "id", "type": "int", "primaryKey": True},
+                {"name": "email", "type": "varchar"}
+            ]
+        }
+
+        result = validation_service._normalize_columns(table_def)
+
+        assert isinstance(result, dict)
+        assert "id" in result
+        assert "email" in result
+        assert result["id"]["type"] == "int"
+
+    def test_normalize_columns_with_columnName_key(self, validation_service):
+        """Test normalization with columnName instead of name."""
+        table_def = {
+            "columns": [
+                {"columnName": "user_id", "type": "int"},
+            ]
+        }
+
+        result = validation_service._normalize_columns(table_def)
+
+        assert "user_id" in result
+
+    def test_normalize_columns_empty_input(self, validation_service):
+        """Test normalization with empty columns."""
+        result = validation_service._normalize_columns({})
+
+        assert result == {}
+
+    def test_normalize_columns_fallback_name(self, validation_service):
+        """Test normalization assigns fallback name when no name provided."""
+        table_def = {
+            "columns": [
+                {"type": "int"},  # No name or columnName
+            ]
+        }
+
+        result = validation_service._normalize_columns(table_def)
+
+        assert "col_0" in result
+
+    # Integration tests for validation with normalized input
+
+    def test_validate_schema_with_array_tables(self, validation_service):
+        """Test schema validation works with array-format tables."""
+        schema_input = {
+            "tables": [
+                {"name": "urls", "columns": [{"name": "id", "type": "int", "primary_key": True}]},
+                {"name": "stats", "columns": [{"name": "id", "type": "int", "primaryKey": True}]}
+            ]
+        }
+        expected_schema = {"required_tables": ["urls", "stats"]}
+
+        result = validation_service._validate_schema(schema_input, expected_schema)
+
+        assert result["errors"] == []  # All required tables present
+
+    def test_validate_schema_with_stores_array(self, validation_service):
+        """Test schema validation works with stores array format."""
+        schema_input = {
+            "stores": [
+                {"name": "urls", "columns": [{"name": "id", "primaryKey": True}]},
+            ]
+        }
+        expected_schema = {"required_tables": ["urls"]}
+
+        result = validation_service._validate_schema(schema_input, expected_schema)
+
+        assert result["errors"] == []
+
+    def test_validate_schema_primary_key_check_with_array_columns(self, validation_service):
+        """Test primary key detection works with array-format columns."""
+        schema_input = {
+            "tables": [
+                {
+                    "name": "users",
+                    "columns": [
+                        {"name": "id", "type": "int", "primary_key": True},
+                        {"name": "email", "type": "varchar"}
+                    ]
+                }
+            ]
+        }
+
+        result = validation_service._validate_schema(schema_input, None)
+
+        # Should not warn about missing primary key
+        assert not any("primary key" in w.lower() for w in result["warnings"])
+
+    def test_validate_schema_primary_key_warning_with_array_columns(self, validation_service):
+        """Test primary key warning for array-format columns without PK."""
+        schema_input = {
+            "tables": [
+                {
+                    "name": "logs",
+                    "columns": [
+                        {"name": "message", "type": "text"},
+                        {"name": "timestamp", "type": "datetime"}
+                    ]
+                }
+            ]
+        }
+
+        result = validation_service._validate_schema(schema_input, None)
+
+        # Should warn about missing primary key
+        assert any("primary key" in w.lower() for w in result["warnings"])

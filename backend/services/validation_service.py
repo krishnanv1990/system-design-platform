@@ -116,6 +116,63 @@ class ValidationService:
             score=score,
         )
 
+    def _normalize_tables(self, schema_input: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Normalize tables from various formats to a consistent dict format.
+
+        Handles:
+        - Dict format: { "tables": { "users": { "columns": {...} } } }
+        - Array format: { "tables": [{ "name": "users", "columns": {...} }] }
+        - Stores format: { "stores": [{ "name": "users", ... }] }
+
+        Returns:
+            Dict with table_name -> table_definition mapping
+        """
+        tables = schema_input.get("tables", schema_input.get("stores", {}))
+
+        # If tables is already a dict, return it
+        if isinstance(tables, dict):
+            return tables
+
+        # If tables is a list, convert to dict
+        if isinstance(tables, list):
+            normalized = {}
+            for table in tables:
+                if isinstance(table, dict):
+                    table_name = table.get("name", table.get("tableName", f"table_{len(normalized)}"))
+                    normalized[table_name] = table
+            return normalized
+
+        return {}
+
+    def _normalize_columns(self, table_def: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Normalize columns from various formats to a consistent dict format.
+
+        Handles:
+        - Dict format: { "columns": { "id": { "type": "int" } } }
+        - Array format: { "columns": [{ "name": "id", "type": "int" }] }
+
+        Returns:
+            Dict with column_name -> column_definition mapping
+        """
+        columns = table_def.get("columns", {})
+
+        # If columns is already a dict, return it
+        if isinstance(columns, dict):
+            return columns
+
+        # If columns is a list, convert to dict
+        if isinstance(columns, list):
+            normalized = {}
+            for col in columns:
+                if isinstance(col, dict):
+                    col_name = col.get("name", col.get("columnName", f"col_{len(normalized)}"))
+                    normalized[col_name] = col
+            return normalized
+
+        return {}
+
     def _validate_schema(
         self,
         schema_input: Dict[str, Any],
@@ -134,27 +191,40 @@ class ValidationService:
         errors = []
         warnings = []
 
+        # Normalize tables to dict format
+        tables = self._normalize_tables(schema_input)
+
         # Check for required tables
         if expected_schema and "required_tables" in expected_schema:
-            input_tables = set(schema_input.get("tables", {}).keys())
+            input_tables = set(tables.keys())
             required_tables = set(expected_schema["required_tables"])
             missing = required_tables - input_tables
             if missing:
                 errors.append(f"Missing required tables: {', '.join(missing)}")
 
         # Check for primary keys
-        for table_name, table_def in schema_input.get("tables", {}).items():
-            columns = table_def.get("columns", {})
-            has_pk = any(col.get("primary_key") for col in columns.values())
+        for table_name, table_def in tables.items():
+            if not isinstance(table_def, dict):
+                continue
+            columns = self._normalize_columns(table_def)
+            has_pk = any(
+                col.get("primary_key") or col.get("primaryKey")
+                for col in columns.values()
+                if isinstance(col, dict)
+            )
             if not has_pk:
                 warnings.append(f"Table '{table_name}' has no primary key defined")
 
         # Check for indexes on foreign keys
-        for table_name, table_def in schema_input.get("tables", {}).items():
-            columns = table_def.get("columns", {})
+        for table_name, table_def in tables.items():
+            if not isinstance(table_def, dict):
+                continue
+            columns = self._normalize_columns(table_def)
             indexes = table_def.get("indexes", [])
             for col_name, col_def in columns.items():
-                if col_def.get("foreign_key") and col_name not in indexes:
+                if not isinstance(col_def, dict):
+                    continue
+                if (col_def.get("foreign_key") or col_def.get("foreignKey")) and col_name not in indexes:
                     warnings.append(
                         f"Consider adding index on foreign key '{col_name}' in table '{table_name}'"
                     )

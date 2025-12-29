@@ -12,6 +12,11 @@ import {
   exportAsSvg,
   exportCanvas,
   getFormatInfo,
+  getImportAcceptString,
+  readFileAsDataUrl,
+  readFileAsText,
+  getImageDimensions,
+  parseSvgFile,
   type ExportFormat,
 } from './canvasExport'
 
@@ -71,8 +76,46 @@ describe('canvasExport', () => {
       expect(jsonFormat?.label).toBe('JSON')
     })
 
-    it('has exactly 1 import format', () => {
-      expect(IMPORT_FORMATS.length).toBe(1)
+    it('contains PNG format for import', () => {
+      const pngFormat = IMPORT_FORMATS.find(f => f.extension === '.png')
+      expect(pngFormat).toBeDefined()
+      expect(pngFormat?.label).toBe('PNG Image')
+      expect(pngFormat?.mimeType).toBe('image/png')
+    })
+
+    it('contains JPG and JPEG formats for import', () => {
+      const jpgFormat = IMPORT_FORMATS.find(f => f.extension === '.jpg')
+      expect(jpgFormat).toBeDefined()
+      expect(jpgFormat?.label).toBe('JPG Image')
+
+      const jpegFormat = IMPORT_FORMATS.find(f => f.extension === '.jpeg')
+      expect(jpegFormat).toBeDefined()
+      expect(jpegFormat?.label).toBe('JPEG Image')
+    })
+
+    it('contains SVG format for import', () => {
+      const svgFormat = IMPORT_FORMATS.find(f => f.extension === '.svg')
+      expect(svgFormat).toBeDefined()
+      expect(svgFormat?.label).toBe('SVG Vector')
+      expect(svgFormat?.mimeType).toBe('image/svg+xml')
+    })
+
+    it('contains GIF format for import', () => {
+      const gifFormat = IMPORT_FORMATS.find(f => f.extension === '.gif')
+      expect(gifFormat).toBeDefined()
+      expect(gifFormat?.label).toBe('GIF Image')
+      expect(gifFormat?.mimeType).toBe('image/gif')
+    })
+
+    it('contains WebP format for import', () => {
+      const webpFormat = IMPORT_FORMATS.find(f => f.extension === '.webp')
+      expect(webpFormat).toBeDefined()
+      expect(webpFormat?.label).toBe('WebP Image')
+      expect(webpFormat?.mimeType).toBe('image/webp')
+    })
+
+    it('has exactly 7 import formats', () => {
+      expect(IMPORT_FORMATS.length).toBe(7)
     })
   })
 
@@ -499,6 +542,173 @@ describe('canvasExport', () => {
     it('SVG label indicates it is vector', () => {
       const format = EXPORT_FORMATS.find(f => f.id === 'svg')
       expect(format?.label).toContain('Vector')
+    })
+  })
+
+  describe('getImportAcceptString', () => {
+    it('returns a string containing all import extensions', () => {
+      const acceptString = getImportAcceptString()
+
+      expect(acceptString).toContain('.json')
+      expect(acceptString).toContain('.png')
+      expect(acceptString).toContain('.jpg')
+      expect(acceptString).toContain('.jpeg')
+      expect(acceptString).toContain('.svg')
+      expect(acceptString).toContain('.gif')
+      expect(acceptString).toContain('.webp')
+    })
+
+    it('returns a string containing MIME types', () => {
+      const acceptString = getImportAcceptString()
+
+      expect(acceptString).toContain('application/json')
+      expect(acceptString).toContain('image/png')
+      expect(acceptString).toContain('image/jpeg')
+      expect(acceptString).toContain('image/svg+xml')
+      expect(acceptString).toContain('image/gif')
+      expect(acceptString).toContain('image/webp')
+    })
+
+    it('uses comma separator between formats', () => {
+      const acceptString = getImportAcceptString()
+
+      expect(acceptString).toMatch(/,/)
+    })
+  })
+
+  describe('readFileAsDataUrl', () => {
+    it('reads a file and returns data URL', async () => {
+      const content = 'Hello, World!'
+      const file = new File([content], 'test.txt', { type: 'text/plain' })
+
+      const result = await readFileAsDataUrl(file)
+
+      expect(result).toContain('data:text/plain')
+      expect(result).toContain('base64')
+    })
+
+    it('handles image files', async () => {
+      // Create a minimal PNG (1x1 pixel)
+      const pngData = new Uint8Array([
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a
+      ])
+      const file = new File([pngData], 'test.png', { type: 'image/png' })
+
+      const result = await readFileAsDataUrl(file)
+
+      expect(result).toContain('data:image/png')
+    })
+  })
+
+  describe('readFileAsText', () => {
+    it('reads a file and returns text content', async () => {
+      const content = 'Hello, World!'
+      const file = new File([content], 'test.txt', { type: 'text/plain' })
+
+      const result = await readFileAsText(file)
+
+      expect(result).toBe(content)
+    })
+
+    it('reads JSON files correctly', async () => {
+      const jsonContent = JSON.stringify({ key: 'value' })
+      const file = new File([jsonContent], 'test.json', { type: 'application/json' })
+
+      const result = await readFileAsText(file)
+
+      expect(result).toBe(jsonContent)
+      expect(JSON.parse(result)).toEqual({ key: 'value' })
+    })
+  })
+
+  describe('getImageDimensions', () => {
+    it('returns a promise that resolves with dimensions', async () => {
+      // Mock Image for jsdom environment
+      const mockImage = {
+        onload: null as (() => void) | null,
+        onerror: null as ((e: Error) => void) | null,
+        src: '',
+        width: 100,
+        height: 200,
+      }
+
+      const originalImage = globalThis.Image
+      globalThis.Image = vi.fn().mockImplementation(() => {
+        setTimeout(() => {
+          if (mockImage.onload) mockImage.onload()
+        }, 0)
+        return mockImage
+      }) as unknown as typeof Image
+
+      const dimensions = await getImageDimensions('data:image/png;base64,test')
+
+      expect(dimensions.width).toBe(100)
+      expect(dimensions.height).toBe(200)
+
+      globalThis.Image = originalImage
+    })
+
+    it('rejects on image load error', async () => {
+      const mockImage = {
+        onload: null as (() => void) | null,
+        onerror: null as ((e: Error) => void) | null,
+        src: '',
+      }
+
+      const originalImage = globalThis.Image
+      globalThis.Image = vi.fn().mockImplementation(() => {
+        setTimeout(() => {
+          if (mockImage.onerror) mockImage.onerror(new Error('Load failed'))
+        }, 0)
+        return mockImage
+      }) as unknown as typeof Image
+
+      await expect(getImageDimensions('invalid-url')).rejects.toThrow()
+
+      globalThis.Image = originalImage
+    })
+  })
+
+  describe('parseSvgFile', () => {
+    it('parses SVG file with explicit width and height', async () => {
+      const svgContent = '<svg width="200" height="100" xmlns="http://www.w3.org/2000/svg"></svg>'
+      const file = new File([svgContent], 'test.svg', { type: 'image/svg+xml' })
+
+      const result = await parseSvgFile(file)
+
+      expect(result.width).toBe(200)
+      expect(result.height).toBe(100)
+      expect(result.dataUrl).toContain('data:image/svg+xml')
+    })
+
+    it('parses SVG file with viewBox', async () => {
+      const svgContent = '<svg viewBox="0 0 300 150" xmlns="http://www.w3.org/2000/svg"></svg>'
+      const file = new File([svgContent], 'test.svg', { type: 'image/svg+xml' })
+
+      const result = await parseSvgFile(file)
+
+      expect(result.width).toBe(300)
+      expect(result.height).toBe(150)
+    })
+
+    it('uses default dimensions when not specified', async () => {
+      const svgContent = '<svg xmlns="http://www.w3.org/2000/svg"></svg>'
+      const file = new File([svgContent], 'test.svg', { type: 'image/svg+xml' })
+
+      const result = await parseSvgFile(file)
+
+      expect(result.width).toBe(400)
+      expect(result.height).toBe(300)
+    })
+
+    it('prefers explicit width/height over viewBox', async () => {
+      const svgContent = '<svg width="500" height="400" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"></svg>'
+      const file = new File([svgContent], 'test.svg', { type: 'image/svg+xml' })
+
+      const result = await parseSvgFile(file)
+
+      expect(result.width).toBe(500)
+      expect(result.height).toBe(400)
     })
   })
 })

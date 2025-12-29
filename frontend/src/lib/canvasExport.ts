@@ -21,8 +21,100 @@ export const EXPORT_FORMATS: { id: ExportFormat; label: string; extension: strin
 ]
 
 export const IMPORT_FORMATS = [
-  { extension: '.json', label: 'JSON' },
+  { extension: '.json', label: 'JSON', mimeType: 'application/json' },
+  { extension: '.png', label: 'PNG Image', mimeType: 'image/png' },
+  { extension: '.jpg', label: 'JPG Image', mimeType: 'image/jpeg' },
+  { extension: '.jpeg', label: 'JPEG Image', mimeType: 'image/jpeg' },
+  { extension: '.svg', label: 'SVG Vector', mimeType: 'image/svg+xml' },
+  { extension: '.gif', label: 'GIF Image', mimeType: 'image/gif' },
+  { extension: '.webp', label: 'WebP Image', mimeType: 'image/webp' },
 ]
+
+/**
+ * Get accept string for file input
+ */
+export function getImportAcceptString(): string {
+  return IMPORT_FORMATS.map(f => f.extension).join(',') + ',' +
+    IMPORT_FORMATS.filter(f => f.mimeType).map(f => f.mimeType).join(',')
+}
+
+/**
+ * Read file as data URL for image imports
+ */
+export function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      resolve(e.target?.result as string)
+    }
+    reader.onerror = reject
+    reader.readAsDataURL(file)
+  })
+}
+
+/**
+ * Read file as text for JSON imports
+ */
+export function readFileAsText(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      resolve(e.target?.result as string)
+    }
+    reader.onerror = reject
+    reader.readAsText(file)
+  })
+}
+
+/**
+ * Get image dimensions from a data URL
+ */
+export function getImageDimensions(dataUrl: string): Promise<{ width: number; height: number }> {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => {
+      resolve({ width: img.width, height: img.height })
+    }
+    img.onerror = reject
+    img.src = dataUrl
+  })
+}
+
+/**
+ * Parse SVG file and extract elements if possible
+ */
+export async function parseSvgFile(file: File): Promise<{ dataUrl: string; width: number; height: number }> {
+  const text = await readFileAsText(file)
+  const parser = new DOMParser()
+  const doc = parser.parseFromString(text, 'image/svg+xml')
+  const svgElement = doc.querySelector('svg')
+
+  let width = 400
+  let height = 300
+
+  if (svgElement) {
+    const viewBox = svgElement.getAttribute('viewBox')
+    const svgWidth = svgElement.getAttribute('width')
+    const svgHeight = svgElement.getAttribute('height')
+
+    if (svgWidth && svgHeight) {
+      width = parseFloat(svgWidth) || 400
+      height = parseFloat(svgHeight) || 300
+    } else if (viewBox) {
+      const parts = viewBox.split(/[\s,]+/)
+      if (parts.length >= 4) {
+        width = parseFloat(parts[2]) || 400
+        height = parseFloat(parts[3]) || 300
+      }
+    }
+  }
+
+  // Convert to data URL
+  const blob = new Blob([text], { type: 'image/svg+xml' })
+  const dataUrl = await readFileAsDataUrl(new File([blob], file.name, { type: 'image/svg+xml' }))
+
+  return { dataUrl, width, height }
+}
 
 /**
  * Trigger a file download
