@@ -1,39 +1,21 @@
 # Claude Resume File - Task Progress
 
 ## Original Task
-Fix JSON to Visual Builder sync - the `tables` array format with `columns` property is not being parsed correctly. Field names show as "0", "1", "2" instead of actual names like "id", "short_code", etc.
+Add support for image formats (jpg, png, tiff) when importing/exporting diagrams. Currently the tool does not mention what formats are supported. Need to add clear format support and UI indication.
 
-Example problematic JSON:
-```json
-{
-  "tables": [
-    {
-      "name": "urls",
-      "columns": [
-        {"name": "id", "type": "BIGSERIAL", "constraints": "PRIMARY KEY"}
-      ]
-    }
-  ]
-}
-```
-
-## Root Cause
-The `parseSchema` function in SchemaEditor.tsx doesn't handle this format:
-- It expects `{ tables: { tableName: { columns: { colName: {...} } } } }` (object format)
-- But user provides `{ tables: [ { name: "...", columns: [...] } ] }` (array format)
-
-## Fix Required
-Update `parseSchema` to handle the array-based tables format with:
-1. `tables` as an array of table objects
-2. `columns` as an array of column objects
-3. `constraints` as a string that needs to be parsed
+Requirements:
+1. Add support for jpg, png, tiff and popular image formats for diagram export
+2. Add unit and integration tests with 100% code coverage
+3. Ensure all tests pass (for all components) and no regressions
+4. Commit and push changes
+5. Deploy and verify all functionality works
+6. Save progress to resume file for crash recovery
 
 ## Progress
 - Status: IN_PROGRESS
-- File: frontend/src/components/SchemaEditor.tsx
+- Phase: Exploring codebase to find diagram import/export functionality
 
 ## Commands to Resume
 ```bash
-cd /Users/macuser/tinker/system-design-platform/frontend
-npm test -- --run src/components/SchemaEditor.test.tsx
+cd /Users/macuser/tinker/system-design-platform
 ```

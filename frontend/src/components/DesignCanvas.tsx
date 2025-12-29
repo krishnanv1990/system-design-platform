@@ -21,10 +21,20 @@ import {
   Globe,
   Undo2,
   Redo2,
+  ChevronDown,
+  FileJson,
+  Image,
+  FileImage,
 } from "lucide-react"
 import { useHistory } from "@/hooks/useHistory"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import {
+  exportCanvas,
+  EXPORT_FORMATS,
+  IMPORT_FORMATS,
+  type ExportFormat,
+} from "@/lib/canvasExport"
 
 // Types
 type Tool = "select" | "rectangle" | "ellipse" | "arrow" | "text" | "database" | "server" | "cloud" | "user" | "globe"
@@ -130,7 +140,10 @@ export default function DesignCanvas({
   const [showColorPicker, setShowColorPicker] = useState<"stroke" | "fill" | null>(null)
   const [editingText, setEditingText] = useState<string | null>(null)
   const [textInput, setTextInput] = useState("")
+  const [showExportMenu, setShowExportMenu] = useState(false)
+  const [isExporting, setIsExporting] = useState(false)
   const svgRef = useRef<SVGSVGElement>(null)
+  const exportMenuRef = useRef<HTMLDivElement>(null)
 
   // Load from value - only on initial mount or when value changes externally
   useEffect(() => {
@@ -154,6 +167,17 @@ export default function DesignCanvas({
       onChange(data)
     }
   }, [elements, onChange])
+
+  // Close export menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(event.target as Node)) {
+        setShowExportMenu(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
 
   const generateId = () => Math.random().toString(36).substring(2, 11)
 
@@ -401,15 +425,39 @@ export default function DesignCanvas({
     }
   }
 
-  const exportCanvas = () => {
-    const data = JSON.stringify({ elements, version: 1 }, null, 2)
-    const blob = new Blob([data], { type: "application/json" })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement("a")
-    a.href = url
-    a.download = "system-design.json"
-    a.click()
-    URL.revokeObjectURL(url)
+  const handleExport = async (format: ExportFormat) => {
+    if (!svgRef.current) return
+
+    setIsExporting(true)
+    setShowExportMenu(false)
+
+    try {
+      await exportCanvas(svgRef.current, elements, {
+        format,
+        filename: 'system-design',
+        scale: 2,
+        quality: 0.92,
+        backgroundColor: '#ffffff',
+      })
+    } catch (error) {
+      console.error('Export failed:', error)
+    } finally {
+      setIsExporting(false)
+    }
+  }
+
+  const getFormatIcon = (format: ExportFormat) => {
+    switch (format) {
+      case 'json':
+        return FileJson
+      case 'svg':
+        return FileImage
+      case 'png':
+      case 'jpg':
+        return Image
+      default:
+        return Download
+    }
   }
 
   const importCanvas = () => {
@@ -782,12 +830,51 @@ export default function DesignCanvas({
             <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={clearCanvas} title="Clear canvas">
               <RotateCcw className="h-4 w-4" />
             </Button>
-            <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={importCanvas} title="Import">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 gap-1 px-2"
+              onClick={importCanvas}
+              title={`Import diagram (${IMPORT_FORMATS.map(f => f.extension).join(', ')})`}
+            >
               <Upload className="h-4 w-4" />
+              <span className="text-xs hidden sm:inline">Import</span>
             </Button>
-            <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={exportCanvas} title="Export">
-              <Download className="h-4 w-4" />
-            </Button>
+            <div className="relative" ref={exportMenuRef}>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 gap-1 px-2"
+                onClick={() => setShowExportMenu(!showExportMenu)}
+                disabled={isExporting}
+                title="Export diagram"
+              >
+                <Download className="h-4 w-4" />
+                <span className="text-xs hidden sm:inline">Export</span>
+                <ChevronDown className="h-3 w-3" />
+              </Button>
+              {showExportMenu && (
+                <div className="absolute top-full right-0 mt-1 bg-popover border rounded-lg shadow-lg z-20 min-w-[180px] py-1">
+                  <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground border-b mb-1">
+                    Export As
+                  </div>
+                  {EXPORT_FORMATS.map((format) => {
+                    const Icon = getFormatIcon(format.id)
+                    return (
+                      <button
+                        key={format.id}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-muted transition-colors text-left"
+                        onClick={() => handleExport(format.id)}
+                      >
+                        <Icon className="h-4 w-4 text-muted-foreground" />
+                        <span>{format.label}</span>
+                        <span className="ml-auto text-xs text-muted-foreground">{format.extension}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
             {selectedElement && (
               <Button
                 variant="ghost"
@@ -867,14 +954,19 @@ export default function DesignCanvas({
       </div>
 
       {/* Help text */}
-      <div className="px-3 py-2 bg-muted/30 border-t text-xs text-muted-foreground">
+      <div className="px-3 py-2 bg-muted/30 border-t text-xs text-muted-foreground flex flex-wrap justify-between gap-2">
         {readOnly ? (
           <span>View only mode</span>
         ) : (
-          <span>
-            Click to select • Drag to move • Double-click to edit text • Delete/Backspace to remove •
-            Ctrl+Z to undo • Ctrl+Y to redo • Escape to deselect
-          </span>
+          <>
+            <span>
+              Click to select • Drag to move • Double-click to edit text • Delete/Backspace to remove •
+              Ctrl+Z to undo • Ctrl+Y to redo
+            </span>
+            <span className="text-muted-foreground/70">
+              Export: PNG, JPG, SVG, JSON • Import: JSON
+            </span>
+          </>
         )}
       </div>
     </div>
