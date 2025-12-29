@@ -46,6 +46,39 @@ import type { DesignSummaryResponse } from "@/api/client"
 
 type Step = "schema" | "api" | "design" | "review"
 
+// Sanitize design text to remove large image data URLs before submission
+function sanitizeDesignText(designText: string): string {
+  if (!designText) return designText
+  try {
+    const data = JSON.parse(designText)
+    if (data.canvas) {
+      try {
+        const canvasData = JSON.parse(data.canvas)
+        if (canvasData.elements && Array.isArray(canvasData.elements)) {
+          canvasData.elements = canvasData.elements.map((el: Record<string, unknown>) => {
+            if (el.type === 'image' && el.dataUrl) {
+              // Replace data URL with placeholder to reduce payload size
+              return {
+                ...el,
+                dataUrl: '[image data removed for submission]',
+                hasImage: true,
+              }
+            }
+            return el
+          })
+        }
+        data.canvas = JSON.stringify(canvasData)
+      } catch {
+        // Invalid canvas JSON, keep as-is
+      }
+    }
+    return JSON.stringify(data)
+  } catch {
+    // Not valid JSON, return as-is
+    return designText
+  }
+}
+
 const steps: { id: Step; label: string; shortLabel: string }[] = [
   { id: "schema", label: "Database Schema", shortLabel: "Schema" },
   { id: "api", label: "API Specification", shortLabel: "API" },
@@ -339,7 +372,7 @@ export default function Submission() {
         problem_id: problem.id,
         schema_input: schemaResult.data,
         api_spec_input: apiResult.data,
-        design_text: designText,
+        design_text: sanitizeDesignText(designText),
       })
       setValidation(result)
 
@@ -405,7 +438,7 @@ export default function Submission() {
         problem_id: problem.id,
         schema_input: schemaResult.data,
         api_spec_input: apiResult.data,
-        design_text: designText,
+        design_text: sanitizeDesignText(designText),
       })
 
       // Clear draft on successful submission
