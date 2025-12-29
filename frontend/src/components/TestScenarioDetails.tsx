@@ -232,6 +232,9 @@ export default function TestScenarioDetails({
       ? "Tests system performance under various load conditions"
       : "Tests system resilience to failures and degraded conditions"
 
+  const totalTests = passedTests.length + failedTests.length
+  const passRate = totalTests > 0 ? Math.round((passedTests.length / totalTests) * 100) : 0
+
   return (
     <Card className="mb-4">
       <CardHeader
@@ -248,15 +251,82 @@ export default function TestScenarioDetails({
             </CardTitle>
             <p className="text-xs text-muted-foreground mt-1">{description}</p>
           </div>
-          {expanded ? (
-            <ChevronUp className="h-4 w-4 text-muted-foreground" />
-          ) : (
-            <ChevronDown className="h-4 w-4 text-muted-foreground" />
-          )}
+          <div className="flex items-center gap-3">
+            {/* Pass/Fail Summary */}
+            {totalTests > 0 && (
+              <div className="flex items-center gap-2 text-xs">
+                <span className="flex items-center gap-1 text-green-600">
+                  <CheckCircle className="h-3.5 w-3.5" />
+                  {passedTests.length}
+                </span>
+                <span className="flex items-center gap-1 text-red-600">
+                  <XCircle className="h-3.5 w-3.5" />
+                  {failedTests.length}
+                </span>
+                <span className={cn(
+                  "font-medium",
+                  passRate === 100 ? "text-green-600" :
+                  passRate >= 50 ? "text-yellow-600" : "text-red-600"
+                )}>
+                  ({passRate}%)
+                </span>
+              </div>
+            )}
+            {expanded ? (
+              <ChevronUp className="h-4 w-4 text-muted-foreground" />
+            ) : (
+              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            )}
+          </div>
         </div>
       </CardHeader>
       {expanded && (
         <CardContent className="pt-0">
+          {/* Actual Test Results List */}
+          {totalTests > 0 && (
+            <div className="mb-4 p-3 bg-muted/50 rounded-lg border">
+              <h4 className="text-sm font-medium mb-3">Actual Test Results</h4>
+              <div className="grid gap-4 md:grid-cols-2">
+                {/* Passed Tests */}
+                {passedTests.length > 0 && (
+                  <div>
+                    <p className="text-xs font-medium text-green-600 mb-2 flex items-center gap-1">
+                      <CheckCircle className="h-3.5 w-3.5" />
+                      Passed ({passedTests.length})
+                    </p>
+                    <ul className="space-y-1 max-h-32 overflow-y-auto">
+                      {passedTests.map((test, idx) => (
+                        <li key={idx} className="text-xs flex items-start gap-1.5 text-green-600">
+                          <CheckCircle className="h-3 w-3 mt-0.5 shrink-0" />
+                          <span>{test}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {/* Failed Tests */}
+                {failedTests.length > 0 && (
+                  <div>
+                    <p className="text-xs font-medium text-red-600 mb-2 flex items-center gap-1">
+                      <XCircle className="h-3.5 w-3.5" />
+                      Failed ({failedTests.length})
+                    </p>
+                    <ul className="space-y-1 max-h-32 overflow-y-auto">
+                      {failedTests.map((test, idx) => (
+                        <li key={idx} className="text-xs flex items-start gap-1.5 text-red-600">
+                          <XCircle className="h-3 w-3 mt-0.5 shrink-0" />
+                          <span>{test}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Scenario Descriptions */}
+          <h4 className="text-sm font-medium mb-3">Test Scenarios Covered</h4>
           <div className="grid gap-4 md:grid-cols-2">
             {scenarios.map((scenario) => {
               const Icon = scenario.icon

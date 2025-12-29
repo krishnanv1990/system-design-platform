@@ -38,6 +38,7 @@ import SchemaEditor from "@/components/SchemaEditor"
 import ApiSpecEditor from "@/components/ApiSpecEditor"
 import DesignEditor from "@/components/DesignEditor"
 import DesignSummary from "@/components/DesignSummary"
+import DesignTextSummary from "@/components/DesignTextSummary"
 import { useToast } from "@/hooks/useToast"
 import { cn } from "@/lib/utils"
 import type { Problem, ValidationResponse } from "@/types"
@@ -457,6 +458,20 @@ export default function Submission() {
     }
   }
 
+  // Parse design text to extract canvas and text data for summary
+  const parsedDesignData = useMemo(() => {
+    if (!designText) return { canvas: null, text: null }
+    try {
+      const parsed = JSON.parse(designText)
+      return {
+        canvas: parsed.canvas || null,
+        text: parsed.text || null,
+      }
+    } catch {
+      return { canvas: null, text: designText }
+    }
+  }, [designText])
+
   // Breadcrumbs
   const breadcrumbItems = useMemo(() => [
     { label: "Problems", href: "/problems" },
@@ -689,6 +704,11 @@ export default function Submission() {
                     System Design
                   </h3>
                   <DesignEditor value={designText} onChange={() => {}} readOnly />
+                  <DesignTextSummary
+                    canvasData={parsedDesignData.canvas}
+                    textData={parsedDesignData.text}
+                    className="mt-4"
+                  />
                 </div>
 
                 {/* Design Summary */}

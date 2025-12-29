@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button"
 import DesignCanvas from "./DesignCanvas"
 import DesignChat from "./DesignChat"
 import DesignSummary from "./DesignSummary"
+import DesignTextSummary from "./DesignTextSummary"
 
 import { DifficultyLevel, DesignSummaryResponse } from "@/api/client"
 
@@ -163,6 +164,13 @@ export default function DesignEditor({
           readOnly={readOnly}
         />
 
+        {/* Design Summary */}
+        <DesignTextSummary
+          canvasData={data.canvas || null}
+          textData={data.text || null}
+          className="m-4"
+        />
+
         {!readOnly && (
           <div className="border-t bg-muted/30 p-3">
             <div className="flex items-start gap-2 text-xs text-muted-foreground">
@@ -257,7 +265,7 @@ export default function DesignEditor({
         )}
       </div>
 
-      {/* Design Summary Box */}
+      {/* Design Summary Box (AI-generated) */}
       {designSummary && showSummaryBox && (
         <div className="border-t">
           <div className="bg-gradient-to-r from-green-500/10 to-emerald-500/10 px-4 py-2 flex items-center justify-between">
@@ -282,6 +290,13 @@ export default function DesignEditor({
           </div>
         </div>
       )}
+
+      {/* Design Components Summary */}
+      <DesignTextSummary
+        canvasData={data.canvas || null}
+        textData={data.text || null}
+        className="mx-4 mb-4"
+      />
 
       {/* Tips section */}
       <div className="border-t bg-muted/30 p-3">
