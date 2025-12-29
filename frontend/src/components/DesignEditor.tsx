@@ -5,12 +5,13 @@
 
 import { useState, useMemo } from "react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { PenLine, Lightbulb, Bot, Minimize2 } from "lucide-react"
+import { PenLine, Lightbulb, Bot, Minimize2, FileText } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import DesignCanvas from "./DesignCanvas"
 import DesignChat from "./DesignChat"
+import DesignSummary from "./DesignSummary"
 
-import { DifficultyLevel } from "@/api/client"
+import { DifficultyLevel, DesignSummaryResponse } from "@/api/client"
 
 interface DesignEditorProps {
   value: string
@@ -20,6 +21,8 @@ interface DesignEditorProps {
   currentSchema?: string
   currentApiSpec?: string
   difficultyLevel?: DifficultyLevel
+  onSummaryChange?: (summary: DesignSummaryResponse | null) => void
+  initialSummary?: DesignSummaryResponse | null
 }
 
 interface DesignData {
@@ -36,8 +39,21 @@ export default function DesignEditor({
   currentSchema,
   currentApiSpec,
   difficultyLevel = "medium",
+  onSummaryChange,
+  initialSummary = null,
 }: DesignEditorProps) {
   const [chatExpanded, setChatExpanded] = useState(true)
+  const [designSummary, setDesignSummary] = useState<DesignSummaryResponse | null>(initialSummary)
+  const [showSummaryBox, setShowSummaryBox] = useState(!!initialSummary)
+
+  // Handle summary generated from chat
+  const handleSummaryGenerated = (summary: DesignSummaryResponse) => {
+    setDesignSummary(summary)
+    setShowSummaryBox(true)
+    if (onSummaryChange) {
+      onSummaryChange(summary)
+    }
+  }
 
   // Parse the value to determine mode and data
   const parseValue = (): DesignData => {
@@ -219,10 +235,37 @@ export default function DesignEditor({
               currentDiagram={currentDiagram}
               readOnly={readOnly}
               difficultyLevel={difficultyLevel}
+              onSummaryGenerated={handleSummaryGenerated}
             />
           </div>
         )}
       </div>
+
+      {/* Design Summary Box */}
+      {designSummary && showSummaryBox && (
+        <div className="border-t">
+          <div className="bg-gradient-to-r from-green-500/10 to-emerald-500/10 px-4 py-2 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <FileText className="h-4 w-4 text-green-600" />
+              <span className="text-sm font-medium">Design Summary</span>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowSummaryBox(false)}
+              className="text-xs"
+            >
+              Hide
+            </Button>
+          </div>
+          <div className="p-4 max-h-80 overflow-y-auto">
+            <DesignSummary
+              summary={designSummary}
+              diagramData={data.canvas}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Tips section */}
       <div className="border-t bg-muted/30 p-3">

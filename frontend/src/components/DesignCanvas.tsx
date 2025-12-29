@@ -25,6 +25,13 @@ import {
   FileJson,
   Image,
   FileImage,
+  HardDrive,
+  Scale,
+  MessageSquare,
+  Archive,
+  Network,
+  Monitor,
+  Layers,
 } from "lucide-react"
 import { useHistory } from "@/hooks/useHistory"
 import { Button } from "@/components/ui/button"
@@ -37,7 +44,7 @@ import {
 } from "@/lib/canvasExport"
 
 // Types
-type Tool = "select" | "rectangle" | "ellipse" | "arrow" | "text" | "database" | "server" | "cloud" | "user" | "globe"
+type Tool = "select" | "rectangle" | "ellipse" | "arrow" | "text" | "database" | "server" | "cloud" | "user" | "globe" | "cache" | "load_balancer" | "queue" | "blob_storage" | "dns" | "client" | "api_gateway"
 
 interface Point {
   x: number
@@ -79,7 +86,7 @@ interface TextElement extends BaseElement {
 }
 
 interface IconElement extends BaseElement {
-  type: "database" | "server" | "cloud" | "user" | "globe"
+  type: "database" | "server" | "cloud" | "user" | "globe" | "cache" | "load_balancer" | "queue" | "blob_storage" | "dns" | "client" | "api_gateway"
   label?: string
 }
 
@@ -237,8 +244,22 @@ export default function DesignCanvas({
       setElements([...elements, newElement])
       setEditingText(newElement.id)
       setTextInput("Text")
-    } else if (["database", "server", "cloud", "user", "globe"].includes(selectedTool)) {
+    } else if (["database", "server", "cloud", "user", "globe", "cache", "load_balancer", "queue", "blob_storage", "dns", "client", "api_gateway"].includes(selectedTool)) {
       // Create icon element
+      const labelMap: Record<string, string> = {
+        database: "Database",
+        server: "Server",
+        cloud: "Cloud",
+        user: "User",
+        globe: "Internet",
+        cache: "Cache",
+        load_balancer: "Load Balancer",
+        queue: "Queue",
+        blob_storage: "Blob Storage",
+        dns: "DNS",
+        client: "Client",
+        api_gateway: "API Gateway",
+      }
       const newElement: IconElement = {
         id: generateId(),
         type: selectedTool as IconElement["type"],
@@ -249,7 +270,7 @@ export default function DesignCanvas({
         fill: fillColor,
         stroke: strokeColor,
         strokeWidth: 2,
-        label: selectedTool.charAt(0).toUpperCase() + selectedTool.slice(1),
+        label: labelMap[selectedTool] || selectedTool,
       }
       setElements([...elements, newElement])
       setSelectedElement(newElement.id)
@@ -393,7 +414,7 @@ export default function DesignCanvas({
   const handleDoubleClick = (elementId: string) => {
     if (readOnly) return
     const element = elements.find((el) => el.id === elementId)
-    if (element && (element.type === "text" || ["database", "server", "cloud", "user", "globe"].includes(element.type))) {
+    if (element && (element.type === "text" || ["database", "server", "cloud", "user", "globe", "cache", "load_balancer", "queue", "blob_storage", "dns", "client", "api_gateway"].includes(element.type))) {
       setEditingText(elementId)
       setTextInput((element as TextElement | IconElement).text || (element as IconElement).label || "")
     }
@@ -604,7 +625,14 @@ export default function DesignCanvas({
       case "server":
       case "cloud":
       case "user":
-      case "globe": {
+      case "globe":
+      case "cache":
+      case "load_balancer":
+      case "queue":
+      case "blob_storage":
+      case "dns":
+      case "client":
+      case "api_gateway": {
         const iconEl = element as IconElement
         const centerX = element.x + element.width / 2
         const centerY = element.y + element.height / 2
@@ -660,6 +688,74 @@ export default function DesignCanvas({
                 <line x1={centerX - 15} y1={centerY - 5} x2={centerX + 15} y2={centerY - 5} stroke={element.stroke} strokeWidth={1} />
               </>
             )}
+            {/* Cache - cylinder with lightning bolt */}
+            {element.type === "cache" && (
+              <>
+                <ellipse cx={centerX} cy={element.y + 12} rx={14} ry={5} fill="none" stroke={element.stroke} strokeWidth={1.5} />
+                <path d={`M ${centerX - 14} ${element.y + 12} v 18 a 14 5 0 0 0 28 0 v -18`} fill="none" stroke={element.stroke} strokeWidth={1.5} />
+                <path d={`M ${centerX + 2} ${element.y + 18} l -6 8 h 5 l -4 8`} fill="none" stroke={element.stroke} strokeWidth={1.5} />
+              </>
+            )}
+            {/* Load Balancer - scale with arrows */}
+            {element.type === "load_balancer" && (
+              <>
+                <circle cx={centerX} cy={element.y + 20} r={12} fill="none" stroke={element.stroke} strokeWidth={1.5} />
+                <line x1={centerX - 8} y1={element.y + 20} x2={centerX + 8} y2={element.y + 20} stroke={element.stroke} strokeWidth={1.5} />
+                <line x1={centerX} y1={element.y + 12} x2={centerX} y2={element.y + 28} stroke={element.stroke} strokeWidth={1.5} />
+                <path d={`M ${centerX - 5} ${element.y + 14} l 5 -4 l 5 4`} fill="none" stroke={element.stroke} strokeWidth={1} />
+                <path d={`M ${centerX - 5} ${element.y + 26} l 5 4 l 5 -4`} fill="none" stroke={element.stroke} strokeWidth={1} />
+              </>
+            )}
+            {/* Queue - horizontal bars with arrow */}
+            {element.type === "queue" && (
+              <>
+                <rect x={centerX - 16} y={element.y + 12} width={32} height={6} rx={1} fill="none" stroke={element.stroke} strokeWidth={1.5} />
+                <rect x={centerX - 16} y={element.y + 21} width={32} height={6} rx={1} fill="none" stroke={element.stroke} strokeWidth={1.5} />
+                <rect x={centerX - 16} y={element.y + 30} width={32} height={6} rx={1} fill="none" stroke={element.stroke} strokeWidth={1.5} />
+                <path d={`M ${centerX + 20} ${element.y + 24} l 6 0 l -2 -3 m 2 3 l -2 3`} fill="none" stroke={element.stroke} strokeWidth={1} />
+              </>
+            )}
+            {/* Blob Storage - folder with cloud */}
+            {element.type === "blob_storage" && (
+              <>
+                <rect x={centerX - 14} y={element.y + 14} width={28} height={22} rx={2} fill="none" stroke={element.stroke} strokeWidth={1.5} />
+                <path d={`M ${centerX - 14} ${element.y + 18} h 10 l 4 -4 h 14`} fill="none" stroke={element.stroke} strokeWidth={1.5} />
+                <circle cx={centerX - 4} cy={element.y + 26} r={4} fill="none" stroke={element.stroke} strokeWidth={1} />
+                <circle cx={centerX + 4} cy={element.y + 28} r={3} fill="none" stroke={element.stroke} strokeWidth={1} />
+              </>
+            )}
+            {/* DNS - network nodes */}
+            {element.type === "dns" && (
+              <>
+                <circle cx={centerX} cy={element.y + 14} r={6} fill="none" stroke={element.stroke} strokeWidth={1.5} />
+                <circle cx={centerX - 12} cy={element.y + 32} r={5} fill="none" stroke={element.stroke} strokeWidth={1.5} />
+                <circle cx={centerX + 12} cy={element.y + 32} r={5} fill="none" stroke={element.stroke} strokeWidth={1.5} />
+                <line x1={centerX - 4} y1={element.y + 18} x2={centerX - 10} y2={element.y + 28} stroke={element.stroke} strokeWidth={1} />
+                <line x1={centerX + 4} y1={element.y + 18} x2={centerX + 10} y2={element.y + 28} stroke={element.stroke} strokeWidth={1} />
+                <text x={centerX} y={element.y + 17} fill={element.stroke} fontSize={6} textAnchor="middle" fontFamily="system-ui">@</text>
+              </>
+            )}
+            {/* Client - monitor/laptop */}
+            {element.type === "client" && (
+              <>
+                <rect x={centerX - 14} y={element.y + 10} width={28} height={18} rx={2} fill="none" stroke={element.stroke} strokeWidth={1.5} />
+                <line x1={centerX - 10} y1={element.y + 28} x2={centerX + 10} y2={element.y + 28} stroke={element.stroke} strokeWidth={1.5} />
+                <rect x={centerX - 18} y={element.y + 32} width={36} height={4} rx={1} fill="none" stroke={element.stroke} strokeWidth={1.5} />
+              </>
+            )}
+            {/* API Gateway - layered rectangles with arrows */}
+            {element.type === "api_gateway" && (
+              <>
+                <rect x={centerX - 12} y={element.y + 10} width={24} height={28} rx={3} fill="none" stroke={element.stroke} strokeWidth={1.5} />
+                <line x1={centerX - 8} y1={element.y + 18} x2={centerX + 8} y2={element.y + 18} stroke={element.stroke} strokeWidth={1} />
+                <line x1={centerX - 8} y1={element.y + 24} x2={centerX + 8} y2={element.y + 24} stroke={element.stroke} strokeWidth={1} />
+                <line x1={centerX - 8} y1={element.y + 30} x2={centerX + 8} y2={element.y + 30} stroke={element.stroke} strokeWidth={1} />
+                <path d={`M ${centerX - 18} ${element.y + 24} l -4 0`} stroke={element.stroke} strokeWidth={1} />
+                <path d={`M ${centerX + 18} ${element.y + 18} l 4 0`} stroke={element.stroke} strokeWidth={1} />
+                <path d={`M ${centerX + 18} ${element.y + 24} l 4 0`} stroke={element.stroke} strokeWidth={1} />
+                <path d={`M ${centerX + 18} ${element.y + 30} l 4 0`} stroke={element.stroke} strokeWidth={1} />
+              </>
+            )}
             {/* Label */}
             <text
               x={centerX}
@@ -680,17 +776,29 @@ export default function DesignCanvas({
     }
   }
 
-  const tools: { id: Tool; icon: React.ElementType; label: string }[] = [
+  // Basic drawing tools
+  const drawingTools: { id: Tool; icon: React.ElementType; label: string }[] = [
     { id: "select", icon: MousePointer, label: "Select" },
     { id: "rectangle", icon: Square, label: "Rectangle" },
     { id: "ellipse", icon: Circle, label: "Ellipse" },
     { id: "arrow", icon: ArrowRight, label: "Arrow" },
     { id: "text", icon: Type, label: "Text" },
-    { id: "database", icon: Database, label: "Database" },
+  ]
+
+  // System design component icons
+  const componentTools: { id: Tool; icon: React.ElementType; label: string }[] = [
+    { id: "client", icon: Monitor, label: "Client" },
+    { id: "dns", icon: Network, label: "DNS" },
+    { id: "load_balancer", icon: Scale, label: "Load Balancer" },
+    { id: "api_gateway", icon: Layers, label: "API Gateway" },
     { id: "server", icon: Server, label: "Server" },
+    { id: "database", icon: Database, label: "Database" },
+    { id: "cache", icon: HardDrive, label: "Cache" },
+    { id: "queue", icon: MessageSquare, label: "Message Queue" },
+    { id: "blob_storage", icon: Archive, label: "Blob Storage" },
     { id: "cloud", icon: Cloud, label: "Cloud" },
     { id: "user", icon: Users, label: "User" },
-    { id: "globe", icon: Globe, label: "Globe" },
+    { id: "globe", icon: Globe, label: "Internet" },
   ]
 
   return (
@@ -698,9 +806,27 @@ export default function DesignCanvas({
       {/* Toolbar */}
       {!readOnly && (
         <div className="flex items-center justify-between border-b bg-muted/50 px-2 py-1.5 flex-wrap gap-1">
-          {/* Tools */}
+          {/* Drawing Tools */}
           <div className="flex items-center gap-1">
-            {tools.map((tool) => {
+            {drawingTools.map((tool) => {
+              const Icon = tool.icon
+              return (
+                <Button
+                  key={tool.id}
+                  variant={selectedTool === tool.id ? "default" : "ghost"}
+                  size="sm"
+                  className="h-8 w-8 p-0"
+                  onClick={() => setSelectedTool(tool.id)}
+                  title={tool.label}
+                >
+                  <Icon className="h-4 w-4" />
+                </Button>
+              )
+            })}
+            {/* Separator */}
+            <div className="w-px h-6 bg-border mx-1" />
+            {/* System Design Components */}
+            {componentTools.map((tool) => {
               const Icon = tool.icon
               return (
                 <Button

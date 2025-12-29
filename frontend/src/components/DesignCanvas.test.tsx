@@ -54,7 +54,18 @@ describe('DesignCanvas', () => {
       expect(screen.getByTitle('Server')).toBeInTheDocument()
       expect(screen.getByTitle('Cloud')).toBeInTheDocument()
       expect(screen.getByTitle('User')).toBeInTheDocument()
-      expect(screen.getByTitle('Globe')).toBeInTheDocument()
+      expect(screen.getByTitle('Internet')).toBeInTheDocument()
+    })
+
+    it('renders new system design component tools', () => {
+      render(<DesignCanvas value="" onChange={mockOnChange} />)
+      expect(screen.getByTitle('Client')).toBeInTheDocument()
+      expect(screen.getByTitle('DNS')).toBeInTheDocument()
+      expect(screen.getByTitle('Load Balancer')).toBeInTheDocument()
+      expect(screen.getByTitle('API Gateway')).toBeInTheDocument()
+      expect(screen.getByTitle('Cache')).toBeInTheDocument()
+      expect(screen.getByTitle('Message Queue')).toBeInTheDocument()
+      expect(screen.getByTitle('Blob Storage')).toBeInTheDocument()
     })
 
     it('renders undo/redo buttons', () => {
@@ -361,6 +372,90 @@ describe('DesignCanvas', () => {
 
       render(<DesignCanvas value={canvasValue} onChange={mockOnChange} />)
       expect(screen.getByText('AWS')).toBeInTheDocument()
+    })
+
+    it('renders cache icon elements', () => {
+      const canvasValue = JSON.stringify({
+        elements: [
+          { id: 'cache1', type: 'cache', x: 10, y: 10, width: 60, height: 60, fill: '#fff', stroke: '#000', strokeWidth: 2, label: 'Redis' }
+        ],
+        version: 1
+      })
+
+      render(<DesignCanvas value={canvasValue} onChange={mockOnChange} />)
+      expect(screen.getByText('Redis')).toBeInTheDocument()
+    })
+
+    it('renders load balancer icon elements', () => {
+      const canvasValue = JSON.stringify({
+        elements: [
+          { id: 'lb1', type: 'load_balancer', x: 10, y: 10, width: 60, height: 60, fill: '#fff', stroke: '#000', strokeWidth: 2, label: 'LB' }
+        ],
+        version: 1
+      })
+
+      render(<DesignCanvas value={canvasValue} onChange={mockOnChange} />)
+      expect(screen.getByText('LB')).toBeInTheDocument()
+    })
+
+    it('renders message queue icon elements', () => {
+      const canvasValue = JSON.stringify({
+        elements: [
+          { id: 'q1', type: 'queue', x: 10, y: 10, width: 60, height: 60, fill: '#fff', stroke: '#000', strokeWidth: 2, label: 'Kafka' }
+        ],
+        version: 1
+      })
+
+      render(<DesignCanvas value={canvasValue} onChange={mockOnChange} />)
+      expect(screen.getByText('Kafka')).toBeInTheDocument()
+    })
+
+    it('renders blob storage icon elements', () => {
+      const canvasValue = JSON.stringify({
+        elements: [
+          { id: 'bs1', type: 'blob_storage', x: 10, y: 10, width: 60, height: 60, fill: '#fff', stroke: '#000', strokeWidth: 2, label: 'S3' }
+        ],
+        version: 1
+      })
+
+      render(<DesignCanvas value={canvasValue} onChange={mockOnChange} />)
+      expect(screen.getByText('S3')).toBeInTheDocument()
+    })
+
+    it('renders DNS icon elements', () => {
+      const canvasValue = JSON.stringify({
+        elements: [
+          { id: 'dns1', type: 'dns', x: 10, y: 10, width: 60, height: 60, fill: '#fff', stroke: '#000', strokeWidth: 2, label: 'Route53' }
+        ],
+        version: 1
+      })
+
+      render(<DesignCanvas value={canvasValue} onChange={mockOnChange} />)
+      expect(screen.getByText('Route53')).toBeInTheDocument()
+    })
+
+    it('renders client icon elements', () => {
+      const canvasValue = JSON.stringify({
+        elements: [
+          { id: 'client1', type: 'client', x: 10, y: 10, width: 60, height: 60, fill: '#fff', stroke: '#000', strokeWidth: 2, label: 'Web App' }
+        ],
+        version: 1
+      })
+
+      render(<DesignCanvas value={canvasValue} onChange={mockOnChange} />)
+      expect(screen.getByText('Web App')).toBeInTheDocument()
+    })
+
+    it('renders API gateway icon elements', () => {
+      const canvasValue = JSON.stringify({
+        elements: [
+          { id: 'apigw1', type: 'api_gateway', x: 10, y: 10, width: 60, height: 60, fill: '#fff', stroke: '#000', strokeWidth: 2, label: 'Gateway' }
+        ],
+        version: 1
+      })
+
+      render(<DesignCanvas value={canvasValue} onChange={mockOnChange} />)
+      expect(screen.getByText('Gateway')).toBeInTheDocument()
     })
   })
 

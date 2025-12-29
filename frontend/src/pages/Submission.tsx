@@ -37,9 +37,11 @@ import { Breadcrumbs } from "@/components/ui/breadcrumbs"
 import SchemaEditor from "@/components/SchemaEditor"
 import ApiSpecEditor from "@/components/ApiSpecEditor"
 import DesignEditor from "@/components/DesignEditor"
+import DesignSummary from "@/components/DesignSummary"
 import { useToast } from "@/hooks/useToast"
 import { cn } from "@/lib/utils"
 import type { Problem, ValidationResponse } from "@/types"
+import type { DesignSummaryResponse } from "@/api/client"
 
 type Step = "schema" | "api" | "design" | "review"
 
@@ -154,6 +156,9 @@ export default function Submission() {
   // Inline validation states
   const [schemaError, setSchemaError] = useState<string | null>(null)
   const [apiSpecError, setApiSpecError] = useState<string | null>(null)
+
+  // Design summary state
+  const [designSummary, setDesignSummary] = useState<DesignSummaryResponse | null>(null)
 
   const currentStepIndex = steps.findIndex((s) => s.id === step)
   const progressPercent = ((currentStepIndex + 1) / steps.length) * 100
@@ -638,6 +643,8 @@ export default function Submission() {
                 currentSchema={schemaInput}
                 currentApiSpec={apiSpecInput}
                 difficultyLevel={difficultyLevel}
+                onSummaryChange={setDesignSummary}
+                initialSummary={designSummary}
               />
             )}
             {step === "review" && (
@@ -683,6 +690,24 @@ export default function Submission() {
                   </h3>
                   <DesignEditor value={designText} onChange={() => {}} readOnly />
                 </div>
+
+                {/* Design Summary */}
+                {designSummary && (
+                  <div>
+                    <h3 className="font-medium mb-3 flex items-center gap-2">
+                      <span className="p-1.5 rounded-md bg-gradient-to-br from-green-500 to-emerald-600">
+                        <svg className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                        </svg>
+                      </span>
+                      Design Summary
+                      <Badge variant="success" className="ml-2">
+                        Score: {designSummary.overall_score ?? 'N/A'}/100
+                      </Badge>
+                    </h3>
+                    <DesignSummary summary={designSummary} />
+                  </div>
+                )}
 
                 {/* Validation results */}
                 {validation && (
