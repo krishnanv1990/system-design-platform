@@ -27,6 +27,16 @@ from backend.auth.jwt_handler import get_current_user, get_current_user_optional
 router = APIRouter()
 
 
+def require_admin(current_user: User = Depends(get_current_user)) -> User:
+    """Dependency to require admin privileges for problem management."""
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin privileges required to manage problems"
+        )
+    return current_user
+
+
 def get_difficulty_info(difficulty: str) -> Optional[DifficultyLevelInfo]:
     """
     Get difficulty level info for a given difficulty.
@@ -172,20 +182,19 @@ async def get_problem(
 async def create_problem(
     problem_data: ProblemCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    admin_user: User = Depends(require_admin),
 ):
     """
-    Create a new problem (admin only in production).
+    Create a new problem (admin only).
 
     Args:
         problem_data: Problem creation data
         db: Database session
-        current_user: Authenticated user
+        admin_user: Authenticated admin user
 
     Returns:
         Created problem with difficulty level info
     """
-    # TODO: Add admin role check in production
 
     # Convert difficulty_requirements to dict if provided
     difficulty_reqs = None
@@ -219,21 +228,20 @@ async def update_problem(
     problem_id: int,
     problem_data: ProblemUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    admin_user: User = Depends(require_admin),
 ):
     """
-    Update an existing problem (admin only in production).
+    Update an existing problem (admin only).
 
     Args:
         problem_id: Problem ID
         problem_data: Problem update data
         db: Database session
-        current_user: Authenticated user
+        admin_user: Authenticated admin user
 
     Returns:
         Updated problem with difficulty level info
     """
-    # TODO: Add admin role check in production
 
     problem = db.query(Problem).filter(Problem.id == problem_id).first()
 
@@ -266,17 +274,16 @@ async def update_problem(
 async def delete_problem(
     problem_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    admin_user: User = Depends(require_admin),
 ):
     """
-    Delete a problem (admin only in production).
+    Delete a problem (admin only).
 
     Args:
         problem_id: Problem ID
         db: Database session
-        current_user: Authenticated user
+        admin_user: Authenticated admin user
     """
-    # TODO: Add admin role check in production
 
     problem = db.query(Problem).filter(Problem.id == problem_id).first()
 

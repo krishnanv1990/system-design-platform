@@ -22,6 +22,10 @@ import {
   Eye,
   Send,
   AlertTriangle,
+  Cloud,
+  HardDrive,
+  Server,
+  Rocket,
 } from "lucide-react"
 import { userApi, UsageCostResponse, AuditLogResponse } from "@/api/client"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
@@ -65,6 +69,13 @@ const actionIcons: Record<string, typeof Activity> = {
   chat_message: MessageSquare,
   generate_summary: FileText,
   evaluate_diagram: Eye,
+  deploy_start: Rocket,
+  deploy_complete: Cloud,
+  deploy_failed: AlertTriangle,
+  run_tests: Server,
+  ai_chat: MessageSquare,
+  ai_validate_design: Eye,
+  ai_generate_code: FileText,
 }
 
 function formatCost(cost: number): string {
@@ -188,7 +199,7 @@ export default function UsageDashboard() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-5">
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center gap-2">
@@ -204,11 +215,15 @@ export default function UsageDashboard() {
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center gap-2">
-              <Activity className="h-4 w-4 text-muted-foreground" />
-              <p className="text-sm text-muted-foreground">Total Actions</p>
+              <Cloud className="h-4 w-4 text-muted-foreground" />
+              <p className="text-sm text-muted-foreground">GCP Costs</p>
             </div>
             <p className="text-2xl font-bold mt-1">
-              {activity?.total_count || 0}
+              {formatCost(
+                (usage?.by_category || [])
+                  .filter((c) => c.category.startsWith("gcp_"))
+                  .reduce((sum, c) => sum + c.total_cost_usd, 0)
+              )}
             </p>
           </CardContent>
         </Card>
@@ -225,6 +240,18 @@ export default function UsageDashboard() {
                   .filter((c) => c.category.includes("tokens"))
                   .reduce((sum, c) => sum + c.total_quantity, 0)
               )}
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-2">
+              <Activity className="h-4 w-4 text-muted-foreground" />
+              <p className="text-sm text-muted-foreground">Total Actions</p>
+            </div>
+            <p className="text-2xl font-bold mt-1">
+              {activity?.total_count || 0}
             </p>
           </CardContent>
         </Card>
@@ -250,6 +277,10 @@ export default function UsageDashboard() {
           <TabsTrigger value="costs">
             <DollarSign className="h-4 w-4 mr-2" />
             Costs
+          </TabsTrigger>
+          <TabsTrigger value="deployments">
+            <Cloud className="h-4 w-4 mr-2" />
+            Deployments
           </TabsTrigger>
           <TabsTrigger value="activity">
             <Activity className="h-4 w-4 mr-2" />
@@ -344,6 +375,126 @@ export default function UsageDashboard() {
                   })}
                 </div>
               )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="deployments" className="space-y-4">
+          {/* GCP Cost Breakdown */}
+          <Card>
+            <CardHeader>
+              <CardTitle>GCP Resource Usage</CardTitle>
+              <CardDescription>Cloud Run deployments and infrastructure costs</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {(() => {
+                const gcpCategories = (usage?.by_category || []).filter(
+                  (c) => c.category.startsWith("gcp_")
+                )
+                if (gcpCategories.length === 0) {
+                  return (
+                    <p className="text-muted-foreground text-center py-8">
+                      No GCP usage data for this period. Deploy a submission to see costs.
+                    </p>
+                  )
+                }
+                return (
+                  <div className="space-y-4">
+                    {gcpCategories.map((category) => {
+                      const Icon = categoryIcons[category.category] || Cloud
+                      return (
+                        <div
+                          key={category.category}
+                          className="flex items-center justify-between p-4 bg-muted/50 rounded-lg"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="p-2 bg-blue-500/10 rounded-lg">
+                              <Icon className="h-5 w-5 text-blue-500" />
+                            </div>
+                            <div>
+                              <p className="font-medium">
+                                {formatCategory(category.category)}
+                              </p>
+                              <p className="text-sm text-muted-foreground">
+                                {formatNumber(category.total_quantity)} {category.unit}
+                              </p>
+                            </div>
+                          </div>
+                          <Badge variant="secondary" className="text-base">
+                            {formatCost(category.total_cost_usd)}
+                          </Badge>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )
+              })()}
+            </CardContent>
+          </Card>
+
+          {/* Recent Deployments */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Recent Deployments</CardTitle>
+              <CardDescription>Your deployed services and test runs</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {(() => {
+                const deploymentItems = (activity?.items || []).filter(
+                  (item) => item.action.includes("deploy") || item.action === "run_tests"
+                )
+                if (deploymentItems.length === 0) {
+                  return (
+                    <p className="text-muted-foreground text-center py-8">
+                      No deployments in this period
+                    </p>
+                  )
+                }
+                return (
+                  <div className="space-y-3">
+                    {deploymentItems.slice(0, 10).map((item) => {
+                      const Icon = actionIcons[item.action] || Cloud
+                      const isSuccess = item.action === "deploy_complete"
+                      const isFailed = item.action === "deploy_failed"
+                      const details = item.details || {}
+                      return (
+                        <div
+                          key={item.id}
+                          className="flex items-center justify-between p-3 border rounded-lg"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className={`p-2 rounded-lg ${
+                              isSuccess ? "bg-green-500/10" :
+                              isFailed ? "bg-red-500/10" : "bg-blue-500/10"
+                            }`}>
+                              <Icon className={`h-5 w-5 ${
+                                isSuccess ? "text-green-500" :
+                                isFailed ? "text-red-500" : "text-blue-500"
+                              }`} />
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium">
+                                {formatAction(item.action)}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                {details.service_name || details.endpoint_url || `Submission #${item.resource_id}`}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <Badge variant={isSuccess ? "default" : isFailed ? "destructive" : "secondary"}>
+                              {isSuccess ? "Success" : isFailed ? "Failed" : "Running"}
+                            </Badge>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {formatDate(item.created_at)}
+                            </p>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )
+              })()}
             </CardContent>
           </Card>
         </TabsContent>

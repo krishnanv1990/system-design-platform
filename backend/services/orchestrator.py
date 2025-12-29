@@ -636,6 +636,56 @@ if __name__ == "__main__":
             # Don't set status here - let _run_tests set it to TESTING
             db.commit()
 
+            # Track GCP deployment costs
+            try:
+                from decimal import Decimal
+                from backend.models.audit_log import CostCategory
+
+                audit_service = AuditService(db)
+
+                # Log deployment action
+                deploy_log = audit_service.log_action(
+                    action=ActionType.DEPLOY_COMPLETE,
+                    user_id=submission.user_id,
+                    resource_type="submission",
+                    resource_id=submission.id,
+                    details={
+                        "service_name": service_name,
+                        "endpoint_url": endpoint_url,
+                        "deployment_mode": "cloud_run",
+                        "memory": "512Mi",
+                        "cpu": "1",
+                    },
+                )
+
+                # Track Cloud Run compute cost (estimated 1 hour of usage)
+                # Cloud Run: ~$0.024/vCPU-hour + ~$0.0025/GB-hour
+                # 1 vCPU + 0.5GB for 1 hour = ~$0.02525
+                compute_hours = Decimal("1.0")  # 1 hour deployment timeout
+                audit_service.track_gcp_usage(
+                    user_id=submission.user_id,
+                    audit_log_id=deploy_log.id,
+                    category=CostCategory.GCP_COMPUTE,
+                    quantity=compute_hours,
+                    unit="vCPU-hours",
+                    details={"service_name": service_name, "memory": "512Mi", "cpu": "1"},
+                )
+
+                # Track storage cost for source upload (typically < 1MB)
+                storage_mb = Decimal("1.0")  # Approximate source size
+                audit_service.track_gcp_usage(
+                    user_id=submission.user_id,
+                    audit_log_id=deploy_log.id,
+                    category=CostCategory.GCP_STORAGE,
+                    quantity=storage_mb,
+                    unit="MB",
+                    details={"bucket": bucket_name, "blob": blob_name},
+                )
+
+            except Exception as cost_error:
+                import logging
+                logging.getLogger(__name__).error(f"Failed to track GCP costs: {cost_error}")
+
             # Register with cleanup scheduler (1 hour timeout)
             cleanup_scheduler.register_deployment(
                 submission_id=submission.id,
@@ -731,6 +781,42 @@ if __name__ == "__main__":
                     "namespace": result.get("namespace"),
                 }
                 db.commit()
+
+                # Track GCP deployment costs for warm pool
+                try:
+                    from decimal import Decimal
+                    from backend.models.audit_log import CostCategory
+
+                    audit_service = AuditService(db)
+
+                    # Log deployment action
+                    deploy_log = audit_service.log_action(
+                        action=ActionType.DEPLOY_COMPLETE,
+                        user_id=submission.user_id,
+                        resource_type="submission",
+                        resource_id=submission.id,
+                        details={
+                            "endpoint_url": result.get("endpoint_url"),
+                            "deployment_mode": "warm_pool",
+                            "deployment_time_seconds": result.get("deployment_time_seconds"),
+                            "services": [s.value for s in required_services],
+                        },
+                    )
+
+                    # Track compute cost (warm pool is more efficient)
+                    compute_hours = Decimal("0.5")  # Estimated 30 min active usage
+                    audit_service.track_gcp_usage(
+                        user_id=submission.user_id,
+                        audit_log_id=deploy_log.id,
+                        category=CostCategory.GCP_COMPUTE,
+                        quantity=compute_hours,
+                        unit="vCPU-hours",
+                        details={"deployment_mode": "warm_pool", "services": [s.value for s in required_services]},
+                    )
+
+                except Exception as cost_error:
+                    import logging
+                    logging.getLogger(__name__).error(f"Failed to track GCP costs: {cost_error}")
 
                 # Register with cleanup scheduler (1 hour timeout)
                 cleanup_scheduler.register_deployment(
