@@ -161,6 +161,7 @@ export default function DesignCanvas({
   const [textInput, setTextInput] = useState("")
   const [showExportMenu, setShowExportMenu] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
+  const [importError, setImportError] = useState<string | null>(null)
   const svgRef = useRef<SVGSVGElement>(null)
   const exportMenuRef = useRef<HTMLDivElement>(null)
 
@@ -494,6 +495,7 @@ export default function DesignCanvas({
   }
 
   const importCanvas = async () => {
+    setImportError(null)
     const input = document.createElement("input")
     input.type = "file"
     input.accept = getImportAcceptString()
@@ -504,6 +506,13 @@ export default function DesignCanvas({
       const fileExtension = file.name.toLowerCase().split('.').pop()
       const fileType = file.type.toLowerCase()
 
+      // Check file size (limit to 10MB for images)
+      const maxSize = 10 * 1024 * 1024 // 10MB
+      if (file.size > maxSize) {
+        setImportError(`File too large. Maximum size is 10MB, got ${(file.size / 1024 / 1024).toFixed(1)}MB`)
+        return
+      }
+
       try {
         // Handle JSON import
         if (fileExtension === 'json' || fileType === 'application/json') {
@@ -511,6 +520,8 @@ export default function DesignCanvas({
           const data = JSON.parse(text)
           if (Array.isArray(data.elements)) {
             setElements(data.elements)
+          } else {
+            setImportError('Invalid JSON format: missing elements array')
           }
           return
         }
@@ -576,8 +587,10 @@ export default function DesignCanvas({
           return
         }
 
-        console.error("Unsupported file type:", fileType)
+        setImportError(`Unsupported file type: ${fileType || fileExtension}`)
       } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : 'Unknown error'
+        setImportError(`Failed to import: ${errorMessage}`)
         console.error("Failed to import:", err)
       }
     }
@@ -1195,6 +1208,19 @@ export default function DesignCanvas({
       </div>
 
       {/* Help text */}
+      {/* Import error message */}
+      {importError && (
+        <div className="px-3 py-2 bg-red-50 dark:bg-red-950 border-t border-red-200 dark:border-red-800 text-xs text-red-600 dark:text-red-400 flex items-center justify-between">
+          <span>⚠️ {importError}</span>
+          <button
+            onClick={() => setImportError(null)}
+            className="text-red-500 hover:text-red-700 dark:hover:text-red-300"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       <div className="px-3 py-2 bg-muted/30 border-t text-xs text-muted-foreground flex flex-wrap justify-between gap-2">
         {readOnly ? (
           <span>View only mode</span>

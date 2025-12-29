@@ -628,6 +628,7 @@ describe('canvasExport', () => {
         onload: null as (() => void) | null,
         onerror: null as ((e: Error) => void) | null,
         src: '',
+        crossOrigin: '',
         width: 100,
         height: 200,
       }
@@ -653,6 +654,7 @@ describe('canvasExport', () => {
         onload: null as (() => void) | null,
         onerror: null as ((e: Error) => void) | null,
         src: '',
+        crossOrigin: '',
       }
 
       const originalImage = globalThis.Image
@@ -663,7 +665,27 @@ describe('canvasExport', () => {
         return mockImage
       }) as unknown as typeof Image
 
-      await expect(getImageDimensions('invalid-url')).rejects.toThrow()
+      await expect(getImageDimensions('invalid-url')).rejects.toThrow('Failed to load image')
+
+      globalThis.Image = originalImage
+    })
+
+    it('rejects on timeout', async () => {
+      const mockImage = {
+        onload: null as (() => void) | null,
+        onerror: null as ((e: Error) => void) | null,
+        src: '',
+        crossOrigin: '',
+      }
+
+      const originalImage = globalThis.Image
+      globalThis.Image = vi.fn().mockImplementation(() => {
+        // Don't call onload or onerror - let it timeout
+        return mockImage
+      }) as unknown as typeof Image
+
+      // Use a very short timeout for testing
+      await expect(getImageDimensions('data:image/png;base64,test', 50)).rejects.toThrow('Image load timed out')
 
       globalThis.Image = originalImage
     })

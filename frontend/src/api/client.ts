@@ -410,9 +410,8 @@ export const chatApi = {
    * Evaluate a diagram and get feedback
    */
   evaluateDiagram: async (problemId: number, diagramData: any): Promise<any> => {
-    const response = await api.post('/chat/evaluate-diagram', null, {
+    const response = await api.post('/chat/evaluate-diagram', diagramData, {
       params: { problem_id: problemId },
-      data: diagramData,
     })
     return response.data
   },

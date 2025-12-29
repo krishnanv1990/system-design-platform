@@ -1,19 +1,38 @@
 # Claude Resume File - Task Progress
 
 ## Current Task
-1. Fix submission "Error 'list' object has no attribute 'keys'" - COMPLETED
-2. Add image import support for popular formats (like export) - COMPLETED
-3. Fix chat latency for content moderation violations - COMPLETED
-4. Add design summary box to "review and submit" page - COMPLETED (was already implemented)
-5. Add unit and integration tests with 100% code coverage - COMPLETED
-6. Commit, push, and deploy - IN PROGRESS
-7. Save progress for crash recovery - DONE
+1. Fix network error when importing diagram from PNG file
+2. Fix network error when asking to evaluate diagram
+3. Add unit and integration tests with 100% code coverage
+4. Commit, push, and deploy
+5. Save progress for crash recovery
 
 ## Progress
 - Status: IN_PROGRESS
-- Phase: Committing changes
+- Phase: Investigating network errors
+
+## Production URLs
+- Frontend: https://sdp-frontend-zziiwqh26q-uc.a.run.app
+- Backend: https://sdp-backend-zziiwqh26q-uc.a.run.app
 
 ## Completed Work This Session
+1. Fixed Network Error on PNG Import:
+   - Added timeout to getImageDimensions() to prevent hanging
+   - Added file size validation (10MB limit)
+   - Added user-friendly error display with dismiss button
+   - Improved error handling with specific error messages
+
+2. Fixed Network Error on Diagram Evaluation:
+   - Fixed API client evaluateDiagram() - was passing data incorrectly to axios
+   - Added sanitization to remove large data URLs from image elements before sending to AI
+   - Prevents payload size issues when evaluating diagrams with imported images
+
+3. Tests Added:
+   - Added timeout test for getImageDimensions
+   - All 630 frontend tests pass
+   - All 29 backend validation tests pass
+
+## Previous Work
 1. Schema Normalization Fix:
    - Added `_normalize_tables()` and `_normalize_columns()` methods to ValidationService
    - Handles both dict and array formats for tables/columns
@@ -28,15 +47,6 @@
 3. Chat Latency Optimization:
    - Modified chat.py to return moderation response immediately
    - Non-blocking ban tracking in background
-
-4. Tests Added:
-   - 15 new tests for schema normalization in test_validation_service.py
-   - Updated IMPORT_FORMATS tests in canvasExport.test.ts
-   - Added tests for all new import helper functions
-
-5. Test Results:
-   - Frontend: 629/629 tests pass
-   - Backend validation_service: 29/29 tests pass
 
 ## Previous Completed Work
 - Content moderation service with jailbreak/code execution/obscene detection

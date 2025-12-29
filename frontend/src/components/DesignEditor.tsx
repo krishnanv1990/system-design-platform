@@ -79,11 +79,27 @@ export default function DesignEditor({
   const data = parseValue()
   const [mode, setMode] = useState<"canvas" | "text">(data.mode)
 
-  // Parse current diagram data for chat context
+  // Parse and sanitize current diagram data for chat context
+  // Remove large data URLs from image elements to avoid payload size issues
   const currentDiagram = useMemo(() => {
     if (!data.canvas) return null
     try {
-      return JSON.parse(data.canvas)
+      const parsed = JSON.parse(data.canvas)
+      // Sanitize elements to remove large data URLs
+      if (parsed.elements && Array.isArray(parsed.elements)) {
+        parsed.elements = parsed.elements.map((el: Record<string, unknown>) => {
+          if (el.type === 'image' && el.dataUrl) {
+            // Replace data URL with placeholder to reduce payload size
+            return {
+              ...el,
+              dataUrl: '[image data removed for API call]',
+              hasImage: true,
+            }
+          }
+          return el
+        })
+      }
+      return parsed
     } catch {
       return null
     }

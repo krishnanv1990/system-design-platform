@@ -68,14 +68,28 @@ export function readFileAsText(file: File): Promise<string> {
 
 /**
  * Get image dimensions from a data URL
+ * Includes timeout to prevent hanging on invalid images
  */
-export function getImageDimensions(dataUrl: string): Promise<{ width: number; height: number }> {
+export function getImageDimensions(dataUrl: string, timeoutMs: number = 10000): Promise<{ width: number; height: number }> {
   return new Promise((resolve, reject) => {
     const img = new Image()
+
+    // Set timeout to prevent hanging
+    const timeoutId = setTimeout(() => {
+      reject(new Error('Image load timed out'))
+    }, timeoutMs)
+
     img.onload = () => {
+      clearTimeout(timeoutId)
       resolve({ width: img.width, height: img.height })
     }
-    img.onerror = reject
+    img.onerror = (e) => {
+      clearTimeout(timeoutId)
+      reject(new Error('Failed to load image'))
+    }
+
+    // Handle potential security errors with cross-origin images
+    img.crossOrigin = 'anonymous'
     img.src = dataUrl
   })
 }
