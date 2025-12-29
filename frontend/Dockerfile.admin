@@ -25,8 +25,8 @@ RUN npm run build:admin
 # Stage 2: Serve with Nginx
 FROM nginx:alpine
 
-# Copy custom nginx configuration
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# Copy custom nginx configuration for admin (uses admin.html)
+COPY nginx.admin.conf /etc/nginx/conf.d/default.conf
 
 # Copy built assets from builder stage (admin build outputs to dist-admin)
 COPY --from=builder /app/dist-admin /usr/share/nginx/html
