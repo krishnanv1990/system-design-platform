@@ -45,6 +45,28 @@ steps:
   - name: 'gcr.io/cloud-builders/docker'
     args: ['push', 'us-central1-docker.pkg.dev/$PROJECT_ID/sdp-repo/sdp-backend:latest']
 
+  # Run database migrations using Cloud Run Job
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: bash
+    args:
+      - '-c'
+      - |
+        # Delete existing job if it exists (ignore error if it doesn't exist)
+        gcloud run jobs delete sdp-migration --region=us-central1 --quiet || true
+
+        # Create migration job (runs from /app/backend where alembic.ini is)
+        gcloud run jobs create sdp-migration \
+          --image=us-central1-docker.pkg.dev/$PROJECT_ID/sdp-repo/sdp-backend:latest \
+          --region=us-central1 \
+          --command=sh \
+          --args=-c,"cd /app/backend && alembic upgrade head" \
+          --set-cloudsql-instances=$PROJECT_ID:us-central1:sdp-db-prod \
+          --set-secrets=DATABASE_URL=database-url:latest \
+          --max-retries=0
+
+        # Execute the job
+        gcloud run jobs execute sdp-migration --region=us-central1 --wait
+
   # Deploy backend to Cloud Run
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
