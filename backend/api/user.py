@@ -4,14 +4,17 @@ Allows users to view and update their profile, and contact support.
 Admin endpoints for managing user bans.
 """
 
-from datetime import datetime
-from typing import Optional, List
-from fastapi import APIRouter, HTTPException, Depends, status
+from datetime import datetime, timedelta
+from decimal import Decimal
+from typing import Optional, List, Dict, Any
+from fastapi import APIRouter, HTTPException, Depends, status, Query
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
 from backend.models.user import User
+from backend.models.audit_log import AuditLog, UsageCost
+from backend.services.audit_service import AuditService
 from backend.auth.jwt_handler import get_current_user
 
 router = APIRouter()
@@ -75,6 +78,61 @@ class AdminUserResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class UsageCostItem(BaseModel):
+    """Single usage cost item."""
+    id: int
+    category: str
+    quantity: float
+    unit: str
+    unit_cost_usd: float
+    total_cost_usd: float
+    details: Optional[Dict[str, Any]]
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class UsageCostSummary(BaseModel):
+    """Summary of usage costs by category."""
+    category: str
+    total_quantity: float
+    unit: str
+    total_cost_usd: float
+
+
+class UsageCostResponse(BaseModel):
+    """Response with user's usage costs."""
+    total_cost_usd: float
+    start_date: datetime
+    end_date: datetime
+    by_category: List[UsageCostSummary]
+    recent_items: List[UsageCostItem]
+
+
+class AuditLogItem(BaseModel):
+    """Single audit log item."""
+    id: int
+    action: str
+    resource_type: Optional[str]
+    resource_id: Optional[int]
+    details: Optional[Dict[str, Any]]
+    request_path: Optional[str]
+    request_method: Optional[str]
+    response_status: Optional[int]
+    duration_ms: Optional[int]
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class AuditLogResponse(BaseModel):
+    """Response with user's audit logs."""
+    total_count: int
+    items: List[AuditLogItem]
 
 
 # ============ User Profile Endpoints ============
@@ -199,6 +257,142 @@ async def contact_support(
         success=True,
         message="Your support request has been submitted. We'll respond within 24-48 hours.",
         ticket_id=ticket_id,
+    )
+
+
+# ============ Usage Cost Endpoints ============
+
+@router.get("/usage", response_model=UsageCostResponse)
+async def get_usage_costs(
+    days: int = Query(default=30, ge=1, le=365, description="Number of days to look back"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Get the current user's usage costs.
+
+    Returns a summary of costs by category and recent cost items.
+
+    Args:
+        days: Number of days to look back (1-365, default 30)
+        db: Database session
+        current_user: Authenticated user
+
+    Returns:
+        UsageCostResponse with cost breakdown
+    """
+    audit_service = AuditService(db)
+    end_date = datetime.utcnow()
+    start_date = end_date - timedelta(days=days)
+
+    # Get cost summary
+    cost_data = audit_service.get_user_costs(
+        user_id=current_user.id,
+        start_date=start_date,
+        end_date=end_date,
+    )
+
+    # Get recent cost items (last 50)
+    recent_costs = (
+        db.query(UsageCost)
+        .filter(UsageCost.user_id == current_user.id)
+        .filter(UsageCost.created_at >= start_date)
+        .order_by(UsageCost.created_at.desc())
+        .limit(50)
+        .all()
+    )
+
+    # Convert categories dict to by_category list
+    categories = cost_data.get("categories", {})
+    by_category = [
+        UsageCostSummary(
+            category=cat_name,
+            total_quantity=float(cat_data["quantity"]),
+            unit="tokens" if "tokens" in cat_name else "units",
+            total_cost_usd=float(cat_data["cost_usd"]),
+        )
+        for cat_name, cat_data in categories.items()
+    ]
+
+    return UsageCostResponse(
+        total_cost_usd=float(cost_data.get("total_cost_usd", 0)),
+        start_date=start_date,
+        end_date=end_date,
+        by_category=by_category,
+        recent_items=[
+            UsageCostItem(
+                id=cost.id,
+                category=cost.category,
+                quantity=float(cost.quantity),
+                unit=cost.unit,
+                unit_cost_usd=float(cost.unit_cost_usd),
+                total_cost_usd=float(cost.total_cost_usd),
+                details=cost.details,
+                created_at=cost.created_at,
+            )
+            for cost in recent_costs
+        ],
+    )
+
+
+@router.get("/activity", response_model=AuditLogResponse)
+async def get_activity_log(
+    days: int = Query(default=7, ge=1, le=90, description="Number of days to look back"),
+    limit: int = Query(default=50, ge=1, le=100, description="Maximum number of items to return"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Get the current user's activity log.
+
+    Returns recent actions performed by the user.
+
+    Args:
+        days: Number of days to look back (1-90, default 7)
+        limit: Maximum number of items to return (1-100, default 50)
+        db: Database session
+        current_user: Authenticated user
+
+    Returns:
+        AuditLogResponse with activity items
+    """
+    start_date = datetime.utcnow() - timedelta(days=days)
+
+    # Get total count
+    total_count = (
+        db.query(AuditLog)
+        .filter(AuditLog.user_id == current_user.id)
+        .filter(AuditLog.created_at >= start_date)
+        .count()
+    )
+
+    # Get recent items
+    logs = (
+        db.query(AuditLog)
+        .filter(AuditLog.user_id == current_user.id)
+        .filter(AuditLog.created_at >= start_date)
+        .order_by(AuditLog.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+
+    return AuditLogResponse(
+        total_count=total_count,
+        items=[
+            AuditLogItem(
+                id=log.id,
+                action=log.action,
+                resource_type=log.resource_type,
+                resource_id=log.resource_id,
+                details=log.details,
+                request_path=log.request_path,
+                request_method=log.request_method,
+                response_status=log.response_status,
+                duration_ms=log.duration_ms,
+                created_at=log.created_at,
+            )
+            for log in logs
+        ],
     )
 
 

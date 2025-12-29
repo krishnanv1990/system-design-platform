@@ -4,7 +4,8 @@ Provides integration with Anthropic's Claude API.
 """
 
 import json
-from typing import Optional, Dict, Any
+import logging
+from typing import Optional, Dict, Any, Tuple
 import anthropic
 
 from backend.config import get_settings
@@ -13,6 +14,7 @@ from backend.prompts.generate_terraform import TERRAFORM_GENERATION_PROMPT
 from backend.prompts.generate_tests import TEST_GENERATION_PROMPT
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
 
 class AIService:
@@ -32,6 +34,36 @@ class AIService:
         else:
             self.client = None
         self.model = "claude-sonnet-4-20250514"
+
+        # Track token usage from last API call
+        self._last_input_tokens = 0
+        self._last_output_tokens = 0
+
+    def get_last_usage(self) -> Tuple[int, int]:
+        """
+        Get token usage from the last API call.
+
+        Returns:
+            Tuple of (input_tokens, output_tokens)
+        """
+        return (self._last_input_tokens, self._last_output_tokens)
+
+    def _track_usage(self, message) -> None:
+        """
+        Track token usage from an API response.
+
+        Args:
+            message: Anthropic API response message
+        """
+        if hasattr(message, 'usage'):
+            self._last_input_tokens = getattr(message.usage, 'input_tokens', 0)
+            self._last_output_tokens = getattr(message.usage, 'output_tokens', 0)
+            logger.info(
+                f"AI usage: input={self._last_input_tokens}, output={self._last_output_tokens}"
+            )
+        else:
+            self._last_input_tokens = 0
+            self._last_output_tokens = 0
 
     async def validate_design(
         self,
@@ -90,6 +122,9 @@ Candidate's Design:
                 {"role": "user", "content": context}
             ]
         )
+
+        # Track token usage
+        self._track_usage(message)
 
         # Parse the response
         response_text = message.content[0].text
@@ -191,6 +226,9 @@ Project ID: {settings.gcp_project_id}
             ]
         )
 
+        # Track token usage
+        self._track_usage(message)
+
         return message.content[0].text
 
     async def generate_tests(
@@ -248,6 +286,9 @@ Deployed Endpoint: {endpoint_url}
                 {"role": "user", "content": context}
             ]
         )
+
+        # Track token usage
+        self._track_usage(message)
 
         response_text = message.content[0].text
 
@@ -579,6 +620,9 @@ The code must be syntactically valid and immediately runnable."""
             ]
         )
 
+        # Track token usage
+        self._track_usage(message)
+
         code = message.content[0].text
 
         # Clean up any markdown code blocks if present
@@ -709,6 +753,9 @@ Be specific and constructive in your feedback."""
             system=system_prompt,
             messages=[{"role": "user", "content": context}]
         )
+
+        # Track token usage
+        self._track_usage(message)
 
         response_text = message.content[0].text
 
@@ -864,6 +911,9 @@ Respond in a conversational, helpful tone. Use markdown for formatting. Be speci
             messages=messages
         )
 
+        # Track token usage
+        self._track_usage(message)
+
         response_text = message.content[0].text
 
         # Generate structured response
@@ -898,6 +948,12 @@ Respond with JSON in this exact format:
                     max_tokens=1024,
                     messages=[{"role": "user", "content": diagram_prompt}]
                 )
+
+                # Track token usage (adds to previous usage)
+                prev_input, prev_output = self._last_input_tokens, self._last_output_tokens
+                self._track_usage(diagram_message)
+                self._last_input_tokens += prev_input
+                self._last_output_tokens += prev_output
 
                 diagram_response = diagram_message.content[0].text
                 try:

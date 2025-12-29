@@ -14,6 +14,7 @@ from backend.config import get_settings
 from backend.database import engine, init_db
 from backend.api import api_router
 from backend.middleware.rate_limiter import limiter, rate_limit_exceeded_handler
+from backend.middleware.audit_middleware import AuditMiddleware
 from backend.websocket import websocket_router
 
 settings = get_settings()
@@ -99,6 +100,9 @@ app.add_middleware(
 # Configure rate limiting
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
+
+# Add audit middleware for logging user actions
+app.add_middleware(AuditMiddleware)
 
 # Include API routes
 app.include_router(api_router)

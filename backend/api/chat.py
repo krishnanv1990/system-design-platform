@@ -18,14 +18,41 @@ from sqlalchemy.orm import Session
 
 from backend.services.ai_service import AIService
 from backend.services.moderation_service import get_moderation_service, ModerationResult
+from backend.services.audit_service import AuditService
 from backend.database import get_db
 from backend.models.problem import Problem, DIFFICULTY_LEVELS
 from backend.models.user import User
+from backend.models.audit_log import ActionType
 from backend.auth.jwt_handler import get_current_user_optional
 
 router = APIRouter()
 ai_service = AIService()
 moderation_service = get_moderation_service()
+
+
+def _track_ai_cost(db: Session, user_id: int | None, action: ActionType):
+    """Track AI usage cost after an AI service call."""
+    try:
+        input_tokens, output_tokens = ai_service.get_last_usage()
+        if input_tokens > 0 or output_tokens > 0:
+            audit_service = AuditService(db)
+            audit_log = audit_service.log_action(
+                action=action,
+                user_id=user_id,
+                resource_type="ai",
+                details={"input_tokens": input_tokens, "output_tokens": output_tokens},
+            )
+            audit_service.track_ai_usage(
+                user_id=user_id,
+                audit_log_id=audit_log.id,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                model=ai_service.model,
+            )
+    except Exception as e:
+        # Don't fail the request if cost tracking fails
+        import logging
+        logging.getLogger(__name__).error(f"Failed to track AI cost: {e}")
 
 # Track user violations in memory (in production, use Redis or database)
 _user_violations: Dict[int, List[ModerationResult]] = {}
@@ -464,6 +491,9 @@ async def chat_about_design(
         solution_reference=solution_reference,
     )
 
+    # Track AI usage cost
+    _track_ai_cost(db, current_user.id if current_user else None, ActionType.AI_CHAT)
+
     # Build response
     diagram_feedback = None
     if result.get("diagram_feedback"):
@@ -490,6 +520,7 @@ async def evaluate_diagram(
     problem_id: int,
     diagram_data: Dict[str, Any],
     db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """
     Evaluate a diagram and provide structured feedback.
@@ -518,6 +549,9 @@ async def evaluate_diagram(
         solution_reference=solution_reference,
     )
 
+    # Track AI usage cost
+    _track_ai_cost(db, current_user.id if current_user else None, ActionType.EVALUATE_DIAGRAM)
+
     return {
         "feedback": result.get("response"),
         "diagram_feedback": result.get("diagram_feedback"),
@@ -530,6 +564,7 @@ async def evaluate_diagram(
 async def generate_design_summary(
     request: DesignSummaryRequest,
     db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """
     Generate a final design summary after the chat session.
@@ -575,6 +610,9 @@ async def generate_design_summary(
         current_api_spec=request.current_api_spec,
         current_diagram=request.current_diagram,
     )
+
+    # Track AI usage cost
+    _track_ai_cost(db, current_user.id if current_user else None, ActionType.GENERATE_SUMMARY)
 
     return DesignSummaryResponse(
         summary=result.get("summary", ""),
