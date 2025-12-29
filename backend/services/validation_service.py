@@ -58,22 +58,55 @@ class ValidationService:
             warnings.extend(api_result.get("warnings", []))
 
         # AI-powered design validation
+        ai_result = {}
         if design_text:
-            ai_result = await self.ai_service.validate_design(
-                problem_description=problem.description,
-                design_text=design_text,
-                schema_input=schema_input,
-                api_spec_input=api_spec_input,
-            )
-            errors.extend(ai_result.get("errors", []))
-            warnings.extend(ai_result.get("warnings", []))
-            suggestions.extend(ai_result.get("suggestions", []))
+            try:
+                # Parse design_text if it's a JSON string (from canvas editor)
+                design_content = design_text
+                try:
+                    parsed_design = json.loads(design_text)
+                    if isinstance(parsed_design, dict):
+                        # Extract text content from canvas mode structure
+                        if "text" in parsed_design and parsed_design.get("text"):
+                            design_content = parsed_design["text"]
+                        elif "canvas" in parsed_design:
+                            # For canvas-only designs, create a summary from the canvas data
+                            try:
+                                canvas_data = json.loads(parsed_design["canvas"]) if isinstance(parsed_design["canvas"], str) else parsed_design["canvas"]
+                                if canvas_data and "elements" in canvas_data:
+                                    elements = canvas_data.get("elements", [])
+                                    component_types = [el.get("type") for el in elements if el.get("type") not in ["rectangle", "ellipse", "arrow", "text"]]
+                                    labels = [el.get("label") for el in elements if el.get("label")]
+                                    if component_types or labels:
+                                        design_content = f"Canvas-based design with components: {', '.join(set(component_types))}. Components: {', '.join(labels)}"
+                                    else:
+                                        design_content = "Canvas-based system design diagram"
+                            except (json.JSONDecodeError, TypeError):
+                                design_content = "Canvas-based system design diagram"
+                except (json.JSONDecodeError, TypeError):
+                    # Keep original design_text if not valid JSON
+                    pass
+
+                ai_result = await self.ai_service.validate_design(
+                    problem_description=problem.description,
+                    design_text=design_content,
+                    schema_input=schema_input,
+                    api_spec_input=api_spec_input,
+                )
+                errors.extend(ai_result.get("errors", []))
+                warnings.extend(ai_result.get("warnings", []))
+                suggestions.extend(ai_result.get("suggestions", []))
+            except Exception as e:
+                # Log the error but don't fail validation completely
+                import logging
+                logging.error(f"AI validation failed: {str(e)}")
+                warnings.append("AI-powered validation was unavailable. Basic validation was performed.")
 
         # Determine if valid (no critical errors)
         is_valid = len(errors) == 0
 
         # Calculate score if AI provided one
-        score = ai_result.get("score") if design_text else None
+        score = ai_result.get("score") if ai_result else None
 
         return ValidationResponse(
             is_valid=is_valid,
