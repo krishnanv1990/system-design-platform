@@ -3,11 +3,14 @@
  * Provides a Monaco-based editor for defining API endpoints
  */
 
-import { Suspense, lazy } from 'react'
-import { Loader2 } from 'lucide-react'
+import { Suspense } from 'react'
+import { Loader2, RefreshCw } from 'lucide-react'
+import { lazyLoadMonaco } from '@/lib/lazyWithRetry'
+import { ErrorBoundary } from './ErrorBoundary'
+import { Button } from './ui/button'
 
-// Lazy load Monaco editor to prevent blocking initial render
-const Editor = lazy(() => import('@monaco-editor/react').then(mod => ({ default: mod.default })))
+// Lazy load Monaco editor with retry logic for chunk loading failures
+const Editor = lazyLoadMonaco()
 
 interface ApiSpecEditorProps {
   value: string
@@ -23,6 +26,28 @@ function EditorLoading() {
         <Loader2 className="h-4 w-4 animate-spin" />
         <span className="text-sm">Loading editor...</span>
       </div>
+    </div>
+  )
+}
+
+// Error fallback when Monaco editor fails to load
+function EditorError() {
+  const handleRefresh = () => {
+    window.location.reload()
+  }
+
+  return (
+    <div className="h-[300px] flex flex-col items-center justify-center bg-destructive/5 border border-destructive/20 rounded-lg gap-4">
+      <div className="text-center">
+        <p className="text-sm font-medium text-destructive">Failed to load editor</p>
+        <p className="text-xs text-muted-foreground mt-1">
+          This may happen after an update. Try refreshing the page.
+        </p>
+      </div>
+      <Button onClick={handleRefresh} variant="outline" size="sm">
+        <RefreshCw className="h-4 w-4 mr-2" />
+        Refresh Page
+      </Button>
     </div>
   )
 }
@@ -72,24 +97,26 @@ export default function ApiSpecEditor({
           Define your API endpoints, request/response schemas, and authentication
         </p>
       </div>
-      <Suspense fallback={<EditorLoading />}>
-        <Editor
-          height="300px"
-          defaultLanguage="json"
-          defaultValue={value || defaultApiSpec}
-          value={value || defaultApiSpec}
-          onChange={(v) => onChange(v || '')}
-          options={{
-            minimap: { enabled: false },
-            fontSize: 14,
-            lineNumbers: 'on',
-            readOnly,
-            scrollBeyondLastLine: false,
-            automaticLayout: true,
-          }}
-          theme="vs-light"
-        />
-      </Suspense>
+      <ErrorBoundary fallback={<EditorError />}>
+        <Suspense fallback={<EditorLoading />}>
+          <Editor
+            height="300px"
+            defaultLanguage="json"
+            defaultValue={value || defaultApiSpec}
+            value={value || defaultApiSpec}
+            onChange={(v) => onChange(v || '')}
+            options={{
+              minimap: { enabled: false },
+              fontSize: 14,
+              lineNumbers: 'on',
+              readOnly,
+              scrollBeyondLastLine: false,
+              automaticLayout: true,
+            }}
+            theme="vs-light"
+          />
+        </Suspense>
+      </ErrorBoundary>
     </div>
   )
 }
