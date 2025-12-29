@@ -160,10 +160,12 @@ export default function DesignCanvas({
   const [editingText, setEditingText] = useState<string | null>(null)
   const [textInput, setTextInput] = useState("")
   const [showExportMenu, setShowExportMenu] = useState(false)
+  const [showComponentMenu, setShowComponentMenu] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
   const [importError, setImportError] = useState<string | null>(null)
   const svgRef = useRef<SVGSVGElement>(null)
   const exportMenuRef = useRef<HTMLDivElement>(null)
+  const componentMenuRef = useRef<HTMLDivElement>(null)
 
   // Load from value - only on initial mount or when value changes externally
   useEffect(() => {
@@ -188,11 +190,14 @@ export default function DesignCanvas({
     }
   }, [elements, onChange])
 
-  // Close export menu when clicking outside
+  // Close menus when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (exportMenuRef.current && !exportMenuRef.current.contains(event.target as Node)) {
         setShowExportMenu(false)
+      }
+      if (componentMenuRef.current && !componentMenuRef.current.contains(event.target as Node)) {
+        setShowComponentMenu(false)
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
@@ -302,6 +307,7 @@ export default function DesignCanvas({
       const dx = pos.x - dragStart.x
       const dy = pos.y - dragStart.y
 
+      // Use skipHistory during drag to prevent fluttering and excessive history entries
       setElements(
         elements.map((el) => {
           if (el.id === selectedElement) {
@@ -318,7 +324,8 @@ export default function DesignCanvas({
             return { ...el, x: el.x + dx, y: el.y + dy }
           }
           return el
-        })
+        }),
+        { skipHistory: true }
       )
       setDragStart(pos)
     }
@@ -377,6 +384,12 @@ export default function DesignCanvas({
       const newElement = { ...tempElement, id: generateId() }
       setElements([...elements, newElement])
       setSelectedElement(newElement.id)
+    }
+
+    // Commit drag to history when drag ends (the drag used skipHistory)
+    if (isDragging && selectedElement) {
+      // Force a history commit by re-setting the current elements
+      setElements([...elements])
     }
 
     setIsDrawing(false)
@@ -953,22 +966,48 @@ export default function DesignCanvas({
             })}
             {/* Separator */}
             <div className="w-px h-6 bg-border mx-1" />
-            {/* System Design Components */}
-            {componentTools.map((tool) => {
-              const Icon = tool.icon
-              return (
-                <Button
-                  key={tool.id}
-                  variant={selectedTool === tool.id ? "default" : "ghost"}
-                  size="sm"
-                  className="h-8 w-8 p-0"
-                  onClick={() => setSelectedTool(tool.id)}
-                  title={tool.label}
-                >
-                  <Icon className="h-4 w-4" />
-                </Button>
-              )
-            })}
+            {/* System Design Components - Dropdown */}
+            <div className="relative" ref={componentMenuRef}>
+              <Button
+                variant={componentTools.some(t => t.id === selectedTool) ? "default" : "ghost"}
+                size="sm"
+                className="h-8 gap-1 px-2"
+                onClick={() => setShowComponentMenu(!showComponentMenu)}
+                title="System Components"
+              >
+                <Layers className="h-4 w-4" />
+                <span className="text-xs hidden sm:inline">Components</span>
+                <ChevronDown className="h-3 w-3" />
+              </Button>
+              {showComponentMenu && (
+                <div className="absolute top-full left-0 mt-1 bg-popover border rounded-lg shadow-lg z-20 min-w-[180px] py-1">
+                  <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground border-b mb-1">
+                    System Components
+                  </div>
+                  <div className="max-h-[300px] overflow-y-auto">
+                    {componentTools.map((tool) => {
+                      const Icon = tool.icon
+                      return (
+                        <button
+                          key={tool.id}
+                          className={cn(
+                            "w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-muted transition-colors text-left",
+                            selectedTool === tool.id && "bg-muted"
+                          )}
+                          onClick={() => {
+                            setSelectedTool(tool.id)
+                            setShowComponentMenu(false)
+                          }}
+                        >
+                          <Icon className="h-4 w-4 text-muted-foreground" />
+                          <span>{tool.label}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Color pickers */}

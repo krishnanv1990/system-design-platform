@@ -48,24 +48,43 @@ describe('DesignCanvas', () => {
       expect(screen.getByTitle('Text')).toBeInTheDocument()
     })
 
-    it('renders icon tools', () => {
+    it('renders component dropdown menu', async () => {
       render(<DesignCanvas value="" onChange={mockOnChange} />)
-      expect(screen.getByTitle('Database')).toBeInTheDocument()
-      expect(screen.getByTitle('Server')).toBeInTheDocument()
-      expect(screen.getByTitle('Cloud')).toBeInTheDocument()
-      expect(screen.getByTitle('User')).toBeInTheDocument()
-      expect(screen.getByTitle('Internet')).toBeInTheDocument()
+      // Components dropdown button should be visible
+      expect(screen.getByTitle('System Components')).toBeInTheDocument()
+
+      // Click to open dropdown
+      await act(async () => {
+        fireEvent.click(screen.getByTitle('System Components'))
+      })
+
+      // Icon tools should be in the dropdown
+      await waitFor(() => {
+        expect(screen.getByText('Database')).toBeInTheDocument()
+        expect(screen.getByText('Server')).toBeInTheDocument()
+        expect(screen.getByText('Cloud')).toBeInTheDocument()
+        expect(screen.getByText('User')).toBeInTheDocument()
+        expect(screen.getByText('Internet')).toBeInTheDocument()
+      })
     })
 
-    it('renders new system design component tools', () => {
+    it('renders all system design components in dropdown', async () => {
       render(<DesignCanvas value="" onChange={mockOnChange} />)
-      expect(screen.getByTitle('Client')).toBeInTheDocument()
-      expect(screen.getByTitle('DNS')).toBeInTheDocument()
-      expect(screen.getByTitle('Load Balancer')).toBeInTheDocument()
-      expect(screen.getByTitle('API Gateway')).toBeInTheDocument()
-      expect(screen.getByTitle('Cache')).toBeInTheDocument()
-      expect(screen.getByTitle('Message Queue')).toBeInTheDocument()
-      expect(screen.getByTitle('Blob Storage')).toBeInTheDocument()
+
+      // Click to open dropdown
+      await act(async () => {
+        fireEvent.click(screen.getByTitle('System Components'))
+      })
+
+      await waitFor(() => {
+        expect(screen.getByText('Client')).toBeInTheDocument()
+        expect(screen.getByText('DNS')).toBeInTheDocument()
+        expect(screen.getByText('Load Balancer')).toBeInTheDocument()
+        expect(screen.getByText('API Gateway')).toBeInTheDocument()
+        expect(screen.getByText('Cache')).toBeInTheDocument()
+        expect(screen.getByText('Message Queue')).toBeInTheDocument()
+        expect(screen.getByText('Blob Storage')).toBeInTheDocument()
+      })
     })
 
     it('renders undo/redo buttons', () => {
