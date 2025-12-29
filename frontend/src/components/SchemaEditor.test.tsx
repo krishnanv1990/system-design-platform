@@ -1280,4 +1280,219 @@ describe('SchemaEditor', () => {
       })
     })
   })
+
+  describe('Comprehensive JSON to Visual Sync Tests', () => {
+    it('verifies visual builder inputs are populated from JSON changes', async () => {
+      const onChange = vi.fn()
+      render(<SchemaEditor value={JSON.stringify({ stores: [] })} onChange={onChange} />)
+
+      // Initially no stores
+      expect(screen.getByText(/No data stores defined yet/i)).toBeInTheDocument()
+
+      // Open JSON editor
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /edit as json/i }))
+      })
+
+      // Add a store via JSON
+      const newSchema = {
+        stores: [{
+          name: 'products',
+          type: 'sql',
+          description: 'Product catalog',
+          fields: [
+            { name: 'sku', type: 'varchar', constraints: ['primary_key'], description: 'Stock keeping unit' }
+          ],
+          indexes: []
+        }]
+      }
+
+      const textarea = screen.getByTestId('json-editor-textarea')
+      await act(async () => {
+        fireEvent.change(textarea, { target: { value: JSON.stringify(newSchema) } })
+      })
+
+      // Verify visual builder shows the store
+      await waitFor(() => {
+        // Store name input should have the value
+        const storeNameInput = screen.getByDisplayValue('products')
+        expect(storeNameInput).toBeInTheDocument()
+
+        // Description should be visible
+        const descInput = screen.getByDisplayValue('Product catalog')
+        expect(descInput).toBeInTheDocument()
+
+        // Field should be visible
+        expect(screen.getByDisplayValue('sku')).toBeInTheDocument()
+      })
+    })
+
+    it('updates visual builder when JSON field names change', async () => {
+      const initialSchema = {
+        stores: [{
+          name: 'users',
+          type: 'sql',
+          fields: [{ name: 'old_field', type: 'varchar' }]
+        }]
+      }
+
+      const onChange = vi.fn()
+      render(<SchemaEditor value={JSON.stringify(initialSchema)} onChange={onChange} />)
+
+      // Verify initial field name
+      expect(screen.getByDisplayValue('old_field')).toBeInTheDocument()
+
+      // Open JSON editor
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /edit as json/i }))
+      })
+
+      // Change field name via JSON
+      const updatedSchema = {
+        stores: [{
+          name: 'users',
+          type: 'sql',
+          fields: [{ name: 'new_field', type: 'varchar' }]
+        }]
+      }
+
+      const textarea = screen.getByTestId('json-editor-textarea')
+      await act(async () => {
+        fireEvent.change(textarea, { target: { value: JSON.stringify(updatedSchema) } })
+      })
+
+      // Verify field name changed in visual builder
+      await waitFor(() => {
+        expect(screen.queryByDisplayValue('old_field')).not.toBeInTheDocument()
+        expect(screen.getByDisplayValue('new_field')).toBeInTheDocument()
+      })
+    })
+
+    it('syncs constraints from JSON to visual builder', async () => {
+      const initialSchema = {
+        stores: [{
+          name: 'items',
+          type: 'sql',
+          fields: [{ name: 'id', type: 'uuid', constraints: [] }]
+        }]
+      }
+
+      const onChange = vi.fn()
+      render(<SchemaEditor value={JSON.stringify(initialSchema)} onChange={onChange} />)
+
+      // Open JSON editor
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /edit as json/i }))
+      })
+
+      // Add constraints via JSON
+      const updatedSchema = {
+        stores: [{
+          name: 'items',
+          type: 'sql',
+          fields: [{ name: 'id', type: 'uuid', constraints: ['primary_key', 'not_null'] }]
+        }]
+      }
+
+      const textarea = screen.getByTestId('json-editor-textarea')
+      await act(async () => {
+        fireEvent.change(textarea, { target: { value: JSON.stringify(updatedSchema) } })
+      })
+
+      // Verify constraints appear in visual builder
+      await waitFor(() => {
+        expect(screen.getByText('PK')).toBeInTheDocument()
+        expect(screen.getByText('NN')).toBeInTheDocument()
+      })
+    })
+
+    it('maintains sync after multiple JSON edits', async () => {
+      const onChange = vi.fn()
+      render(<SchemaEditor value={JSON.stringify({ stores: [] })} onChange={onChange} />)
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /edit as json/i }))
+      })
+
+      const textarea = screen.getByTestId('json-editor-textarea')
+
+      // First edit
+      const schema1 = { stores: [{ name: 'store1', type: 'sql', fields: [] }] }
+      await act(async () => {
+        fireEvent.change(textarea, { target: { value: JSON.stringify(schema1) } })
+      })
+      await waitFor(() => {
+        expect(screen.getByDisplayValue('store1')).toBeInTheDocument()
+      })
+
+      // Second edit
+      const schema2 = { stores: [{ name: 'store2', type: 'sql', fields: [] }] }
+      await act(async () => {
+        fireEvent.change(textarea, { target: { value: JSON.stringify(schema2) } })
+      })
+      await waitFor(() => {
+        expect(screen.queryByDisplayValue('store1')).not.toBeInTheDocument()
+        expect(screen.getByDisplayValue('store2')).toBeInTheDocument()
+      })
+
+      // Third edit - add more stores
+      const schema3 = {
+        stores: [
+          { name: 'store2', type: 'sql', fields: [] },
+          { name: 'store3', type: 'kv', fields: [] }
+        ]
+      }
+      await act(async () => {
+        fireEvent.change(textarea, { target: { value: JSON.stringify(schema3) } })
+      })
+      await waitFor(() => {
+        expect(screen.getByDisplayValue('store2')).toBeInTheDocument()
+        expect(screen.getByDisplayValue('store3')).toBeInTheDocument()
+      })
+    })
+
+    it('handles switching between JSON and visual edits seamlessly', async () => {
+      const initialSchema = {
+        stores: [{ name: 'test', type: 'sql', fields: [] }]
+      }
+
+      const onChange = vi.fn()
+      render(<SchemaEditor value={JSON.stringify(initialSchema)} onChange={onChange} />)
+
+      // Edit via visual builder
+      const nameInput = screen.getByDisplayValue('test')
+      await act(async () => {
+        fireEvent.change(nameInput, { target: { value: 'visual_edit' } })
+      })
+      expect(screen.getByDisplayValue('visual_edit')).toBeInTheDocument()
+
+      // Open JSON editor and verify it reflects visual change
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /edit as json/i }))
+      })
+
+      const textarea = screen.getByTestId('json-editor-textarea')
+      expect(textarea.value).toContain('visual_edit')
+
+      // Edit via JSON
+      const newSchema = { stores: [{ name: 'json_edit', type: 'sql', fields: [] }] }
+      await act(async () => {
+        fireEvent.change(textarea, { target: { value: JSON.stringify(newSchema) } })
+      })
+
+      // Verify visual builder updated
+      await waitFor(() => {
+        expect(screen.getByDisplayValue('json_edit')).toBeInTheDocument()
+      })
+
+      // Edit via visual builder again
+      const updatedInput = screen.getByDisplayValue('json_edit')
+      await act(async () => {
+        fireEvent.change(updatedInput, { target: { value: 'final_edit' } })
+      })
+
+      // Verify JSON also updated
+      expect(textarea.value).toContain('final_edit')
+    })
+  })
 })
