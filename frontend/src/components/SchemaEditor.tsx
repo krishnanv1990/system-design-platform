@@ -220,6 +220,79 @@ const generateId = () => Math.random().toString(36).substring(2, 11)
 // Valid database type IDs
 const VALID_DB_TYPES = DATABASE_TYPES.map(t => t.id)
 
+// Parse constraint string like "PRIMARY KEY NOT NULL UNIQUE" into array ["primary_key", "not_null", "unique"]
+const parseConstraintString = (constraintStr: string): string[] => {
+  if (!constraintStr) return []
+
+  const str = constraintStr.toUpperCase()
+  const constraints: string[] = []
+
+  // Check for each constraint type
+  if (str.includes('PRIMARY KEY') || str.includes('PRIMARY_KEY')) {
+    constraints.push('primary_key')
+  }
+  if (str.includes('UNIQUE')) {
+    constraints.push('unique')
+  }
+  if (str.includes('NOT NULL') || str.includes('NOT_NULL')) {
+    constraints.push('not_null')
+  }
+  if (str.includes('REFERENCES') || str.includes('FOREIGN KEY') || str.includes('FOREIGN_KEY')) {
+    constraints.push('foreign_key')
+  }
+  if (str.includes('AUTO_INCREMENT') || str.includes('AUTOINCREMENT') || str.includes('SERIAL')) {
+    constraints.push('auto_increment')
+  }
+  if (str.includes('DEFAULT')) {
+    constraints.push('default')
+  }
+  if (str.includes('INDEX')) {
+    constraints.push('indexed')
+  }
+
+  return constraints
+}
+
+// Normalize type string to match dropdown options
+const normalizeColumnType = (typeStr: string): string => {
+  if (!typeStr) return 'varchar'
+
+  const upperType = typeStr.toUpperCase()
+
+  // Handle common type variations
+  if (upperType.includes('BIGSERIAL')) return 'bigserial'
+  if (upperType.includes('SMALLSERIAL')) return 'smallserial'
+  if (upperType.includes('SERIAL')) return 'serial'
+  if (upperType.includes('BIGINT')) return 'bigint'
+  if (upperType.includes('SMALLINT')) return 'smallint'
+  if (upperType.includes('INTEGER') || upperType === 'INT') return 'integer'
+  if (upperType.includes('UUID')) return 'uuid'
+  if (upperType.includes('VARCHAR')) return 'varchar'
+  if (upperType.includes('CHAR')) return 'char'
+  if (upperType.includes('TEXT')) return 'text'
+  if (upperType.includes('BOOLEAN') || upperType === 'BOOL') return 'boolean'
+  if (upperType.includes('TIMESTAMPTZ') || upperType.includes('TIMESTAMP WITH TIME ZONE')) return 'timestamptz'
+  if (upperType.includes('TIMESTAMP')) return 'timestamp'
+  if (upperType.includes('TIMETZ') || upperType.includes('TIME WITH TIME ZONE')) return 'timetz'
+  if (upperType.includes('TIME')) return 'time'
+  if (upperType.includes('DATE')) return 'date'
+  if (upperType.includes('INTERVAL')) return 'interval'
+  if (upperType.includes('JSONB')) return 'jsonb'
+  if (upperType.includes('JSON')) return 'json'
+  if (upperType.includes('BYTEA')) return 'bytea'
+  if (upperType.includes('DECIMAL')) return 'decimal'
+  if (upperType.includes('NUMERIC')) return 'numeric'
+  if (upperType.includes('REAL')) return 'real'
+  if (upperType.includes('DOUBLE')) return 'double'
+  if (upperType.includes('FLOAT')) return 'float'
+  if (upperType.includes('INET')) return 'inet'
+  if (upperType.includes('CIDR')) return 'cidr'
+  if (upperType.includes('MACADDR')) return 'macaddr'
+  if (upperType.includes('ARRAY')) return 'array'
+
+  return 'varchar'
+}
+
 // Helper to parse a single store object
 const parseStoreObject = (store: any): TableStore => {
   // Validate and normalize dbType
@@ -229,10 +302,17 @@ const parseStoreObject = (store: any): TableStore => {
   // Get fields array - support both 'fields' and 'columns' property names
   const fieldsArray = store.fields || store.columns || []
 
-  // Ensure constraints is always an array
+  // Ensure constraints is always an array and parse constraint strings
   const normalizeConstraints = (constraints: any): string[] => {
-    if (Array.isArray(constraints)) return constraints
-    if (typeof constraints === 'string') return [constraints]
+    if (Array.isArray(constraints)) {
+      // Already an array - normalize each item
+      return constraints.flatMap(c =>
+        typeof c === 'string' ? parseConstraintString(c) : []
+      ).filter((v, i, a) => a.indexOf(v) === i) // Remove duplicates
+    }
+    if (typeof constraints === 'string') {
+      return parseConstraintString(constraints)
+    }
     return []
   }
 
@@ -244,7 +324,7 @@ const parseStoreObject = (store: any): TableStore => {
     columns: (Array.isArray(fieldsArray) ? fieldsArray : []).map((col: any) => ({
       id: generateId(),
       name: col.name || "",
-      type: col.type || "varchar",
+      type: normalizeColumnType(col.type),
       constraints: normalizeConstraints(col.constraints),
       description: col.description || "",
     })),
@@ -268,23 +348,29 @@ const parseSchema = (jsonStr: string): TableStore[] => {
       return data.stores.map(parseStoreObject)
     }
 
+    // Handle tables array format: { tables: [{ name: "users", columns: [...] }] }
+    if (data.tables && Array.isArray(data.tables)) {
+      return data.tables.map(parseStoreObject)
+    }
+
     // Legacy format: { tables: { tableName: { columns: {...} } } }
-    if (data.tables && typeof data.tables === 'object') {
+    // Where tables is an object with table names as keys
+    if (data.tables && typeof data.tables === 'object' && !Array.isArray(data.tables)) {
       return Object.entries(data.tables).map(([name, table]: [string, any]) => ({
         id: generateId(),
         name,
         dbType: "sql" as DatabaseType,
-        description: "",
+        description: table.description || "",
         columns: Object.entries(table.columns || {}).map(([colName, col]: [string, any]) => ({
           id: generateId(),
           name: colName,
-          type: typeof col === "string" ? col : col.type || "varchar",
-          constraints: [
+          type: typeof col === "string" ? normalizeColumnType(col) : normalizeColumnType(col.type),
+          constraints: typeof col === "string" ? [] : [
             col.primary_key && "primary_key",
             col.unique && "unique",
             col.nullable === false && "not_null",
           ].filter(Boolean) as string[],
-          description: "",
+          description: typeof col === "string" ? "" : (col.description || ""),
         })),
         indexes: Array.isArray(table.indexes) ? table.indexes : [],
         expanded: true,

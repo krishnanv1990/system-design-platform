@@ -1495,4 +1495,298 @@ describe('SchemaEditor', () => {
       expect(textarea.value).toContain('final_edit')
     })
   })
+
+  describe('Tables Array Format Support (User-reported bug fix)', () => {
+    it('parses tables array format with columns property', () => {
+      // This is the exact format the user reported was broken
+      const tablesArraySchema = {
+        tables: [
+          {
+            name: 'urls',
+            columns: [
+              { name: 'id', type: 'BIGSERIAL', constraints: 'PRIMARY KEY' },
+              { name: 'short_code', type: 'VARCHAR(10)', constraints: 'UNIQUE NOT NULL' },
+              { name: 'original_url', type: 'TEXT', constraints: 'NOT NULL' },
+              { name: 'created_at', type: 'TIMESTAMPTZ' },
+            ],
+          },
+        ],
+      }
+
+      render(<SchemaEditor value={JSON.stringify(tablesArraySchema)} onChange={vi.fn()} />)
+
+      // Store name should be 'urls', not '0'
+      expect(screen.getByDisplayValue('urls')).toBeInTheDocument()
+
+      // Field names should be actual names, not array indices
+      expect(screen.getByDisplayValue('id')).toBeInTheDocument()
+      expect(screen.getByDisplayValue('short_code')).toBeInTheDocument()
+      expect(screen.getByDisplayValue('original_url')).toBeInTheDocument()
+      expect(screen.getByDisplayValue('created_at')).toBeInTheDocument()
+
+      // Should show 4 fields
+      expect(screen.getByText('4 fields')).toBeInTheDocument()
+    })
+
+    it('parses constraint strings correctly', () => {
+      const schemaWithStringConstraints = {
+        tables: [
+          {
+            name: 'users',
+            columns: [
+              { name: 'id', type: 'BIGSERIAL', constraints: 'PRIMARY KEY' },
+              { name: 'email', type: 'VARCHAR', constraints: 'UNIQUE NOT NULL' },
+            ],
+          },
+        ],
+      }
+
+      render(<SchemaEditor value={JSON.stringify(schemaWithStringConstraints)} onChange={vi.fn()} />)
+
+      // Primary Key badge should be visible
+      expect(screen.getByText('PK')).toBeInTheDocument()
+      // Unique badge should be visible
+      expect(screen.getByText('UQ')).toBeInTheDocument()
+      // Not Null badge should be visible
+      expect(screen.getByText('NN')).toBeInTheDocument()
+    })
+
+    it('normalizes uppercase SQL types', () => {
+      const schemaWithUppercaseTypes = {
+        tables: [
+          {
+            name: 'products',
+            columns: [
+              { name: 'id', type: 'BIGSERIAL' },
+              { name: 'price', type: 'DECIMAL(10,2)' },
+              { name: 'created', type: 'TIMESTAMP WITH TIME ZONE' },
+            ],
+          },
+        ],
+      }
+
+      const onChange = vi.fn()
+      render(<SchemaEditor value={JSON.stringify(schemaWithUppercaseTypes)} onChange={onChange} />)
+
+      expect(screen.getByDisplayValue('products')).toBeInTheDocument()
+      expect(screen.getByText('3 fields')).toBeInTheDocument()
+    })
+
+    it('handles multiple tables in array format', () => {
+      const multiTableSchema = {
+        tables: [
+          {
+            name: 'urls',
+            columns: [
+              { name: 'id', type: 'BIGSERIAL', constraints: 'PRIMARY KEY' },
+              { name: 'short_code', type: 'VARCHAR' },
+            ],
+          },
+          {
+            name: 'analytics',
+            columns: [
+              { name: 'id', type: 'BIGSERIAL', constraints: 'PRIMARY KEY' },
+              { name: 'url_id', type: 'BIGINT', constraints: 'REFERENCES urls(id)' },
+              { name: 'clicks', type: 'INTEGER' },
+            ],
+          },
+        ],
+      }
+
+      render(<SchemaEditor value={JSON.stringify(multiTableSchema)} onChange={vi.fn()} />)
+
+      // Both table names should appear
+      expect(screen.getByDisplayValue('urls')).toBeInTheDocument()
+      expect(screen.getByDisplayValue('analytics')).toBeInTheDocument()
+
+      // Field counts
+      expect(screen.getByText('2 fields')).toBeInTheDocument()
+      expect(screen.getByText('3 fields')).toBeInTheDocument()
+    })
+
+    it('parses foreign key constraint from string', () => {
+      const schemaWithForeignKey = {
+        tables: [
+          {
+            name: 'analytics',
+            columns: [
+              { name: 'url_id', type: 'BIGINT', constraints: 'REFERENCES urls(id)' },
+            ],
+          },
+        ],
+      }
+
+      render(<SchemaEditor value={JSON.stringify(schemaWithForeignKey)} onChange={vi.fn()} />)
+
+      // Foreign Key badge should be visible
+      expect(screen.getByText('FK')).toBeInTheDocument()
+    })
+
+    it('parses auto_increment constraint from SERIAL type', () => {
+      const schemaWithSerial = {
+        tables: [
+          {
+            name: 'items',
+            columns: [
+              { name: 'id', type: 'SERIAL', constraints: 'PRIMARY KEY' },
+            ],
+          },
+        ],
+      }
+
+      render(<SchemaEditor value={JSON.stringify(schemaWithSerial)} onChange={vi.fn()} />)
+
+      // Auto-increment badge should be visible (derived from SERIAL in constraints)
+      expect(screen.getByText('PK')).toBeInTheDocument()
+    })
+
+    it('handles tables array via JSON editor sync', async () => {
+      const onChange = vi.fn()
+      render(<SchemaEditor value="{}" onChange={onChange} />)
+
+      // Initially empty
+      expect(screen.getByText(/No data stores defined yet/i)).toBeInTheDocument()
+
+      // Open JSON editor
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /edit as json/i }))
+      })
+
+      // Paste the exact JSON format from user report
+      const userReportedSchema = {
+        tables: [
+          {
+            name: 'urls',
+            columns: [
+              { name: 'id', type: 'BIGSERIAL', constraints: 'PRIMARY KEY' },
+              { name: 'short_code', type: 'VARCHAR(10)', constraints: 'UNIQUE NOT NULL' },
+              { name: 'original_url', type: 'TEXT', constraints: 'NOT NULL' },
+              { name: 'created_at', type: 'TIMESTAMPTZ' },
+            ],
+          },
+        ],
+      }
+
+      const textarea = screen.getByTestId('json-editor-textarea')
+      await act(async () => {
+        fireEvent.change(textarea, { target: { value: JSON.stringify(userReportedSchema) } })
+      })
+
+      // Visual builder should show correct data
+      await waitFor(() => {
+        expect(screen.getByDisplayValue('urls')).toBeInTheDocument()
+        expect(screen.getByDisplayValue('id')).toBeInTheDocument()
+        expect(screen.getByDisplayValue('short_code')).toBeInTheDocument()
+        expect(screen.getByText('4 fields')).toBeInTheDocument()
+        expect(screen.getByText('PK')).toBeInTheDocument()
+      })
+    })
+
+    it('handles constraint strings with multiple constraints', () => {
+      const schemaWithMultiConstraints = {
+        tables: [
+          {
+            name: 'test',
+            columns: [
+              { name: 'col1', type: 'VARCHAR', constraints: 'PRIMARY KEY UNIQUE NOT NULL' },
+              { name: 'col2', type: 'INTEGER', constraints: 'DEFAULT 0 NOT NULL' },
+              { name: 'col3', type: 'VARCHAR', constraints: 'UNIQUE INDEX' },
+            ],
+          },
+        ],
+      }
+
+      render(<SchemaEditor value={JSON.stringify(schemaWithMultiConstraints)} onChange={vi.fn()} />)
+
+      // All constraint badges should be visible
+      expect(screen.getAllByText('PK').length).toBe(1)
+      expect(screen.getAllByText('UQ').length).toBe(2) // col1 and col3 both have UNIQUE
+      expect(screen.getAllByText('NN').length).toBe(2) // col1 and col2 both have NOT NULL
+      expect(screen.getAllByText('DEF').length).toBe(1)
+      expect(screen.getAllByText('IDX').length).toBe(1)
+    })
+
+    it('preserves table data through round-trip editing', async () => {
+      const originalSchema = {
+        tables: [
+          {
+            name: 'urls',
+            columns: [
+              { name: 'id', type: 'BIGSERIAL', constraints: 'PRIMARY KEY' },
+              { name: 'short_code', type: 'VARCHAR' },
+            ],
+          },
+        ],
+      }
+
+      const onChange = vi.fn()
+      render(<SchemaEditor value={JSON.stringify(originalSchema)} onChange={onChange} />)
+
+      // Edit store name in visual builder
+      const nameInput = screen.getByDisplayValue('urls')
+      await act(async () => {
+        fireEvent.change(nameInput, { target: { value: 'shortened_urls' } })
+      })
+
+      // Verify onChange was called with correct data
+      await waitFor(() => {
+        const lastCall = onChange.mock.calls[onChange.mock.calls.length - 1]
+        const parsedSchema = JSON.parse(lastCall[0])
+        expect(parsedSchema.stores[0].name).toBe('shortened_urls')
+        expect(parsedSchema.stores[0].fields.length).toBe(2)
+        expect(parsedSchema.stores[0].fields[0].name).toBe('id')
+        expect(parsedSchema.stores[0].fields[1].name).toBe('short_code')
+      })
+    })
+  })
+
+  describe('Column Type Normalization', () => {
+    it('normalizes BIGSERIAL to bigserial', () => {
+      const schema = { tables: [{ name: 't', columns: [{ name: 'id', type: 'BIGSERIAL' }] }] }
+      render(<SchemaEditor value={JSON.stringify(schema)} onChange={vi.fn()} />)
+      expect(screen.getByDisplayValue('id')).toBeInTheDocument()
+    })
+
+    it('normalizes VARCHAR(255) to varchar', () => {
+      const schema = { tables: [{ name: 't', columns: [{ name: 'name', type: 'VARCHAR(255)' }] }] }
+      render(<SchemaEditor value={JSON.stringify(schema)} onChange={vi.fn()} />)
+      expect(screen.getByDisplayValue('name')).toBeInTheDocument()
+    })
+
+    it('normalizes TIMESTAMP WITH TIME ZONE to timestamptz', () => {
+      const schema = { tables: [{ name: 't', columns: [{ name: 'created', type: 'TIMESTAMP WITH TIME ZONE' }] }] }
+      render(<SchemaEditor value={JSON.stringify(schema)} onChange={vi.fn()} />)
+      expect(screen.getByDisplayValue('created')).toBeInTheDocument()
+    })
+
+    it('normalizes BOOLEAN to boolean', () => {
+      const schema = { tables: [{ name: 't', columns: [{ name: 'active', type: 'BOOLEAN' }] }] }
+      render(<SchemaEditor value={JSON.stringify(schema)} onChange={vi.fn()} />)
+      expect(screen.getByDisplayValue('active')).toBeInTheDocument()
+    })
+
+    it('normalizes INT to integer', () => {
+      const schema = { tables: [{ name: 't', columns: [{ name: 'count', type: 'INT' }] }] }
+      render(<SchemaEditor value={JSON.stringify(schema)} onChange={vi.fn()} />)
+      expect(screen.getByDisplayValue('count')).toBeInTheDocument()
+    })
+
+    it('normalizes JSONB to jsonb', () => {
+      const schema = { tables: [{ name: 't', columns: [{ name: 'data', type: 'JSONB' }] }] }
+      render(<SchemaEditor value={JSON.stringify(schema)} onChange={vi.fn()} />)
+      expect(screen.getByDisplayValue('data')).toBeInTheDocument()
+    })
+
+    it('defaults unknown types to varchar', () => {
+      const schema = { tables: [{ name: 't', columns: [{ name: 'custom', type: 'UNKNOWN_TYPE' }] }] }
+      render(<SchemaEditor value={JSON.stringify(schema)} onChange={vi.fn()} />)
+      expect(screen.getByDisplayValue('custom')).toBeInTheDocument()
+    })
+
+    it('handles empty type string', () => {
+      const schema = { tables: [{ name: 't', columns: [{ name: 'col', type: '' }] }] }
+      render(<SchemaEditor value={JSON.stringify(schema)} onChange={vi.fn()} />)
+      expect(screen.getByDisplayValue('col')).toBeInTheDocument()
+    })
+  })
 })
