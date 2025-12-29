@@ -20,6 +20,8 @@ from backend.services.warm_pool_service import WarmPoolService, ServiceType
 from backend.services.test_runner import TestRunner
 from backend.services.gcp_service import GCPService
 from backend.services.cleanup_scheduler import cleanup_scheduler
+from backend.services.audit_service import AuditService
+from backend.models.audit_log import ActionType
 from backend.config import get_settings
 
 settings = get_settings()
@@ -212,6 +214,29 @@ class SubmissionOrchestrator:
                 design_text=submission.design_text or "",
                 api_spec=submission.api_spec_input,
             )
+
+            # Track AI usage cost
+            try:
+                input_tokens, output_tokens = ai_service.get_last_usage()
+                if input_tokens > 0 or output_tokens > 0:
+                    audit_service = AuditService(db)
+                    audit_log = audit_service.log_action(
+                        action=ActionType.AI_GENERATE_CODE,
+                        user_id=submission.user_id,
+                        resource_type="submission",
+                        resource_id=submission.id,
+                        details={"input_tokens": input_tokens, "output_tokens": output_tokens},
+                    )
+                    audit_service.track_ai_usage(
+                        user_id=submission.user_id,
+                        audit_log_id=audit_log.id,
+                        input_tokens=input_tokens,
+                        output_tokens=output_tokens,
+                        model=ai_service.model,
+                    )
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).error(f"Failed to track AI cost: {e}")
 
             SubmissionOrchestrator._update_progress(
                 db, submission,
@@ -664,6 +689,29 @@ if __name__ == "__main__":
                 api_spec=submission.api_spec_input,
                 required_services=[s.value for s in required_services],
             )
+
+            # Track AI usage cost
+            try:
+                input_tokens, output_tokens = ai_service.get_last_usage()
+                if input_tokens > 0 or output_tokens > 0:
+                    audit_service = AuditService(db)
+                    audit_log = audit_service.log_action(
+                        action=ActionType.AI_GENERATE_CODE,
+                        user_id=submission.user_id,
+                        resource_type="submission",
+                        resource_id=submission.id,
+                        details={"input_tokens": input_tokens, "output_tokens": output_tokens, "mode": "warm_pool"},
+                    )
+                    audit_service.track_ai_usage(
+                        user_id=submission.user_id,
+                        audit_log_id=audit_log.id,
+                        input_tokens=input_tokens,
+                        output_tokens=output_tokens,
+                        model=ai_service.model,
+                    )
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).error(f"Failed to track AI cost: {e}")
 
             result = await warm_pool.deploy_candidate_api(
                 submission_id=submission.id,

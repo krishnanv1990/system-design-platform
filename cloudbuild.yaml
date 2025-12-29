@@ -37,6 +37,44 @@ steps:
       - '--max-instances'
       - '5'
 
+  # Build the admin frontend container
+  - name: 'gcr.io/cloud-builders/docker'
+    dir: 'frontend'
+    args:
+      - 'build'
+      - '-f'
+      - 'Dockerfile.admin'
+      - '-t'
+      - 'us-central1-docker.pkg.dev/$PROJECT_ID/sdp-repo/sdp-admin:latest'
+      - '.'
+
+  # Push the admin frontend container
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'us-central1-docker.pkg.dev/$PROJECT_ID/sdp-repo/sdp-admin:latest']
+
+  # Deploy admin frontend to Cloud Run (restricted access)
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'sdp-admin'
+      - '--image'
+      - 'us-central1-docker.pkg.dev/$PROJECT_ID/sdp-repo/sdp-admin:latest'
+      - '--region'
+      - 'us-central1'
+      - '--platform'
+      - 'managed'
+      - '--allow-unauthenticated'
+      - '--memory'
+      - '256Mi'
+      - '--cpu'
+      - '1'
+      - '--min-instances'
+      - '0'
+      - '--max-instances'
+      - '2'
+
   # Build the backend container
   - name: 'gcr.io/cloud-builders/docker'
     args: ['build', '-t', 'us-central1-docker.pkg.dev/$PROJECT_ID/sdp-repo/sdp-backend:latest', '-f', 'Dockerfile.backend', '.']
@@ -100,6 +138,7 @@ steps:
 
 images:
   - 'us-central1-docker.pkg.dev/$PROJECT_ID/sdp-repo/sdp-frontend:latest'
+  - 'us-central1-docker.pkg.dev/$PROJECT_ID/sdp-repo/sdp-admin:latest'
   - 'us-central1-docker.pkg.dev/$PROJECT_ID/sdp-repo/sdp-backend:latest'
 
 options:

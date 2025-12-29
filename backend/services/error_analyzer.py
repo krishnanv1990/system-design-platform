@@ -32,6 +32,12 @@ class ErrorAnalyzer:
         else:
             self.client = None
         self.model = "claude-sonnet-4-20250514"
+        self._last_input_tokens = 0
+        self._last_output_tokens = 0
+
+    def get_last_usage(self) -> tuple[int, int]:
+        """Get the input and output tokens from the last API call."""
+        return self._last_input_tokens, self._last_output_tokens
 
     async def analyze_failure(
         self,
@@ -86,6 +92,10 @@ class ErrorAnalyzer:
                     {"role": "user", "content": user_message}
                 ]
             )
+
+            # Track token usage
+            self._last_input_tokens = message.usage.input_tokens
+            self._last_output_tokens = message.usage.output_tokens
 
             response_text = message.content[0].text
 

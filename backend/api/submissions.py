@@ -22,6 +22,8 @@ from backend.auth.jwt_handler import get_current_user, get_current_user_optional
 from backend.services.validation_service import ValidationService
 from backend.services.orchestrator import SubmissionOrchestrator
 from backend.services.cleanup_scheduler import cleanup_scheduler
+from backend.services.audit_service import AuditService
+from backend.models.audit_log import ActionType
 from backend.middleware.rate_limiter import limiter, submissions_limit, validate_limit
 
 router = APIRouter()
@@ -180,6 +182,29 @@ async def validate_submission(
         api_spec_input=validation_data.api_spec_input,
         design_text=validation_data.design_text,
     )
+
+    # Track AI usage cost for design validation
+    try:
+        input_tokens, output_tokens = validation_service.ai_service.get_last_usage()
+        if input_tokens > 0 or output_tokens > 0:
+            audit_service = AuditService(db)
+            audit_log = audit_service.log_action(
+                action=ActionType.AI_VALIDATE_DESIGN,
+                user_id=current_user.id,
+                resource_type="problem",
+                resource_id=validation_data.problem_id,
+                details={"input_tokens": input_tokens, "output_tokens": output_tokens},
+            )
+            audit_service.track_ai_usage(
+                user_id=current_user.id,
+                audit_log_id=audit_log.id,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                model=validation_service.ai_service.model,
+            )
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(f"Failed to track AI cost: {e}")
 
     return result
 

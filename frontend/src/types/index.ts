@@ -20,6 +20,8 @@ export interface User {
   facebook_id?: string | null
   linkedin_id?: string | null
   github_id?: string | null
+  // Admin status (optional, may not be present in all responses)
+  is_admin?: boolean
   // Ban status (optional, may not be present in all responses)
   is_banned?: boolean
   ban_reason?: string | null
