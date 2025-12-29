@@ -141,7 +141,11 @@ def find_or_create_user(
 def create_auth_redirect(token: str, source: str = "user") -> RedirectResponse:
     """Create redirect to frontend with JWT token."""
     frontend_url = get_redirect_url(source)
-    redirect_url = f"{frontend_url}/#/auth/callback?token={token}"
+    # Admin uses BrowserRouter (non-hash URLs), user portal uses HashRouter
+    if source == "admin":
+        redirect_url = f"{frontend_url}/auth/callback?token={token}"
+    else:
+        redirect_url = f"{frontend_url}/#/auth/callback?token={token}"
     print(f"OAuth redirect URL: {redirect_url[:100]}...")
     return RedirectResponse(url=redirect_url)
 
@@ -149,7 +153,11 @@ def create_auth_redirect(token: str, source: str = "user") -> RedirectResponse:
 def create_error_redirect(error: str, source: str = "user") -> RedirectResponse:
     """Create redirect to frontend with error message."""
     frontend_url = get_redirect_url(source)
-    redirect_url = f"{frontend_url}/#/auth/callback?error={error}"
+    # Admin uses BrowserRouter (non-hash URLs), user portal uses HashRouter
+    if source == "admin":
+        redirect_url = f"{frontend_url}/auth/callback?error={error}"
+    else:
+        redirect_url = f"{frontend_url}/#/auth/callback?error={error}"
     return RedirectResponse(url=redirect_url)
 
 

@@ -28,6 +28,8 @@ class UserResponse(BaseModel):
     facebook_id: Optional[str] = None
     linkedin_id: Optional[str] = None
     github_id: Optional[str] = None
+    # Admin status
+    is_admin: bool = False
     # Ban status (optional in some contexts)
     is_banned: Optional[bool] = None
     ban_reason: Optional[str] = None
