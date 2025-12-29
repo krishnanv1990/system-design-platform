@@ -1471,7 +1471,7 @@ describe('SchemaEditor', () => {
         fireEvent.click(screen.getByRole('button', { name: /edit as json/i }))
       })
 
-      const textarea = screen.getByTestId('json-editor-textarea')
+      const textarea = screen.getByTestId('json-editor-textarea') as HTMLTextAreaElement
       expect(textarea.value).toContain('visual_edit')
 
       // Edit via JSON
