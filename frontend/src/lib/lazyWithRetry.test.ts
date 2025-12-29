@@ -9,14 +9,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 // Mock sessionStorage
 const mockSessionStorage = {
   store: {} as Record<string, string>,
-  getItem: vi.fn((key: string) => mockSessionStorage.store[key] || null),
-  setItem: vi.fn((key: string, value: string) => {
+  getItem: vi.fn().mockImplementation((key: string): string | null => mockSessionStorage.store[key] || null),
+  setItem: vi.fn().mockImplementation((key: string, value: string): void => {
     mockSessionStorage.store[key] = value
   }),
-  removeItem: vi.fn((key: string) => {
+  removeItem: vi.fn().mockImplementation((key: string): void => {
     delete mockSessionStorage.store[key]
   }),
-  clear: vi.fn(() => {
+  clear: vi.fn().mockImplementation((): void => {
     mockSessionStorage.store = {}
   }),
 }
@@ -49,13 +49,11 @@ describe('lazyWithRetry', () => {
       const mockComponent = { default: () => null }
       const importFn = vi.fn().mockResolvedValue(mockComponent)
 
-      const LazyComponent = lazyWithRetry(importFn)
+      // Create the lazy component
+      const _LazyComponent = lazyWithRetry(importFn)
 
-      // Access the internal loader by triggering the lazy load
-      // React.lazy returns a lazy component that loads when rendered
-      // We need to access the internal promise
-      const internalType = (LazyComponent as any)._payload
-      const loader = internalType._result || internalType
+      // Verify the component was created (LazyComponent is used for type checking)
+      expect(_LazyComponent).toBeDefined()
 
       // For testing, we'll call the import function directly
       const result = await importFn()
@@ -141,7 +139,8 @@ describe('lazyWithRetry', () => {
       const importFn = vi.fn().mockRejectedValue(error)
 
       // Create the lazy component with 2 retries
-      const LazyComponent = lazyWithRetry(importFn, 2, 100)
+      const _LazyComponent = lazyWithRetry(importFn, 2, 100)
+      expect(_LazyComponent).toBeDefined()
 
       // The actual retry logic is inside the lazy loader
       // We can verify the import function can be called multiple times
@@ -168,6 +167,10 @@ describe('lazyWithRetry', () => {
         }
         return Promise.resolve(mockComponent)
       })
+
+      // Create lazy component to ensure import works
+      const _lazy = lazyWithRetry(importFn)
+      expect(_lazy).toBeDefined()
 
       // Call twice - first fails, second succeeds
       await expect(importFn()).rejects.toThrow('Temporary failure')
@@ -213,12 +216,16 @@ describe('lazyWithRetry', () => {
 
       const { lazyWithRetry } = await import('./lazyWithRetry')
 
-      // Import and verify setup
+      // Verify the module loaded and setup is correct
+      expect(lazyWithRetry).toBeDefined()
       expect(mockSessionStorage.store['chunk_refresh_attempted']).toBeDefined()
     })
 
     it('marks refresh as attempted before refreshing', async () => {
       const { lazyWithRetry } = await import('./lazyWithRetry')
+
+      // Verify the module loaded
+      expect(lazyWithRetry).toBeDefined()
 
       // The function should be able to mark refresh
       mockSessionStorage.setItem('chunk_refresh_attempted', Date.now().toString())

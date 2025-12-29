@@ -3,15 +3,23 @@
  * Tests Monaco editor integration, error handling, and loading states
  */
 
+import { forwardRef, useState, useEffect, ReactNode } from 'react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 
 // Mock the lazyLoadMonaco function
 vi.mock('@/lib/lazyWithRetry', () => ({
   lazyLoadMonaco: () => {
-    const React = require('react')
     // Return a mock component that simulates Monaco editor
-    return React.forwardRef((props: any, ref: any) => {
+    return forwardRef((props: {
+      value?: string
+      onChange?: (value: string) => void
+      height?: string
+      defaultLanguage?: string
+      theme?: string
+      options?: { readOnly?: boolean }
+      defaultValue?: string
+    }) => {
       const { value, onChange, height, defaultLanguage, theme, options, defaultValue } = props
       return (
         <div data-testid="mock-monaco-editor" style={{ height }}>
@@ -33,12 +41,11 @@ vi.mock('@/lib/lazyWithRetry', () => ({
 
 // Mock ErrorBoundary to test error states
 vi.mock('./ErrorBoundary', () => ({
-  ErrorBoundary: ({ children, fallback }: { children: React.ReactNode; fallback: React.ReactNode }) => {
-    const React = require('react')
-    const [hasError, setHasError] = React.useState(false)
+  ErrorBoundary: ({ children, fallback }: { children: ReactNode; fallback: ReactNode }) => {
+    const [hasError, setHasError] = useState(false)
 
     // Expose a way to trigger error state for testing
-    React.useEffect(() => {
+    useEffect(() => {
       const handler = () => setHasError(true)
       window.addEventListener('trigger-error-boundary', handler)
       return () => window.removeEventListener('trigger-error-boundary', handler)
