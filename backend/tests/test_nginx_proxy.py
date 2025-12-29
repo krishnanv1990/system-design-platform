@@ -7,6 +7,10 @@ to the backend service.
 
 import pytest
 import re
+import os
+
+# Get the project root directory (parent of backend)
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 class TestNginxConfiguration:
@@ -15,7 +19,7 @@ class TestNginxConfiguration:
     @pytest.fixture
     def nginx_config(self):
         """Load nginx configuration file."""
-        with open('frontend/nginx.conf', 'r') as f:
+        with open(os.path.join(PROJECT_ROOT, 'frontend', 'nginx.conf'), 'r') as f:
             return f.read()
 
     def test_nginx_listens_on_port_8080(self, nginx_config):
@@ -79,7 +83,7 @@ class TestDockerfileConfiguration:
     @pytest.fixture
     def dockerfile(self):
         """Load Dockerfile.prod."""
-        with open('frontend/Dockerfile.prod', 'r') as f:
+        with open(os.path.join(PROJECT_ROOT, 'frontend', 'Dockerfile.prod'), 'r') as f:
             return f.read()
 
     def test_dockerfile_uses_node_builder(self, dockerfile):
@@ -111,7 +115,7 @@ class TestCloudBuildConfiguration:
     @pytest.fixture
     def cloudbuild(self):
         """Load cloudbuild.yaml."""
-        with open('cloudbuild.yaml', 'r') as f:
+        with open(os.path.join(PROJECT_ROOT, 'cloudbuild.yaml'), 'r') as f:
             return f.read()
 
     def test_cloudbuild_builds_frontend(self, cloudbuild):

@@ -13,6 +13,8 @@ from sqlalchemy.orm import Session
 from backend.main import app
 from backend.models.user import User
 from backend.api.user import require_admin
+from backend.database import get_db
+from backend.auth.jwt_handler import get_current_user
 
 
 class TestUserProfileAPI:
@@ -69,9 +71,17 @@ class TestUserProfileAPI:
         user.get_oauth_providers = MagicMock(return_value=[])
         return user
 
-    def test_get_profile_success(self, mock_user):
+    @pytest.fixture
+    def mock_db(self):
+        """Create a mock database session."""
+        db = MagicMock(spec=Session)
+        return db
+
+    def test_get_profile_success(self, mock_user, mock_db):
         """Test getting user profile successfully."""
-        with patch("backend.api.user.get_current_user", return_value=mock_user):
+        app.dependency_overrides[get_current_user] = lambda: mock_user
+        app.dependency_overrides[get_db] = lambda: mock_db
+        try:
             client = TestClient(app)
             response = client.get("/api/user/profile")
 
@@ -81,74 +91,80 @@ class TestUserProfileAPI:
             assert data["email"] == mock_user.email
             assert data["display_name"] == mock_user.display_name
             assert data["linked_providers"] == ["google"]
+        finally:
+            app.dependency_overrides.clear()
 
-    def test_update_profile_display_name(self, mock_user):
+    def test_update_profile_display_name(self, mock_user, mock_db):
         """Test updating display name."""
-        mock_db = MagicMock(spec=Session)
+        app.dependency_overrides[get_current_user] = lambda: mock_user
+        app.dependency_overrides[get_db] = lambda: mock_db
+        try:
+            client = TestClient(app)
+            response = client.put(
+                "/api/user/profile",
+                json={"display_name": "NewDisplayName"}
+            )
 
-        with patch("backend.api.user.get_current_user", return_value=mock_user):
-            with patch("backend.api.user.get_db", return_value=mock_db):
-                client = TestClient(app)
-                response = client.put(
-                    "/api/user/profile",
-                    json={"display_name": "NewDisplayName"}
-                )
+            assert response.status_code == 200
+            # Check that display_name was updated
+            assert mock_user.display_name == "NewDisplayName"
+            mock_db.commit.assert_called_once()
+        finally:
+            app.dependency_overrides.clear()
 
-                assert response.status_code == 200
-                # Check that display_name was updated
-                assert mock_user.display_name == "NewDisplayName"
-                mock_db.commit.assert_called_once()
-
-    def test_update_profile_banned_user(self, mock_banned_user):
+    def test_update_profile_banned_user(self, mock_banned_user, mock_db):
         """Test that banned users cannot update profile."""
-        mock_db = MagicMock(spec=Session)
+        app.dependency_overrides[get_current_user] = lambda: mock_banned_user
+        app.dependency_overrides[get_db] = lambda: mock_db
+        try:
+            client = TestClient(app)
+            response = client.put(
+                "/api/user/profile",
+                json={"display_name": "NewName"}
+            )
 
-        with patch("backend.api.user.get_current_user", return_value=mock_banned_user):
-            with patch("backend.api.user.get_db", return_value=mock_db):
-                client = TestClient(app)
-                response = client.put(
-                    "/api/user/profile",
-                    json={"display_name": "NewName"}
-                )
+            assert response.status_code == 403
+            assert "suspended" in response.json()["detail"].lower()
+        finally:
+            app.dependency_overrides.clear()
 
-                assert response.status_code == 403
-                assert "suspended" in response.json()["detail"].lower()
-
-    def test_update_profile_display_name_too_long(self, mock_user):
+    def test_update_profile_display_name_too_long(self, mock_user, mock_db):
         """Test that display name length is validated."""
-        mock_db = MagicMock(spec=Session)
+        app.dependency_overrides[get_current_user] = lambda: mock_user
+        app.dependency_overrides[get_db] = lambda: mock_db
+        try:
+            client = TestClient(app)
+            response = client.put(
+                "/api/user/profile",
+                json={"display_name": "x" * 150}  # Too long
+            )
 
-        with patch("backend.api.user.get_current_user", return_value=mock_user):
-            with patch("backend.api.user.get_db", return_value=mock_db):
-                client = TestClient(app)
-                response = client.put(
-                    "/api/user/profile",
-                    json={"display_name": "x" * 150}  # Too long
-                )
+            assert response.status_code == 400
+            assert "100 characters" in response.json()["detail"]
+        finally:
+            app.dependency_overrides.clear()
 
-                assert response.status_code == 400
-                assert "100 characters" in response.json()["detail"]
-
-    def test_contact_support_success(self, mock_user):
+    def test_contact_support_success(self, mock_user, mock_db):
         """Test contacting support successfully."""
-        mock_db = MagicMock(spec=Session)
+        app.dependency_overrides[get_current_user] = lambda: mock_user
+        app.dependency_overrides[get_db] = lambda: mock_db
+        try:
+            client = TestClient(app)
+            response = client.post(
+                "/api/user/contact-support",
+                json={
+                    "subject": "Test Subject",
+                    "message": "Test message content"
+                }
+            )
 
-        with patch("backend.api.user.get_current_user", return_value=mock_user):
-            with patch("backend.api.user.get_db", return_value=mock_db):
-                client = TestClient(app)
-                response = client.post(
-                    "/api/user/contact-support",
-                    json={
-                        "subject": "Test Subject",
-                        "message": "Test message content"
-                    }
-                )
-
-                assert response.status_code == 200
-                data = response.json()
-                assert data["success"] is True
-                assert "ticket_id" in data
-                assert data["ticket_id"].startswith("SDP-")
+            assert response.status_code == 200
+            data = response.json()
+            assert data["success"] is True
+            assert "ticket_id" in data
+            assert data["ticket_id"].startswith("SDP-")
+        finally:
+            app.dependency_overrides.clear()
 
 
 class TestAdminUserAPI:
@@ -191,70 +207,78 @@ class TestAdminUserAPI:
         user.created_at = datetime.utcnow()
         return user
 
-    def test_list_users_admin_only(self, mock_regular_user):
+    @pytest.fixture
+    def mock_db(self):
+        """Create a mock database session."""
+        return MagicMock(spec=Session)
+
+    def test_list_users_admin_only(self, mock_regular_user, mock_db):
         """Test that non-admin cannot list users."""
-        with patch("backend.api.user.get_current_user", return_value=mock_regular_user):
+        app.dependency_overrides[get_current_user] = lambda: mock_regular_user
+        app.dependency_overrides[get_db] = lambda: mock_db
+        try:
             client = TestClient(app)
             response = client.get("/api/user/admin/users")
 
             assert response.status_code == 403
             assert "admin" in response.json()["detail"].lower()
+        finally:
+            app.dependency_overrides.clear()
 
-    def test_unban_user_success(self, mock_admin_user, mock_banned_user):
+    def test_unban_user_success(self, mock_admin_user, mock_banned_user, mock_db):
         """Test unbanning a user successfully."""
-        mock_db = MagicMock(spec=Session)
         mock_db.query.return_value.filter.return_value.first.return_value = mock_banned_user
 
-        with patch("backend.api.user.get_current_user", return_value=mock_admin_user):
-            with patch("backend.api.user.get_db", return_value=mock_db):
-                # Patch require_admin to return the admin user
-                with patch("backend.api.user.require_admin", return_value=mock_admin_user):
-                    client = TestClient(app)
-                    response = client.post(
-                        "/api/user/admin/unban",
-                        json={"user_id": 3, "reason": "Appeal approved"}
-                    )
+        app.dependency_overrides[get_current_user] = lambda: mock_admin_user
+        app.dependency_overrides[get_db] = lambda: mock_db
+        try:
+            client = TestClient(app)
+            response = client.post(
+                "/api/user/admin/unban",
+                json={"user_id": 3, "reason": "Appeal approved"}
+            )
 
-                    # If the response fails, it might be due to dependency issues
-                    # This is expected in some test configurations
-                    if response.status_code == 200:
-                        assert mock_banned_user.is_banned is False
-                        mock_db.commit.assert_called()
+            assert response.status_code == 200
+            assert mock_banned_user.is_banned is False
+            mock_db.commit.assert_called()
+        finally:
+            app.dependency_overrides.clear()
 
-    def test_unban_non_banned_user(self, mock_admin_user, mock_regular_user):
+    def test_unban_non_banned_user(self, mock_admin_user, mock_regular_user, mock_db):
         """Test unbanning a user that isn't banned."""
-        mock_db = MagicMock(spec=Session)
         mock_db.query.return_value.filter.return_value.first.return_value = mock_regular_user
 
-        with patch("backend.api.user.get_current_user", return_value=mock_admin_user):
-            with patch("backend.api.user.get_db", return_value=mock_db):
-                with patch("backend.api.user.require_admin", return_value=mock_admin_user):
-                    client = TestClient(app)
-                    response = client.post(
-                        "/api/user/admin/unban",
-                        json={"user_id": 2}
-                    )
+        app.dependency_overrides[get_current_user] = lambda: mock_admin_user
+        app.dependency_overrides[get_db] = lambda: mock_db
+        try:
+            client = TestClient(app)
+            response = client.post(
+                "/api/user/admin/unban",
+                json={"user_id": 2}
+            )
 
-                    # Check for 400 error if user is not banned
-                    if response.status_code == 400:
-                        assert "not banned" in response.json()["detail"].lower()
+            assert response.status_code == 400
+            assert "not banned" in response.json()["detail"].lower()
+        finally:
+            app.dependency_overrides.clear()
 
-    def test_unban_user_not_found(self, mock_admin_user):
+    def test_unban_user_not_found(self, mock_admin_user, mock_db):
         """Test unbanning a user that doesn't exist."""
-        mock_db = MagicMock(spec=Session)
         mock_db.query.return_value.filter.return_value.first.return_value = None
 
-        with patch("backend.api.user.get_current_user", return_value=mock_admin_user):
-            with patch("backend.api.user.get_db", return_value=mock_db):
-                with patch("backend.api.user.require_admin", return_value=mock_admin_user):
-                    client = TestClient(app)
-                    response = client.post(
-                        "/api/user/admin/unban",
-                        json={"user_id": 999}
-                    )
+        app.dependency_overrides[get_current_user] = lambda: mock_admin_user
+        app.dependency_overrides[get_db] = lambda: mock_db
+        try:
+            client = TestClient(app)
+            response = client.post(
+                "/api/user/admin/unban",
+                json={"user_id": 999}
+            )
 
-                    if response.status_code == 404:
-                        assert "not found" in response.json()["detail"].lower()
+            assert response.status_code == 404
+            assert "not found" in response.json()["detail"].lower()
+        finally:
+            app.dependency_overrides.clear()
 
 
 class TestRequireAdminDependency:
@@ -265,8 +289,8 @@ class TestRequireAdminDependency:
         admin_user = MagicMock(spec=User)
         admin_user.is_admin = True
 
-        # Should not raise
-        result = require_admin.__wrapped__(admin_user)
+        # Should not raise - call the function directly
+        result = require_admin(admin_user)
         assert result is admin_user
 
     def test_require_admin_with_regular_user(self):
@@ -276,7 +300,7 @@ class TestRequireAdminDependency:
 
         from fastapi import HTTPException
         with pytest.raises(HTTPException) as exc_info:
-            require_admin.__wrapped__(regular_user)
+            require_admin(regular_user)
 
         assert exc_info.value.status_code == 403
         assert "admin" in exc_info.value.detail.lower()

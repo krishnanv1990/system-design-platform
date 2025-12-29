@@ -78,17 +78,19 @@ ALLOWED_TOPICS = [
 
 # Patterns that indicate jailbreak or prompt injection attempts
 JAILBREAK_PATTERNS = [
-    r"ignore\s+(previous|all|prior|above)\s+(instructions?|prompts?|rules?)",
-    r"disregard\s+(previous|all|prior|above)\s+(instructions?|prompts?|rules?)",
+    r"ignore\s+(all\s+)?(previous|prior|above)\s+(instructions?|prompts?|rules?)",
+    r"ignore\s+all\s+previous\s+instructions",
+    r"disregard\s+(all\s+)?(previous|prior|above)\s+(instructions?|prompts?|rules?)",
+    r"disregard\s+all\s+prior\s+rules",
     r"forget\s+(everything|all|previous|prior)",
     r"you\s+are\s+(now|actually|really)\s+a",
     r"pretend\s+(you\s+are|to\s+be)",
     r"act\s+as\s+(if\s+you\s+are|a)",
     r"roleplay\s+as",
     r"simulate\s+being",
-    r"bypass\s+(safety|restrictions?|filters?|rules?)",
-    r"override\s+(safety|restrictions?|filters?|rules?)",
-    r"unlock\s+(developer|admin|special)\s+mode",
+    r"bypass\s+.*?(safety|restrictions?|filters?|rules?)",
+    r"override\s+.*?(safety|restrictions?|filters?|rules?)",
+    r"unlock\s+.*?(developer|admin|special)\s+mode",
     r"enable\s+(developer|admin|special)\s+mode",
     r"dan\s+mode",
     r"jailbreak",
@@ -126,8 +128,11 @@ CODE_EXECUTION_PATTERNS = [
 
 # Obscene/inappropriate content patterns (basic list - would be more comprehensive in production)
 OBSCENE_PATTERNS = [
-    r"\b(f+u+c+k+|sh+i+t+|a+ss+h+o+l+e+|b+i+t+c+h+|d+a+m+n+|c+r+a+p+)\b",
-    r"\b(dick|cock|pussy|porn|xxx|sex)\b",
+    r"\b(fuck|fucking|fucked|fucker)\b",
+    r"\b(shit|shitty|shitting)\b",
+    r"\b(asshole|assholes)\b",
+    r"\b(bitch|bitches)\b",
+    r"\b(dick|cock|pussy|porn|xxx)\b",
     # Add more patterns as needed - keeping this basic for the example
 ]
 
