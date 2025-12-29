@@ -1,7 +1,7 @@
 """Add user profile and ban fields
 
-Revision ID: 004_add_user_profile_fields
-Revises: 003_add_endpoint_url
+Revision ID: 004
+Revises: 003
 Create Date: 2024-12-28
 
 Adds the following columns to the users table:
@@ -16,8 +16,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = '004_add_user_profile_fields'
-down_revision = '003_add_endpoint_url'
+revision = '004'
+down_revision = '003'
 branch_labels = None
 depends_on = None
 
