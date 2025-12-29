@@ -432,7 +432,7 @@ export default function AdminUsageDashboard() {
                           </p>
                           <p className="text-xs text-muted-foreground">
                             {item.request_path || "N/A"}
-                            {item.details?.user_id && (
+                            {item.details?.user_id !== undefined && (
                               <span className="ml-2">
                                 (User: {String(item.details.user_id)})
                               </span>

@@ -14,7 +14,6 @@ import {
   ChevronDown,
   ChevronUp,
   Timer,
-  Lightbulb,
   Wrench,
   FileText,
 } from "lucide-react"
@@ -23,7 +22,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ErrorAnalysisCard } from "@/components/ErrorAnalysisCard"
 import { cn } from "@/lib/utils"
-import type { TestResult, TestStatus, TestType } from "@/types"
+import type { TestResult, TestStatus } from "@/types"
 
 /**
  * Generate a human-readable summary of test failure
