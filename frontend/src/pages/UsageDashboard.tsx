@@ -23,7 +23,6 @@ import {
   Send,
   AlertTriangle,
   Cloud,
-  HardDrive,
   Server,
   Rocket,
 } from "lucide-react"
@@ -456,7 +455,7 @@ export default function UsageDashboard() {
                       const Icon = actionIcons[item.action] || Cloud
                       const isSuccess = item.action === "deploy_complete"
                       const isFailed = item.action === "deploy_failed"
-                      const details = item.details || {}
+                      const details = (item.details || {}) as Record<string, unknown>
                       return (
                         <div
                           key={item.id}
@@ -477,7 +476,7 @@ export default function UsageDashboard() {
                                 {formatAction(item.action)}
                               </p>
                               <p className="text-xs text-muted-foreground">
-                                {details.service_name || details.endpoint_url || `Submission #${item.resource_id}`}
+                                {(details.service_name as string) || (details.endpoint_url as string) || `Submission #${item.resource_id}`}
                               </p>
                             </div>
                           </div>
