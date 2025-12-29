@@ -83,7 +83,7 @@ export function getImageDimensions(dataUrl: string, timeoutMs: number = 10000): 
       clearTimeout(timeoutId)
       resolve({ width: img.width, height: img.height })
     }
-    img.onerror = (e) => {
+    img.onerror = () => {
       clearTimeout(timeoutId)
       reject(new Error('Failed to load image'))
     }
