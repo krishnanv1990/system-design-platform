@@ -17,14 +17,16 @@ backend_path = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(backend_path.parent))
 
 # Import database Base and all models for autogenerate support
-from backend.database import Base
-from backend.config import get_settings
+# These imports must be after sys.path manipulation
+from backend.database import Base  # noqa: E402
+from backend.config import get_settings  # noqa: E402
 
 # Import all models so they're registered with Base.metadata
-from backend.models.user import User
-from backend.models.problem import Problem
-from backend.models.submission import Submission
-from backend.models.test_result import TestResult
+# These appear unused but are needed for Base.metadata to include all tables
+from backend.models.user import User  # noqa: E402, F401
+from backend.models.problem import Problem  # noqa: E402, F401
+from backend.models.submission import Submission  # noqa: E402, F401
+from backend.models.test_result import TestResult  # noqa: E402, F401
 
 # Alembic Config object
 config = context.config

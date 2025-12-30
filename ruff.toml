@@ -1,0 +1,44 @@
+# Ruff configuration for system-design-platform
+# See https://docs.astral.sh/ruff/configuration/
+
+# Target Python 3.11
+target-version = "py311"
+
+# Set line length
+line-length = 120
+
+# Exclude directories
+exclude = [
+    ".git",
+    ".venv",
+    "venv",
+    "__pycache__",
+    ".pytest_cache",
+    "dist",
+    "build",
+    "node_modules",
+]
+
+[lint]
+# Select which rules to check
+select = ["E", "F", "W"]
+
+# Ignore specific rules for existing codebase
+ignore = [
+    "F401",  # Imported but unused - many false positives in existing code
+    "F811",  # Redefinition of unused name
+    "F841",  # Local variable assigned but never used
+    "F541",  # f-string without placeholders
+    "E402",  # Module level import not at top of file
+    "E501",  # Line too long
+    "E722",  # Do not use bare except
+]
+
+# Per-file ignores
+[lint.per-file-ignores]
+# Alembic migrations have special import requirements
+"backend/alembic/*.py" = ["F401", "E402"]
+"backend/alembic/**/*.py" = ["F401", "E402"]
+# Test files often have unused imports/variables
+"backend/tests/*.py" = ["F401", "F841"]
+"tests/**/*.py" = ["F401", "F841"]
