@@ -341,14 +341,30 @@ class DistributedBuildService:
         build_client = cloudbuild_v1.CloudBuildClient()
 
         build_config = self.get_cloudbuild_config(language, submission_id)
-        build_config["source"] = {
-            "storageSource": {
-                "bucket": bucket_name,
-                "object": source_path,
-            }
-        }
 
-        build = cloudbuild_v1.Build(build_config)
+        # Convert steps from dict to BuildStep objects
+        steps = []
+        for step_dict in build_config.get("steps", []):
+            step = cloudbuild_v1.BuildStep(
+                name=step_dict.get("name"),
+                entrypoint=step_dict.get("entrypoint"),
+                args=step_dict.get("args", []),
+            )
+            steps.append(step)
+
+        # Create Build object with proper protobuf types
+        build = cloudbuild_v1.Build(
+            source=cloudbuild_v1.Source(
+                storage_source=cloudbuild_v1.StorageSource(
+                    bucket=bucket_name,
+                    object_=source_path,
+                )
+            ),
+            steps=steps,
+            images=build_config.get("images", []),
+            timeout=build_config.get("timeout", "600s"),
+        )
+
         operation = build_client.create_build(project_id=self.project_id, build=build)
 
         # Return the build ID
