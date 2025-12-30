@@ -76,35 +76,29 @@ WORKDIR /app/build
 
 # Create a template CMakeLists.txt for user builds
 # Uses relative paths since it will be copied to /workspace during build
-RUN cat > /app/CMakeLists.txt.template << 'EOF'
-cmake_minimum_required(VERSION 3.16)
-project(raft_server)
-
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
-# Find required packages (installed in /usr/local by base image)
-find_package(Protobuf REQUIRED)
-find_package(gRPC CONFIG REQUIRED)
-
-# Include generated proto files (relative to workspace root)
-include_directories(${CMAKE_SOURCE_DIR}/generated)
-
-# Add executable with user code and pre-generated proto stubs
-add_executable(server
-    server.cpp
-    ${CMAKE_SOURCE_DIR}/generated/raft.pb.cc
-    ${CMAKE_SOURCE_DIR}/generated/raft.grpc.pb.cc
-)
-
-# Link libraries
-target_link_libraries(server
-    gRPC::grpc++
-    gRPC::grpc++_reflection
-    protobuf::libprotobuf
-    pthread
-)
-EOF
+RUN echo 'cmake_minimum_required(VERSION 3.16)' > /app/CMakeLists.txt.template && \
+    echo 'project(raft_server)' >> /app/CMakeLists.txt.template && \
+    echo '' >> /app/CMakeLists.txt.template && \
+    echo 'set(CMAKE_CXX_STANDARD 17)' >> /app/CMakeLists.txt.template && \
+    echo 'set(CMAKE_CXX_STANDARD_REQUIRED ON)' >> /app/CMakeLists.txt.template && \
+    echo '' >> /app/CMakeLists.txt.template && \
+    echo 'find_package(Protobuf REQUIRED)' >> /app/CMakeLists.txt.template && \
+    echo 'find_package(gRPC CONFIG REQUIRED)' >> /app/CMakeLists.txt.template && \
+    echo '' >> /app/CMakeLists.txt.template && \
+    echo 'include_directories(${CMAKE_SOURCE_DIR}/generated)' >> /app/CMakeLists.txt.template && \
+    echo '' >> /app/CMakeLists.txt.template && \
+    echo 'add_executable(server' >> /app/CMakeLists.txt.template && \
+    echo '    server.cpp' >> /app/CMakeLists.txt.template && \
+    echo '    ${CMAKE_SOURCE_DIR}/generated/raft.pb.cc' >> /app/CMakeLists.txt.template && \
+    echo '    ${CMAKE_SOURCE_DIR}/generated/raft.grpc.pb.cc' >> /app/CMakeLists.txt.template && \
+    echo ')' >> /app/CMakeLists.txt.template && \
+    echo '' >> /app/CMakeLists.txt.template && \
+    echo 'target_link_libraries(server' >> /app/CMakeLists.txt.template && \
+    echo '    gRPC::grpc++' >> /app/CMakeLists.txt.template && \
+    echo '    gRPC::grpc++_reflection' >> /app/CMakeLists.txt.template && \
+    echo '    protobuf::libprotobuf' >> /app/CMakeLists.txt.template && \
+    echo '    pthread' >> /app/CMakeLists.txt.template && \
+    echo ')' >> /app/CMakeLists.txt.template
 
 # Final stage - create the development image
 FROM ubuntu:22.04
