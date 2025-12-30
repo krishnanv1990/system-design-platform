@@ -209,7 +209,6 @@ class DistributedBuildService:
         Uses gcr.io/{project}/raft-cpp-base which has:
         - Pre-compiled gRPC and protobuf libraries
         - Pre-generated proto stubs
-        - CMake template
 
         Security Analysis:
         - AddressSanitizer (ASan): Memory corruption, buffer overflows
@@ -221,8 +220,9 @@ class DistributedBuildService:
         base_image = f"gcr.io/{self.project_id}/raft-cpp-base:latest"
 
         # Build command with security analysis
+        # Uses CMakeLists.txt from the source archive (includes Abseil linking)
         build_cmd = (
-            "cp /app/CMakeLists.txt.template /workspace/CMakeLists.txt && "
+            # Copy pre-generated proto sources from base image
             "cp -r /app/generated /workspace/ && "
             "cd /workspace && "
             # Build with AddressSanitizer for memory analysis
@@ -231,7 +231,7 @@ class DistributedBuildService:
             "cmake -DCMAKE_BUILD_TYPE=Debug "
             "-DCMAKE_CXX_FLAGS='-fsanitize=address -fno-omit-frame-pointer -g' "
             "-DCMAKE_EXE_LINKER_FLAGS='-fsanitize=address' .. && "
-            "make -j$(nproc) 2>&1 | tee /workspace/asan_build.log || true && "
+            "make -j$(nproc) 2>&1 | tee /workspace/asan_build.log && "
             "cd /workspace && "
             # Build with ThreadSanitizer for race detection
             "echo '=== Building with ThreadSanitizer (Race Detection) ===' && "
@@ -239,7 +239,7 @@ class DistributedBuildService:
             "cmake -DCMAKE_BUILD_TYPE=Debug "
             "-DCMAKE_CXX_FLAGS='-fsanitize=thread -fno-omit-frame-pointer -g' "
             "-DCMAKE_EXE_LINKER_FLAGS='-fsanitize=thread' .. && "
-            "make -j$(nproc) 2>&1 | tee /workspace/tsan_build.log || true && "
+            "make -j$(nproc) 2>&1 | tee /workspace/tsan_build.log && "
             "cd /workspace && "
             # Build production binary
             "echo '=== Building Production Binary ===' && "
@@ -541,7 +541,134 @@ require (
 """,
                 "go.sum": "",
             }
+        elif language == "cpp":
+            return {
+                "CMakeLists.txt": self._get_cpp_cmakelists()
+            }
         return {}
+
+    def _get_cpp_cmakelists(self) -> str:
+        """
+        Get CMakeLists.txt for C++ Raft server.
+
+        This CMakeLists.txt:
+        - Links against pre-compiled gRPC and protobuf from the base image
+        - Links Abseil libraries required by newer protobuf
+        - Supports AddressSanitizer, ThreadSanitizer, and UndefinedBehaviorSanitizer
+        """
+        return '''cmake_minimum_required(VERSION 3.16)
+project(raft_server CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Find required packages
+find_package(Threads REQUIRED)
+find_package(Protobuf REQUIRED)
+find_package(OpenSSL REQUIRED)
+
+# Find gRPC - use pkg-config or cmake config
+find_package(gRPC CONFIG QUIET)
+if(NOT gRPC_FOUND)
+    find_package(PkgConfig QUIET)
+    if(PkgConfig_FOUND)
+        pkg_check_modules(GRPC QUIET grpc++ grpc)
+    endif()
+endif()
+
+# Find Abseil (required by protobuf 4.x)
+find_package(absl CONFIG QUIET)
+if(NOT absl_FOUND)
+    find_package(PkgConfig QUIET)
+    if(PkgConfig_FOUND)
+        pkg_check_modules(ABSL QUIET absl_base absl_log absl_strings)
+    endif()
+endif()
+
+# Include generated proto headers
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/generated)
+
+# Collect proto sources
+file(GLOB PROTO_SRCS "generated/*.cc")
+
+# Build the server executable
+add_executable(server
+    server.cpp
+    ${PROTO_SRCS}
+)
+
+# Add compiler warnings
+target_compile_options(server PRIVATE -Wall -Wextra)
+
+# Link libraries
+target_link_libraries(server
+    ${Protobuf_LIBRARIES}
+    Threads::Threads
+    OpenSSL::SSL
+    OpenSSL::Crypto
+)
+
+# Link gRPC
+if(gRPC_FOUND)
+    target_link_libraries(server gRPC::grpc++ gRPC::grpc++_reflection)
+elseif(GRPC_FOUND)
+    target_link_libraries(server ${GRPC_LIBRARIES})
+    target_include_directories(server PRIVATE ${GRPC_INCLUDE_DIRS})
+else()
+    # Fallback to manual linking
+    target_link_libraries(server grpc++ grpc++_reflection grpc gpr)
+endif()
+
+# Link Abseil (required by newer protobuf versions)
+if(absl_FOUND)
+    target_link_libraries(server
+        absl::base
+        absl::log
+        absl::log_internal_check_op
+        absl::log_internal_message
+        absl::status
+        absl::statusor
+        absl::strings
+        absl::synchronization
+        absl::time
+    )
+elseif(ABSL_FOUND)
+    target_link_libraries(server ${ABSL_LIBRARIES})
+    target_include_directories(server PRIVATE ${ABSL_INCLUDE_DIRS})
+else()
+    # Fallback to manual linking for commonly needed Abseil libs
+    find_library(ABSL_BASE absl_base)
+    find_library(ABSL_LOG absl_log)
+    find_library(ABSL_LOG_INTERNAL_CHECK_OP absl_log_internal_check_op)
+    find_library(ABSL_LOG_INTERNAL_MESSAGE absl_log_internal_message)
+    find_library(ABSL_STRINGS absl_strings)
+    find_library(ABSL_STATUS absl_status)
+    find_library(ABSL_SYNCHRONIZATION absl_synchronization)
+    find_library(ABSL_TIME absl_time)
+    find_library(ABSL_RAW_LOGGING absl_raw_logging_internal)
+    find_library(ABSL_THROW_DELEGATE absl_throw_delegate)
+    find_library(ABSL_SPINLOCK_WAIT absl_spinlock_wait)
+
+    if(ABSL_BASE)
+        target_link_libraries(server
+            ${ABSL_BASE}
+            ${ABSL_LOG}
+            ${ABSL_LOG_INTERNAL_CHECK_OP}
+            ${ABSL_LOG_INTERNAL_MESSAGE}
+            ${ABSL_STRINGS}
+            ${ABSL_STATUS}
+            ${ABSL_SYNCHRONIZATION}
+            ${ABSL_TIME}
+            ${ABSL_RAW_LOGGING}
+            ${ABSL_THROW_DELEGATE}
+            ${ABSL_SPINLOCK_WAIT}
+        )
+    endif()
+endif()
+
+# Install
+install(TARGETS server DESTINATION bin)
+'''
 
     async def deploy_cluster(
         self,
