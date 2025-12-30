@@ -7,6 +7,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import DistributedSubmissionResults from './DistributedSubmissionResults'
 import { distributedSubmissionsApi } from '@/api/client'
+import type { DistributedSubmission, TestResult } from '@/types'
 
 // Mock the API
 vi.mock('@/api/client', () => ({
@@ -17,7 +18,7 @@ vi.mock('@/api/client', () => ({
   },
 }))
 
-const mockSubmission = {
+const mockSubmission: DistributedSubmission = {
   id: 1,
   problem_id: 1,
   user_id: 1,
@@ -36,7 +37,7 @@ const mockSubmission = {
   created_at: '2025-01-01T00:00:00Z',
 }
 
-const mockTestResults = [
+const mockTestResults: TestResult[] = [
   {
     id: 1,
     submission_id: 1,
@@ -45,6 +46,7 @@ const mockTestResults = [
     status: 'passed',
     duration_ms: 500,
     details: { leader_id: 'node1' },
+    chaos_scenario: null,
     created_at: '2025-01-01T00:00:00Z',
   },
   {
@@ -55,6 +57,7 @@ const mockTestResults = [
     status: 'passed',
     duration_ms: 750,
     details: { entries_replicated: 5 },
+    chaos_scenario: null,
     created_at: '2025-01-01T00:00:00Z',
   },
   {
@@ -65,6 +68,7 @@ const mockTestResults = [
     status: 'passed',
     duration_ms: 5000,
     details: { ops_per_second: 150 },
+    chaos_scenario: null,
     created_at: '2025-01-01T00:00:00Z',
   },
   {
@@ -75,6 +79,7 @@ const mockTestResults = [
     status: 'failed',
     duration_ms: 2000,
     details: { error: 'Cluster did not recover' },
+    chaos_scenario: 'network_partition',
     created_at: '2025-01-01T00:00:00Z',
   },
 ]
@@ -109,7 +114,7 @@ describe('DistributedSubmissionResults', () => {
 
   it('renders submission details after loading', async () => {
     vi.mocked(distributedSubmissionsApi.get).mockResolvedValue(mockSubmission)
-    vi.mocked(distributedSubmissionsApi.getBuildLogs).mockResolvedValue(mockSubmission.build_logs)
+    vi.mocked(distributedSubmissionsApi.getBuildLogs).mockResolvedValue(mockSubmission.build_logs ?? '')
     vi.mocked(distributedSubmissionsApi.getTestResults).mockResolvedValue(mockTestResults)
 
     renderWithRouter()
@@ -121,7 +126,7 @@ describe('DistributedSubmissionResults', () => {
 
   it('displays status badge for completed submission', async () => {
     vi.mocked(distributedSubmissionsApi.get).mockResolvedValue(mockSubmission)
-    vi.mocked(distributedSubmissionsApi.getBuildLogs).mockResolvedValue(mockSubmission.build_logs)
+    vi.mocked(distributedSubmissionsApi.getBuildLogs).mockResolvedValue(mockSubmission.build_logs ?? '')
     vi.mocked(distributedSubmissionsApi.getTestResults).mockResolvedValue(mockTestResults)
 
     renderWithRouter()
@@ -133,7 +138,7 @@ describe('DistributedSubmissionResults', () => {
 
   it('displays language badge', async () => {
     vi.mocked(distributedSubmissionsApi.get).mockResolvedValue(mockSubmission)
-    vi.mocked(distributedSubmissionsApi.getBuildLogs).mockResolvedValue(mockSubmission.build_logs)
+    vi.mocked(distributedSubmissionsApi.getBuildLogs).mockResolvedValue(mockSubmission.build_logs ?? '')
     vi.mocked(distributedSubmissionsApi.getTestResults).mockResolvedValue(mockTestResults)
 
     renderWithRouter()
@@ -145,7 +150,7 @@ describe('DistributedSubmissionResults', () => {
 
   it('displays build status card', async () => {
     vi.mocked(distributedSubmissionsApi.get).mockResolvedValue(mockSubmission)
-    vi.mocked(distributedSubmissionsApi.getBuildLogs).mockResolvedValue(mockSubmission.build_logs)
+    vi.mocked(distributedSubmissionsApi.getBuildLogs).mockResolvedValue(mockSubmission.build_logs ?? '')
     vi.mocked(distributedSubmissionsApi.getTestResults).mockResolvedValue(mockTestResults)
 
     renderWithRouter()
@@ -158,7 +163,7 @@ describe('DistributedSubmissionResults', () => {
 
   it('displays cluster status with node count', async () => {
     vi.mocked(distributedSubmissionsApi.get).mockResolvedValue(mockSubmission)
-    vi.mocked(distributedSubmissionsApi.getBuildLogs).mockResolvedValue(mockSubmission.build_logs)
+    vi.mocked(distributedSubmissionsApi.getBuildLogs).mockResolvedValue(mockSubmission.build_logs ?? '')
     vi.mocked(distributedSubmissionsApi.getTestResults).mockResolvedValue(mockTestResults)
 
     renderWithRouter()
@@ -171,7 +176,7 @@ describe('DistributedSubmissionResults', () => {
 
   it('displays test result counts', async () => {
     vi.mocked(distributedSubmissionsApi.get).mockResolvedValue(mockSubmission)
-    vi.mocked(distributedSubmissionsApi.getBuildLogs).mockResolvedValue(mockSubmission.build_logs)
+    vi.mocked(distributedSubmissionsApi.getBuildLogs).mockResolvedValue(mockSubmission.build_logs ?? '')
     vi.mocked(distributedSubmissionsApi.getTestResults).mockResolvedValue(mockTestResults)
 
     renderWithRouter()
@@ -204,7 +209,7 @@ describe('DistributedSubmissionResults', () => {
 
   it('displays test results in tab', async () => {
     vi.mocked(distributedSubmissionsApi.get).mockResolvedValue(mockSubmission)
-    vi.mocked(distributedSubmissionsApi.getBuildLogs).mockResolvedValue(mockSubmission.build_logs)
+    vi.mocked(distributedSubmissionsApi.getBuildLogs).mockResolvedValue(mockSubmission.build_logs ?? '')
     vi.mocked(distributedSubmissionsApi.getTestResults).mockResolvedValue(mockTestResults)
 
     renderWithRouter()
@@ -216,7 +221,7 @@ describe('DistributedSubmissionResults', () => {
 
   it('displays cluster info in tab', async () => {
     vi.mocked(distributedSubmissionsApi.get).mockResolvedValue(mockSubmission)
-    vi.mocked(distributedSubmissionsApi.getBuildLogs).mockResolvedValue(mockSubmission.build_logs)
+    vi.mocked(distributedSubmissionsApi.getBuildLogs).mockResolvedValue(mockSubmission.build_logs ?? '')
     vi.mocked(distributedSubmissionsApi.getTestResults).mockResolvedValue(mockTestResults)
 
     renderWithRouter()
@@ -227,7 +232,7 @@ describe('DistributedSubmissionResults', () => {
   })
 
   it('shows error message when submission has error', async () => {
-    const errorSubmission = {
+    const errorSubmission: DistributedSubmission = {
       ...mockSubmission,
       status: 'failed',
       error_message: 'Build compilation failed',
@@ -245,7 +250,7 @@ describe('DistributedSubmissionResults', () => {
   })
 
   it('shows building status with spinner', async () => {
-    const buildingSubmission = {
+    const buildingSubmission: DistributedSubmission = {
       ...mockSubmission,
       status: 'building',
       cluster_node_urls: null,
@@ -263,7 +268,7 @@ describe('DistributedSubmissionResults', () => {
   })
 
   it('shows deploying status', async () => {
-    const deployingSubmission = {
+    const deployingSubmission: DistributedSubmission = {
       ...mockSubmission,
       status: 'deploying',
       cluster_node_urls: null,
@@ -281,7 +286,7 @@ describe('DistributedSubmissionResults', () => {
   })
 
   it('shows testing status', async () => {
-    const testingSubmission = {
+    const testingSubmission: DistributedSubmission = {
       ...mockSubmission,
       status: 'testing',
     }

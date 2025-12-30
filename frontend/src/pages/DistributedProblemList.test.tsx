@@ -8,6 +8,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import DistributedProblemList from './DistributedProblemList'
 import { distributedProblemsApi } from '@/api/client'
+import type { DistributedProblemListItem } from '@/types'
 
 // Mock the API
 vi.mock('@/api/client', () => ({
@@ -16,7 +17,7 @@ vi.mock('@/api/client', () => ({
   },
 }))
 
-const mockProblems = [
+const mockProblems: DistributedProblemListItem[] = [
   {
     id: 1,
     title: 'Implement Raft Consensus',

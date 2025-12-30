@@ -7,7 +7,8 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import DistributedProblemDetail from './DistributedProblemDetail'
-import { distributedProblemsApi, distributedSubmissionsApi } from '@/api/client'
+import { distributedProblemsApi } from '@/api/client'
+import type { DistributedProblem } from '@/types'
 
 // Mock the API
 vi.mock('@/api/client', () => ({
@@ -40,7 +41,7 @@ vi.mock('@/components/CodeEditor', () => ({
   ),
 }))
 
-const mockProblem = {
+const mockProblem: DistributedProblem = {
   id: 1,
   title: 'Implement Raft Consensus',
   description: 'Implement the Raft consensus algorithm.',
@@ -61,6 +62,24 @@ const mockProblem = {
       template: '// Go template\npackage main',
       build_command: 'go build',
       run_command: './server',
+    },
+    java: {
+      language: 'java',
+      template: '// Java template\npublic class RaftServer { }',
+      build_command: './gradlew build',
+      run_command: 'java -jar raft-server.jar',
+    },
+    cpp: {
+      language: 'cpp',
+      template: '// C++ template\n#include <iostream>',
+      build_command: 'cmake && make',
+      run_command: './server',
+    },
+    rust: {
+      language: 'rust',
+      template: '// Rust template\nfn main() { }',
+      build_command: 'cargo build',
+      run_command: './target/release/server',
     },
   },
   test_scenarios: [
