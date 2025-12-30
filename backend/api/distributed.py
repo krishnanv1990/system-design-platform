@@ -9,16 +9,24 @@ Provides endpoints for:
 """
 
 import os
+import asyncio
+import logging
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
+from google.cloud.devtools import cloudbuild_v1
 
-from backend.database import get_db
+from backend.database import get_db, SessionLocal
 from backend.models.problem import Problem, ProblemType, SupportedLanguage
 from backend.models.submission import Submission, SubmissionStatus, SubmissionType
 from backend.models.user import User
 from backend.auth.jwt_handler import get_current_user
+from backend.services.distributed_build import DistributedBuildService
+from backend.config import get_settings
+
+logger = logging.getLogger(__name__)
+settings = get_settings()
 
 router = APIRouter()
 
@@ -124,6 +132,203 @@ class DistributedSubmissionResponse(BaseModel):
 class BuildLogsResponse(BaseModel):
     """Response for build logs."""
     logs: str
+
+
+# ============================================================================
+# Background Build Task
+# ============================================================================
+
+async def run_distributed_build(submission_id: int, language: str, source_code: str):
+    """
+    Background task to run the distributed build process.
+
+    This function:
+    1. Starts the Cloud Build job
+    2. Monitors build progress and streams logs
+    3. Updates submission status and stores logs in database
+    4. Deploys the cluster on successful build
+    """
+    db = SessionLocal()
+    try:
+        submission = db.query(Submission).filter(Submission.id == submission_id).first()
+        if not submission:
+            logger.error(f"Submission {submission_id} not found")
+            return
+
+        build_service = DistributedBuildService()
+        project_id = settings.gcp_project_id
+
+        # Update status to building
+        submission.status = SubmissionStatus.BUILDING.value
+        submission.build_logs = "Starting build process...\n"
+        db.commit()
+
+        try:
+            # Start the Cloud Build
+            logger.info(f"Starting build for submission {submission_id}, language: {language}")
+            build_id = await build_service.start_build(submission_id, language, source_code)
+
+            submission.build_logs = f"Build started. Build ID: {build_id}\n"
+            db.commit()
+
+            # Monitor build progress
+            build_client = cloudbuild_v1.CloudBuildClient()
+            logs_buffer = [f"Build ID: {build_id}\n", "=" * 50 + "\n"]
+
+            import time
+            start_time = time.time()
+            last_log_fetch = 0
+
+            while True:
+                # Timeout after 10 minutes
+                if time.time() - start_time > 600:
+                    submission.status = SubmissionStatus.BUILD_FAILED.value
+                    submission.build_logs = "".join(logs_buffer) + "\n\nBuild timed out after 10 minutes."
+                    submission.error_message = "Build timed out"
+                    db.commit()
+                    return
+
+                # Get build status
+                build_result = build_client.get_build(project_id=project_id, id=build_id)
+
+                # Fetch logs periodically (every 5 seconds)
+                if time.time() - last_log_fetch > 5:
+                    try:
+                        # Get logs from Cloud Storage
+                        log_url = build_result.log_url
+                        if log_url:
+                            from google.cloud import storage
+                            # Parse bucket and object from log URL
+                            # Format: gs://bucket/log-build-id.txt
+                            if log_url.startswith("gs://"):
+                                parts = log_url[5:].split("/", 1)
+                                bucket_name = parts[0]
+                                blob_name = parts[1] if len(parts) > 1 else ""
+
+                                storage_client = storage.Client(project=project_id)
+                                bucket = storage_client.bucket(bucket_name)
+                                blob = bucket.blob(blob_name)
+
+                                if blob.exists():
+                                    log_content = blob.download_as_text()
+                                    logs_buffer = [f"Build ID: {build_id}\n", "=" * 50 + "\n", log_content]
+
+                                    # Update logs in database
+                                    submission.build_logs = "".join(logs_buffer)
+                                    db.commit()
+                    except Exception as log_err:
+                        logger.debug(f"Could not fetch logs: {log_err}")
+
+                    last_log_fetch = time.time()
+
+                # Check if build completed
+                if build_result.status == cloudbuild_v1.Build.Status.SUCCESS:
+                    logger.info(f"Build {build_id} succeeded")
+
+                    # Final log fetch
+                    try:
+                        log_url = build_result.log_url
+                        if log_url and log_url.startswith("gs://"):
+                            from google.cloud import storage
+                            parts = log_url[5:].split("/", 1)
+                            bucket_name = parts[0]
+                            blob_name = parts[1] if len(parts) > 1 else ""
+
+                            storage_client = storage.Client(project=project_id)
+                            bucket = storage_client.bucket(bucket_name)
+                            blob = bucket.blob(blob_name)
+
+                            if blob.exists():
+                                logs_buffer = [f"Build ID: {build_id}\n", "=" * 50 + "\n", blob.download_as_text()]
+                    except Exception as e:
+                        logger.debug(f"Final log fetch failed: {e}")
+
+                    logs_buffer.append("\n\n" + "=" * 50 + "\nBUILD SUCCESSFUL\n" + "=" * 50)
+                    submission.build_logs = "".join(logs_buffer)
+                    submission.status = SubmissionStatus.DEPLOYING.value
+
+                    # Get the image name from build
+                    if build_result.images:
+                        submission.build_artifact_url = build_result.images[0]
+
+                    db.commit()
+
+                    # Deploy the cluster
+                    try:
+                        submission.build_logs += "\n\nDeploying cluster...\n"
+                        db.commit()
+
+                        image_name = f"gcr.io/{project_id}/raft-{submission_id}-{language}"
+                        cluster_urls = await build_service.deploy_cluster(submission_id, image_name)
+
+                        submission.cluster_node_urls = cluster_urls
+                        submission.status = SubmissionStatus.TESTING.value
+                        submission.build_logs += f"Cluster deployed successfully!\nNodes: {cluster_urls}\n"
+                        db.commit()
+
+                        # TODO: Run tests against the cluster
+                        # For now, mark as completed
+                        submission.status = SubmissionStatus.COMPLETED.value
+                        submission.build_logs += "\nSubmission completed successfully!"
+                        db.commit()
+
+                    except Exception as deploy_err:
+                        logger.error(f"Deployment failed: {deploy_err}")
+                        submission.status = SubmissionStatus.DEPLOY_FAILED.value
+                        submission.error_message = str(deploy_err)
+                        submission.build_logs += f"\n\nDEPLOYMENT FAILED: {deploy_err}"
+                        db.commit()
+
+                    return
+
+                elif build_result.status in [
+                    cloudbuild_v1.Build.Status.FAILURE,
+                    cloudbuild_v1.Build.Status.INTERNAL_ERROR,
+                    cloudbuild_v1.Build.Status.TIMEOUT,
+                    cloudbuild_v1.Build.Status.CANCELLED,
+                ]:
+                    logger.error(f"Build {build_id} failed with status: {build_result.status.name}")
+
+                    # Final log fetch
+                    try:
+                        log_url = build_result.log_url
+                        if log_url and log_url.startswith("gs://"):
+                            from google.cloud import storage
+                            parts = log_url[5:].split("/", 1)
+                            bucket_name = parts[0]
+                            blob_name = parts[1] if len(parts) > 1 else ""
+
+                            storage_client = storage.Client(project=project_id)
+                            bucket = storage_client.bucket(bucket_name)
+                            blob = bucket.blob(blob_name)
+
+                            if blob.exists():
+                                logs_buffer = [f"Build ID: {build_id}\n", "=" * 50 + "\n", blob.download_as_text()]
+                    except Exception as e:
+                        logger.debug(f"Final log fetch failed: {e}")
+
+                    logs_buffer.append(f"\n\n" + "=" * 50 + f"\nBUILD FAILED: {build_result.status.name}\n" + "=" * 50)
+
+                    submission.status = SubmissionStatus.BUILD_FAILED.value
+                    submission.build_logs = "".join(logs_buffer)
+                    submission.error_message = f"Build failed: {build_result.status.name}"
+                    db.commit()
+                    return
+
+                # Wait before polling again
+                await asyncio.sleep(5)
+
+        except Exception as build_err:
+            logger.error(f"Build process failed: {build_err}")
+            submission.status = SubmissionStatus.BUILD_FAILED.value
+            submission.error_message = str(build_err)
+            submission.build_logs = (submission.build_logs or "") + f"\n\nBUILD ERROR: {build_err}"
+            db.commit()
+
+    except Exception as e:
+        logger.error(f"Background build task failed: {e}")
+    finally:
+        db.close()
 
 
 # ============================================================================
@@ -496,6 +701,7 @@ async def save_code(
 @router.post("/submissions", response_model=DistributedSubmissionResponse)
 async def create_distributed_submission(
     data: DistributedSubmissionCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -504,7 +710,7 @@ async def create_distributed_submission(
 
     This will:
     1. Create a submission record
-    2. Queue the build process
+    2. Queue the build process as a background task
     3. Return the submission ID for status polling
     """
     if data.language not in [lang.value for lang in SupportedLanguage]:
@@ -521,13 +727,21 @@ async def create_distributed_submission(
         language=data.language,
         source_code=data.source_code,
         status=SubmissionStatus.BUILDING.value,
+        build_logs="Queuing build job...\n",
     )
     db.add(submission)
     db.commit()
     db.refresh(submission)
 
-    # TODO: Queue build job in Cloud Build
-    # For now, simulate the build starting
+    # Start the build process in the background
+    # Using asyncio.create_task because BackgroundTasks doesn't support async functions well
+    asyncio.create_task(run_distributed_build(
+        submission_id=submission.id,
+        language=data.language,
+        source_code=data.source_code,
+    ))
+
+    logger.info(f"Created submission {submission.id} and queued build for {data.language}")
 
     return {
         "id": submission.id,

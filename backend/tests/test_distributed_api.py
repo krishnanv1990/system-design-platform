@@ -520,3 +520,111 @@ class TestAdminDeploymentManagement:
 
         routes = [route.path for route in router.routes]
         assert "/admin/deployments" in routes
+
+
+class TestDistributedBuildProcess:
+    """Tests for the distributed build process."""
+
+    def test_create_submission_endpoint_has_background_tasks(self):
+        """Test create submission endpoint includes BackgroundTasks parameter."""
+        from backend.api.distributed import create_distributed_submission
+        import inspect
+
+        sig = inspect.signature(create_distributed_submission)
+        params = list(sig.parameters.keys())
+        assert "background_tasks" in params
+
+    def test_run_distributed_build_function_exists(self):
+        """Test run_distributed_build function exists in distributed module."""
+        from backend.api.distributed import run_distributed_build
+
+        assert callable(run_distributed_build)
+
+    @pytest.mark.asyncio
+    async def test_run_distributed_build_updates_submission_status(self):
+        """Test that run_distributed_build updates submission status."""
+        from backend.api.distributed import run_distributed_build
+        from unittest.mock import AsyncMock, patch, MagicMock
+
+        # Mock the database session and submission
+        mock_submission = MagicMock()
+        mock_submission.id = 1
+        mock_submission.status = "building"
+        mock_submission.build_logs = ""
+
+        mock_db = MagicMock()
+        mock_db.query.return_value.filter.return_value.first.return_value = mock_submission
+
+        with patch('backend.api.distributed.SessionLocal', return_value=mock_db):
+            with patch('backend.api.distributed.DistributedBuildService') as mock_service_class:
+                mock_service = MagicMock()
+                mock_service.start_build = AsyncMock(side_effect=Exception("Test error"))
+                mock_service_class.return_value = mock_service
+
+                # Run the build (should handle error gracefully)
+                await run_distributed_build(1, "python", "print('hello')")
+
+                # Verify submission was updated with error
+                assert mock_submission.status == "build_failed"
+                assert "BUILD ERROR" in mock_submission.build_logs
+
+    def test_submission_response_includes_build_logs(self):
+        """Test DistributedSubmissionResponse includes build_logs field."""
+        from backend.api.distributed import DistributedSubmissionResponse
+
+        # Check the model fields
+        fields = DistributedSubmissionResponse.model_fields
+        assert "build_logs" in fields
+
+    def test_build_logs_endpoint_exists(self):
+        """Test build logs endpoint exists in router."""
+        from backend.api.distributed import router
+
+        routes = [route.path for route in router.routes]
+        assert "/submissions/{submission_id}/build-logs" in routes
+
+
+class TestBuildLogsFetching:
+    """Tests for build log fetching functionality."""
+
+    def test_build_logs_response_model(self):
+        """Test BuildLogsResponse model."""
+        from backend.api.distributed import BuildLogsResponse
+
+        response = BuildLogsResponse(logs="Build started...")
+        assert response.logs == "Build started..."
+
+    def test_submission_model_has_build_logs_field(self):
+        """Test Submission model has build_logs field."""
+        from backend.models.submission import Submission
+
+        # Check that the field exists in the model
+        assert hasattr(Submission, "build_logs")
+
+    def test_submission_status_includes_building(self):
+        """Test SubmissionStatus enum includes building status."""
+        from backend.models.submission import SubmissionStatus
+
+        assert hasattr(SubmissionStatus, "BUILDING")
+        assert SubmissionStatus.BUILDING.value == "building"
+
+    def test_submission_status_includes_build_failed(self):
+        """Test SubmissionStatus enum includes build_failed status."""
+        from backend.models.submission import SubmissionStatus
+
+        assert hasattr(SubmissionStatus, "BUILD_FAILED")
+        assert SubmissionStatus.BUILD_FAILED.value == "build_failed"
+
+    def test_submission_status_includes_deploying(self):
+        """Test SubmissionStatus enum includes deploying status."""
+        from backend.models.submission import SubmissionStatus
+
+        assert hasattr(SubmissionStatus, "DEPLOYING")
+        assert SubmissionStatus.DEPLOYING.value == "deploying"
+
+    def test_submission_status_includes_deploy_failed(self):
+        """Test SubmissionStatus enum includes deploy_failed status."""
+        from backend.models.submission import SubmissionStatus
+
+        assert hasattr(SubmissionStatus, "DEPLOY_FAILED")
+        assert SubmissionStatus.DEPLOY_FAILED.value == "deploy_failed"
