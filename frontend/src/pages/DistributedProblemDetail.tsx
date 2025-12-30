@@ -26,7 +26,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { useToast } from "@/components/ui/use-toast"
+import { useToast } from "@/hooks/useToast"
 import CodeEditor from "@/components/CodeEditor"
 import type { DistributedProblem, SupportedLanguage } from "@/types"
 
