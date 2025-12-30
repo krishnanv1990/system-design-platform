@@ -636,6 +636,37 @@ export interface UnbanUserRequest {
 }
 
 /**
+ * Admin deployment info
+ */
+export interface AdminDeployment {
+  submission_id: number
+  user_email: string
+  status: string
+  created_at: string
+  scheduled_cleanup: string
+  time_remaining_seconds: number
+  deployment_mode: string
+}
+
+/**
+ * Admin deployments response
+ */
+export interface AdminDeploymentsResponse {
+  deployments: AdminDeployment[]
+  default_timeout_minutes: number
+}
+
+/**
+ * Teardown result
+ */
+export interface TeardownResult {
+  success: boolean
+  submission_id: number
+  deployment_mode?: string
+  error?: string
+}
+
+/**
  * Admin API
  */
 export const adminApi = {
@@ -678,6 +709,40 @@ export const adminApi = {
    */
   unbanUser: async (request: UnbanUserRequest): Promise<AdminUser> => {
     const response = await api.post('/user/admin/unban', request)
+    return response.data
+  },
+
+  /**
+   * Get all active deployments (admin only)
+   */
+  getDeployments: async (): Promise<AdminDeploymentsResponse> => {
+    const response = await api.get('/admin/deployments')
+    return response.data
+  },
+
+  /**
+   * Teardown a specific deployment (admin only)
+   */
+  teardownDeployment: async (submissionId: number): Promise<TeardownResult> => {
+    const response = await api.post(`/admin/deployments/${submissionId}/teardown`)
+    return response.data
+  },
+
+  /**
+   * Teardown all deployments (admin only)
+   */
+  teardownAllDeployments: async (): Promise<{ cleaned_up: number; failed: number; results: TeardownResult[] }> => {
+    const response = await api.post('/admin/deployments/cleanup-all')
+    return response.data
+  },
+
+  /**
+   * Extend deployment timeout (admin only)
+   */
+  extendDeployment: async (submissionId: number, additionalMinutes: number = 30): Promise<any> => {
+    const response = await api.post(`/admin/deployments/${submissionId}/extend`, null, {
+      params: { additional_minutes: additionalMinutes }
+    })
     return response.data
   },
 }

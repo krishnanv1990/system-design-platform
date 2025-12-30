@@ -17,8 +17,10 @@ import {
   CheckCircle,
   XCircle,
   DollarSign,
+  Trash2,
+  Loader2,
 } from "lucide-react"
-import { assetsApi } from "@/api/client"
+import { assetsApi, adminApi } from "@/api/client"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -83,6 +85,8 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
+  const [deletingIds, setDeletingIds] = useState<Set<number>>(new Set())
+  const [deletingAll, setDeletingAll] = useState(false)
 
   const loadData = async () => {
     try {
@@ -109,6 +113,46 @@ export default function AdminDashboard() {
   const handleRefresh = () => {
     setRefreshing(true)
     loadData()
+  }
+
+  const handleDelete = async (submissionId: number) => {
+    if (!confirm(`Are you sure you want to delete deployment #${submissionId}? This action cannot be undone.`)) {
+      return
+    }
+
+    setDeletingIds((prev) => new Set(prev).add(submissionId))
+    try {
+      await adminApi.teardownDeployment(submissionId)
+      // Reload data after deletion
+      await loadData()
+    } catch (err: any) {
+      console.error("Failed to delete deployment:", err)
+      alert(`Failed to delete deployment: ${err.response?.data?.detail || err.message}`)
+    } finally {
+      setDeletingIds((prev) => {
+        const next = new Set(prev)
+        next.delete(submissionId)
+        return next
+      })
+    }
+  }
+
+  const handleDeleteAll = async () => {
+    if (!confirm("Are you sure you want to delete ALL deployments? This action cannot be undone!")) {
+      return
+    }
+
+    setDeletingAll(true)
+    try {
+      const result = await adminApi.teardownAllDeployments()
+      alert(`Cleaned up ${result.cleaned_up} deployments. ${result.failed} failed.`)
+      await loadData()
+    } catch (err: any) {
+      console.error("Failed to delete all deployments:", err)
+      alert(`Failed to delete all deployments: ${err.response?.data?.detail || err.message}`)
+    } finally {
+      setDeletingAll(false)
+    }
   }
 
   const formatDate = (dateStr: string) => {
@@ -245,8 +289,23 @@ export default function AdminDashboard() {
 
       {/* Assets Table */}
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-base">All Deployments</CardTitle>
+          {summary.assets.length > 0 && (
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={handleDeleteAll}
+              disabled={deletingAll}
+            >
+              {deletingAll ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Trash2 className="h-4 w-4 mr-2" />
+              )}
+              Delete All
+            </Button>
+          )}
         </CardHeader>
         <CardContent>
           {summary.assets.length === 0 ? (
@@ -329,6 +388,19 @@ export default function AdminDashboard() {
                                 <span className="hidden sm:inline">Endpoint</span>
                               </a>
                             )}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 px-2 text-destructive hover:text-destructive hover:bg-destructive/10"
+                              onClick={() => handleDelete(asset.submission_id)}
+                              disabled={deletingIds.has(asset.submission_id)}
+                            >
+                              {deletingIds.has(asset.submission_id) ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : (
+                                <Trash2 className="h-3 w-3" />
+                              )}
+                            </Button>
                           </div>
                         </td>
                       </tr>

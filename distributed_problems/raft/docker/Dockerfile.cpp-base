@@ -24,24 +24,8 @@ RUN apt-get update && apt-get install -y \
 # Set working directory
 WORKDIR /opt
 
-# Install protobuf (version 3.21.12 - compatible with gRPC)
-ENV PROTOBUF_VERSION=3.21.12
-RUN git clone --depth 1 --branch v${PROTOBUF_VERSION} https://github.com/protocolbuffers/protobuf.git && \
-    cd protobuf && \
-    git submodule update --init --recursive && \
-    mkdir build && cd build && \
-    cmake -DCMAKE_BUILD_TYPE=Release \
-          -DCMAKE_INSTALL_PREFIX=/usr/local \
-          -Dprotobuf_BUILD_TESTS=OFF \
-          -Dprotobuf_ABSL_PROVIDER=package \
-          -DABSL_ENABLE_INSTALL=ON \
-          .. && \
-    make -j$(nproc) && \
-    make install && \
-    ldconfig && \
-    cd /opt && rm -rf protobuf
-
-# Install gRPC (version 1.59.0)
+# Install gRPC with bundled dependencies (protobuf, abseil, etc.)
+# This is more reliable than trying to use system packages
 ENV GRPC_VERSION=1.59.0
 RUN git clone --depth 1 --branch v${GRPC_VERSION} https://github.com/grpc/grpc.git && \
     cd grpc && \
@@ -51,8 +35,12 @@ RUN git clone --depth 1 --branch v${GRPC_VERSION} https://github.com/grpc/grpc.g
           -DCMAKE_INSTALL_PREFIX=/usr/local \
           -DgRPC_INSTALL=ON \
           -DgRPC_BUILD_TESTS=OFF \
-          -DgRPC_PROTOBUF_PROVIDER=package \
+          -DgRPC_PROTOBUF_PROVIDER=module \
+          -DgRPC_ABSL_PROVIDER=module \
+          -DgRPC_CARES_PROVIDER=module \
+          -DgRPC_RE2_PROVIDER=module \
           -DgRPC_SSL_PROVIDER=package \
+          -DgRPC_ZLIB_PROVIDER=module \
           ../.. && \
     make -j$(nproc) && \
     make install && \

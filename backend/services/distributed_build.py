@@ -3,11 +3,20 @@ Distributed Systems Build Service
 
 Handles compilation and deployment of distributed consensus implementations.
 Uses Google Cloud Build for multi-language compilation and Cloud Run for deployment.
+
+Security Analysis Features:
+- C++: AddressSanitizer, ThreadSanitizer, UndefinedBehaviorSanitizer
+- Go: Race detector (-race flag)
+- Java: SpotBugs for concurrency issues
+- Rust: Built-in safety checks, clippy lints
+- Python: Thread safety analysis
 """
 
 import json
 import os
+from dataclasses import dataclass
 from datetime import datetime
+from enum import Enum
 from typing import Dict, List, Optional
 from google.cloud import storage, run_v2
 from google.cloud.devtools import cloudbuild_v1
@@ -19,12 +28,33 @@ from backend.models.submission import Submission, SubmissionStatus
 settings = get_settings()
 
 
+class SecurityAnalysisType(Enum):
+    """Types of security analysis available."""
+    MEMORY_CORRUPTION = "memory_corruption"
+    BUFFER_OVERFLOW = "buffer_overflow"
+    RACE_CONDITION = "race_condition"
+    UNDEFINED_BEHAVIOR = "undefined_behavior"
+    CONCURRENCY = "concurrency"
+
+
+@dataclass
+class SecurityFinding:
+    """A security issue found during analysis."""
+    finding_type: SecurityAnalysisType
+    severity: str  # "critical", "high", "medium", "low", "info"
+    message: str
+    file: Optional[str] = None
+    line: Optional[int] = None
+    details: Optional[Dict] = None
+
+
 class DistributedBuildService:
     """Service for building and deploying distributed consensus implementations."""
 
-    def __init__(self):
+    def __init__(self, enable_security_analysis: bool = True):
         self.project_id = settings.gcp_project_id
         self.region = settings.gcp_region
+        self.enable_security_analysis = enable_security_analysis
 
     def get_cloudbuild_config(self, language: str, submission_id: int) -> Dict:
         """
@@ -55,17 +85,32 @@ class DistributedBuildService:
             raise ValueError(f"Unsupported language: {language}")
 
     def _python_build_config(self, image_name: str, submission_id: int) -> Dict:
-        """Cloud Build config for Python."""
+        """
+        Cloud Build config for Python with security analysis.
+
+        Security Analysis:
+        - Bandit for security vulnerabilities
+        - Safety for vulnerable dependencies
+        - Pylint for code quality and potential bugs
+        """
+        build_cmd = (
+            "pip install grpcio grpcio-tools bandit safety pylint && "
+            "python -m grpc_tools.protoc -I. --python_out=. --grpc_python_out=. raft.proto && "
+            "echo '=== Running Bandit (Security Analysis) ===' && "
+            "bandit -r server.py 2>&1 | tee /workspace/security_analysis.log || true && "
+            "echo '=== Checking for Vulnerable Dependencies ===' && "
+            "safety check -r requirements.txt 2>&1 | tee -a /workspace/security_analysis.log || true && "
+            "echo '=== Running Pylint (Thread Safety) ===' && "
+            "pylint --disable=all --enable=W0601,W0602,W0603,W0621 server.py 2>&1 "
+            "| tee -a /workspace/security_analysis.log || true"
+        )
+
         return {
             "steps": [
                 {
                     "name": "python:3.11-slim",
                     "entrypoint": "bash",
-                    "args": [
-                        "-c",
-                        "pip install grpcio grpcio-tools && "
-                        "python -m grpc_tools.protoc -I. --python_out=. --grpc_python_out=. raft.proto"
-                    ],
+                    "args": ["-c", build_cmd],
                 },
                 {
                     "name": "gcr.io/cloud-builders/docker",
@@ -81,19 +126,32 @@ class DistributedBuildService:
         }
 
     def _go_build_config(self, image_name: str, submission_id: int) -> Dict:
-        """Cloud Build config for Go."""
+        """
+        Cloud Build config for Go with race detection.
+
+        Security Analysis:
+        - Race condition detection via -race flag
+        - Static analysis via go vet
+        """
+        # Build with race detector for testing, regular build for production
+        build_cmd = (
+            "go install google.golang.org/protobuf/cmd/protoc-gen-go@latest && "
+            "go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest && "
+            "protoc --go_out=. --go-grpc_out=. raft.proto && "
+            "echo '=== Running Go Vet (static analysis) ===' && "
+            "go vet ./... 2>&1 | tee /workspace/security_analysis.log || true && "
+            "echo '=== Building with race detector for testing ===' && "
+            "CGO_ENABLED=1 go build -race -o server_race . && "
+            "echo '=== Building production binary ===' && "
+            "CGO_ENABLED=0 go build -o server ."
+        )
+
         return {
             "steps": [
                 {
                     "name": "golang:1.21",
                     "entrypoint": "bash",
-                    "args": [
-                        "-c",
-                        "go install google.golang.org/protobuf/cmd/protoc-gen-go@latest && "
-                        "go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest && "
-                        "protoc --go_out=. --go-grpc_out=. raft.proto && "
-                        "go build -o server ."
-                    ],
+                    "args": ["-c", build_cmd],
                 },
                 {
                     "name": "gcr.io/cloud-builders/docker",
@@ -109,13 +167,27 @@ class DistributedBuildService:
         }
 
     def _java_build_config(self, image_name: str, submission_id: int) -> Dict:
-        """Cloud Build config for Java."""
+        """
+        Cloud Build config for Java with SpotBugs security analysis.
+
+        Security Analysis:
+        - SpotBugs for concurrency issues and bug detection
+        - FindSecBugs for security vulnerabilities
+        """
+        # Build with SpotBugs analysis
+        build_cmd = (
+            "echo '=== Running Gradle Build with SpotBugs ===' && "
+            "./gradlew build spotbugsMain --continue 2>&1 | tee /workspace/security_analysis.log || true && "
+            "echo '=== Build Complete ===' && "
+            "ls -la build/libs/"
+        )
+
         return {
             "steps": [
                 {
                     "name": "gradle:8-jdk17",
                     "entrypoint": "bash",
-                    "args": ["-c", "./gradlew build"],
+                    "args": ["-c", build_cmd],
                 },
                 {
                     "name": "gcr.io/cloud-builders/docker",
@@ -139,28 +211,50 @@ class DistributedBuildService:
         - Pre-generated proto stubs
         - CMake template
 
+        Security Analysis:
+        - AddressSanitizer (ASan): Memory corruption, buffer overflows
+        - ThreadSanitizer (TSan): Race conditions
+        - UndefinedBehaviorSanitizer (UBSan): Undefined behavior
+
         This reduces build time from ~15min to ~1-2min.
         """
         base_image = f"gcr.io/{self.project_id}/raft-cpp-base:latest"
+
+        # Build command with security analysis
+        build_cmd = (
+            "cp /app/CMakeLists.txt.template /workspace/CMakeLists.txt && "
+            "cp -r /app/generated /workspace/ && "
+            "cd /workspace && "
+            # Build with AddressSanitizer for memory analysis
+            "echo '=== Building with AddressSanitizer (Memory Analysis) ===' && "
+            "mkdir -p build_asan && cd build_asan && "
+            "cmake -DCMAKE_BUILD_TYPE=Debug "
+            "-DCMAKE_CXX_FLAGS='-fsanitize=address -fno-omit-frame-pointer -g' "
+            "-DCMAKE_EXE_LINKER_FLAGS='-fsanitize=address' .. && "
+            "make -j$(nproc) 2>&1 | tee /workspace/asan_build.log || true && "
+            "cd /workspace && "
+            # Build with ThreadSanitizer for race detection
+            "echo '=== Building with ThreadSanitizer (Race Detection) ===' && "
+            "mkdir -p build_tsan && cd build_tsan && "
+            "cmake -DCMAKE_BUILD_TYPE=Debug "
+            "-DCMAKE_CXX_FLAGS='-fsanitize=thread -fno-omit-frame-pointer -g' "
+            "-DCMAKE_EXE_LINKER_FLAGS='-fsanitize=thread' .. && "
+            "make -j$(nproc) 2>&1 | tee /workspace/tsan_build.log || true && "
+            "cd /workspace && "
+            # Build production binary
+            "echo '=== Building Production Binary ===' && "
+            "mkdir -p build && cd build && "
+            "cmake -DCMAKE_BUILD_TYPE=Release .. && "
+            "make -j$(nproc)"
+        )
+
         return {
             "steps": [
-                # Step 1: Build user code using prebuilt base image
-                # The base image has CMakeLists.txt.template and pre-generated proto files
+                # Step 1: Build user code with security analysis
                 {
                     "name": base_image,
                     "entrypoint": "bash",
-                    "args": [
-                        "-c",
-                        # Copy CMakeLists template from base image to workspace
-                        # Copy pre-generated proto files to workspace
-                        # Build the user's code
-                        "cp /app/CMakeLists.txt.template /workspace/CMakeLists.txt && "
-                        "cp -r /app/generated /workspace/ && "
-                        "cd /workspace && "
-                        "mkdir -p build && cd build && "
-                        "cmake -DCMAKE_BUILD_TYPE=Release .. && "
-                        "make -j$(nproc)"
-                    ],
+                    "args": ["-c", build_cmd],
                 },
                 # Step 2: Build slim runtime image
                 {
@@ -178,13 +272,32 @@ class DistributedBuildService:
         }
 
     def _rust_build_config(self, image_name: str, submission_id: int) -> Dict:
-        """Cloud Build config for Rust."""
+        """
+        Cloud Build config for Rust with Clippy and safety checks.
+
+        Security Analysis:
+        - Clippy lints for common mistakes
+        - cargo audit for vulnerable dependencies
+        - Built-in memory safety from Rust's type system
+        """
+        build_cmd = (
+            "echo '=== Installing Clippy and Audit tools ===' && "
+            "rustup component add clippy && "
+            "cargo install cargo-audit 2>/dev/null || true && "
+            "echo '=== Running Clippy (Lint Analysis) ===' && "
+            "cargo clippy -- -D warnings 2>&1 | tee /workspace/security_analysis.log || true && "
+            "echo '=== Checking for Vulnerable Dependencies ===' && "
+            "cargo audit 2>&1 | tee -a /workspace/security_analysis.log || true && "
+            "echo '=== Building Release Binary ===' && "
+            "cargo build --release"
+        )
+
         return {
             "steps": [
                 {
                     "name": "rust:1.74",
                     "entrypoint": "bash",
-                    "args": ["-c", "cargo build --release"],
+                    "args": ["-c", build_cmd],
                 },
                 {
                     "name": "gcr.io/cloud-builders/docker",

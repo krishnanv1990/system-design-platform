@@ -361,3 +361,162 @@ class TestDistributedAPIHelpers:
         assert "java" in get_run_command("java")
         assert "./build/server" in get_run_command("cpp") or "./server" in get_run_command("cpp")
         assert "release" in get_run_command("rust")
+
+
+class TestSecurityAnalysis:
+    """Tests for security analysis features in build configs."""
+
+    def test_security_analysis_type_enum(self):
+        """Test SecurityAnalysisType enum values."""
+        from backend.services.distributed_build import SecurityAnalysisType
+
+        assert SecurityAnalysisType.MEMORY_CORRUPTION.value == "memory_corruption"
+        assert SecurityAnalysisType.BUFFER_OVERFLOW.value == "buffer_overflow"
+        assert SecurityAnalysisType.RACE_CONDITION.value == "race_condition"
+        assert SecurityAnalysisType.UNDEFINED_BEHAVIOR.value == "undefined_behavior"
+        assert SecurityAnalysisType.CONCURRENCY.value == "concurrency"
+
+    def test_security_finding_dataclass(self):
+        """Test SecurityFinding dataclass."""
+        from backend.services.distributed_build import SecurityFinding, SecurityAnalysisType
+
+        finding = SecurityFinding(
+            finding_type=SecurityAnalysisType.RACE_CONDITION,
+            severity="high",
+            message="Potential race condition detected",
+            file="server.cpp",
+            line=42,
+            details={"variable": "counter"}
+        )
+
+        assert finding.finding_type == SecurityAnalysisType.RACE_CONDITION
+        assert finding.severity == "high"
+        assert finding.message == "Potential race condition detected"
+        assert finding.file == "server.cpp"
+        assert finding.line == 42
+
+    def test_python_build_includes_bandit_security_analysis(self):
+        """Test Python build includes Bandit security scanner."""
+        from backend.services.distributed_build import DistributedBuildService
+
+        service = DistributedBuildService()
+        config = service.get_cloudbuild_config("python", 123)
+
+        steps_str = str(config["steps"])
+        assert "bandit" in steps_str
+        assert "security_analysis.log" in steps_str
+
+    def test_python_build_includes_safety_dependency_check(self):
+        """Test Python build includes Safety for vulnerable dependencies."""
+        from backend.services.distributed_build import DistributedBuildService
+
+        service = DistributedBuildService()
+        config = service.get_cloudbuild_config("python", 123)
+
+        steps_str = str(config["steps"])
+        assert "safety check" in steps_str
+
+    def test_go_build_includes_race_detector(self):
+        """Test Go build includes race detector."""
+        from backend.services.distributed_build import DistributedBuildService
+
+        service = DistributedBuildService()
+        config = service.get_cloudbuild_config("go", 123)
+
+        steps_str = str(config["steps"])
+        assert "-race" in steps_str
+        assert "go vet" in steps_str
+
+    def test_go_build_includes_static_analysis(self):
+        """Test Go build includes go vet static analysis."""
+        from backend.services.distributed_build import DistributedBuildService
+
+        service = DistributedBuildService()
+        config = service.get_cloudbuild_config("go", 123)
+
+        steps_str = str(config["steps"])
+        assert "go vet" in steps_str
+
+    def test_java_build_includes_spotbugs(self):
+        """Test Java build includes SpotBugs analysis."""
+        from backend.services.distributed_build import DistributedBuildService
+
+        service = DistributedBuildService()
+        config = service.get_cloudbuild_config("java", 123)
+
+        steps_str = str(config["steps"])
+        assert "spotbugs" in steps_str.lower()
+
+    def test_cpp_build_includes_address_sanitizer(self):
+        """Test C++ build includes AddressSanitizer for memory analysis."""
+        from backend.services.distributed_build import DistributedBuildService
+
+        service = DistributedBuildService()
+        config = service.get_cloudbuild_config("cpp", 123)
+
+        steps_str = str(config["steps"])
+        assert "fsanitize=address" in steps_str
+        assert "AddressSanitizer" in steps_str
+
+    def test_cpp_build_includes_thread_sanitizer(self):
+        """Test C++ build includes ThreadSanitizer for race detection."""
+        from backend.services.distributed_build import DistributedBuildService
+
+        service = DistributedBuildService()
+        config = service.get_cloudbuild_config("cpp", 123)
+
+        steps_str = str(config["steps"])
+        assert "fsanitize=thread" in steps_str
+        assert "ThreadSanitizer" in steps_str
+
+    def test_rust_build_includes_clippy(self):
+        """Test Rust build includes Clippy linter."""
+        from backend.services.distributed_build import DistributedBuildService
+
+        service = DistributedBuildService()
+        config = service.get_cloudbuild_config("rust", 123)
+
+        steps_str = str(config["steps"])
+        assert "clippy" in steps_str
+
+    def test_rust_build_includes_cargo_audit(self):
+        """Test Rust build includes cargo audit for vulnerable dependencies."""
+        from backend.services.distributed_build import DistributedBuildService
+
+        service = DistributedBuildService()
+        config = service.get_cloudbuild_config("rust", 123)
+
+        steps_str = str(config["steps"])
+        assert "cargo audit" in steps_str
+
+
+class TestAdminDeploymentManagement:
+    """Tests for admin deployment management endpoints."""
+
+    def test_admin_router_has_teardown_endpoint(self):
+        """Test admin router has teardown deployment endpoint."""
+        from backend.api.admin import router
+
+        routes = [route.path for route in router.routes]
+        assert "/admin/deployments/{submission_id}/teardown" in routes
+
+    def test_admin_router_has_cleanup_all_endpoint(self):
+        """Test admin router has cleanup all deployments endpoint."""
+        from backend.api.admin import router
+
+        routes = [route.path for route in router.routes]
+        assert "/admin/deployments/cleanup-all" in routes
+
+    def test_admin_router_has_extend_endpoint(self):
+        """Test admin router has extend deployment timeout endpoint."""
+        from backend.api.admin import router
+
+        routes = [route.path for route in router.routes]
+        assert "/admin/deployments/{submission_id}/extend" in routes
+
+    def test_admin_router_has_list_deployments_endpoint(self):
+        """Test admin router has list deployments endpoint."""
+        from backend.api.admin import router
+
+        routes = [route.path for route in router.routes]
+        assert "/admin/deployments" in routes
