@@ -10,6 +10,7 @@ import ErrorBoundary from './components/ErrorBoundary'
 import AdminLayout from './components/AdminLayout'
 import AdminDashboard from './pages/AdminDashboard'
 import AdminUsageDashboard from './pages/AdminUsageDashboard'
+import AdminUserManagement from './pages/AdminUserManagement'
 import AuthCallback from './pages/AuthCallback'
 import Login from './pages/Login'
 import NotFound from './pages/NotFound'
@@ -73,6 +74,14 @@ function AdminRoutes() {
           element={
             <AdminRoute>
               <AdminUsageDashboard />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="users"
+          element={
+            <AdminRoute>
+              <AdminUserManagement />
             </AdminRoute>
           }
         />

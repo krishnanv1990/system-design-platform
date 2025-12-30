@@ -606,6 +606,31 @@ export const userApi = {
 }
 
 /**
+ * Admin user types
+ */
+export interface AdminUser {
+  id: number
+  email: string
+  name: string | null
+  display_name: string | null
+  is_banned: boolean
+  ban_reason: string | null
+  banned_at: string | null
+  is_admin: boolean
+  created_at: string
+}
+
+export interface BanUserRequest {
+  user_id: number
+  reason: string
+}
+
+export interface UnbanUserRequest {
+  user_id: number
+  reason?: string
+}
+
+/**
  * Admin API
  */
 export const adminApi = {
@@ -622,6 +647,32 @@ export const adminApi = {
    */
   getActivity: async (days: number = 7, limit: number = 100): Promise<AdminActivityResponse> => {
     const response = await api.get('/user/admin/activity', { params: { days, limit } })
+    return response.data
+  },
+
+  /**
+   * List all users (admin only)
+   */
+  listUsers: async (bannedOnly: boolean = false): Promise<AdminUser[]> => {
+    const response = await api.get('/user/admin/users', { params: { banned_only: bannedOnly } })
+    return response.data
+  },
+
+  /**
+   * Ban a user (admin only)
+   */
+  banUser: async (userId: number, reason: string): Promise<AdminUser> => {
+    const response = await api.post('/user/admin/ban', null, {
+      params: { user_id: userId, reason }
+    })
+    return response.data
+  },
+
+  /**
+   * Unban a user (admin only)
+   */
+  unbanUser: async (request: UnbanUserRequest): Promise<AdminUser> => {
+    const response = await api.post('/user/admin/unban', request)
     return response.data
   },
 }

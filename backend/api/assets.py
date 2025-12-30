@@ -229,12 +229,8 @@ async def get_all_assets(
     Admin endpoint: Get all GCP assets across all candidates.
     Only accessible by admin users.
     """
-    # Check if user is admin (you may want to add proper admin check)
-    # For now, check if email ends with a specific domain or is in a list
-    admin_emails = ["admin@example.com", "developer@example.com"]
-    is_admin = current_user.email in admin_emails or current_user.email.endswith("@anthropic.com")
-
-    if not is_admin:
+    # Check if user is admin using the is_admin field on the User model
+    if not current_user.is_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required"
@@ -285,11 +281,8 @@ async def get_cleanup_candidates(
     """
     from datetime import timedelta
 
-    # Check admin access
-    admin_emails = ["admin@example.com", "developer@example.com"]
-    is_admin = current_user.email in admin_emails or current_user.email.endswith("@anthropic.com")
-
-    if not is_admin:
+    # Check if user is admin using the is_admin field on the User model
+    if not current_user.is_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required"

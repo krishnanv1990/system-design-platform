@@ -4,7 +4,7 @@
 
 import { useState } from "react"
 import { Outlet, Link, useNavigate, useLocation } from "react-router-dom"
-import { LogOut, Moon, Sun, User, Menu, X, Home, BarChart3, Activity, Shield } from "lucide-react"
+import { LogOut, Moon, Sun, User, Menu, X, Home, BarChart3, Activity, Shield, Users } from "lucide-react"
 import { useAuth } from "./AuthContext"
 import { useTheme } from "@/hooks/useTheme"
 import { Button } from "@/components/ui/button"
@@ -44,6 +44,7 @@ export default function AdminLayout() {
   const navLinks = [
     { to: "/dashboard", label: "Dashboard", icon: Home },
     { to: "/usage", label: "Usage & Billing", icon: BarChart3 },
+    { to: "/users", label: "Users", icon: Users },
   ]
 
   return (
