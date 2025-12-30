@@ -290,6 +290,7 @@ async def run_distributed_build(submission_id: int, language: str, source_code: 
                     logger.error(f"Build {build_id} failed with status: {build_result.status.name}")
 
                     # Final log fetch
+                    log_content = ""
                     try:
                         log_url = build_result.log_url
                         if log_url and log_url.startswith("gs://"):
@@ -303,15 +304,35 @@ async def run_distributed_build(submission_id: int, language: str, source_code: 
                             blob = bucket.blob(blob_name)
 
                             if blob.exists():
-                                logs_buffer = [f"Build ID: {build_id}\n", "=" * 50 + "\n", blob.download_as_text()]
+                                log_content = blob.download_as_text()
                     except Exception as e:
-                        logger.debug(f"Final log fetch failed: {e}")
+                        logger.warning(f"Final log fetch failed: {e}")
 
-                    logs_buffer.append(f"\n\n" + "=" * 50 + f"\nBUILD FAILED: {build_result.status.name}\n" + "=" * 50)
+                    # Build detailed error message from build result
+                    error_details = []
+                    if hasattr(build_result, 'failure_info') and build_result.failure_info:
+                        if build_result.failure_info.detail:
+                            error_details.append(f"Failure: {build_result.failure_info.detail}")
+
+                    # Get step-level errors
+                    for i, step in enumerate(build_result.steps):
+                        if step.status == cloudbuild_v1.Build.Status.FAILURE:
+                            error_details.append(f"Step {i} ({step.name}) failed with exit code {step.exit_code}")
+
+                    # Construct final logs
+                    logs_buffer = [f"Build ID: {build_id}\n", "=" * 50 + "\n"]
+                    if log_content:
+                        logs_buffer.append(log_content)
+                    if error_details:
+                        logs_buffer.append("\n\n" + "=" * 50 + "\nERROR DETAILS:\n")
+                        logs_buffer.extend([f"  - {e}\n" for e in error_details])
+                    logs_buffer.append("\n" + "=" * 50 + f"\nBUILD FAILED: {build_result.status.name}\n" + "=" * 50)
 
                     submission.status = SubmissionStatus.BUILD_FAILED.value
                     submission.build_logs = "".join(logs_buffer)
                     submission.error_message = f"Build failed: {build_result.status.name}"
+                    if error_details:
+                        submission.error_message += f" - {error_details[0]}"
                     db.commit()
                     return
 
