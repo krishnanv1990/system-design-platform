@@ -584,6 +584,144 @@ class TestDistributedBuildProcess:
         assert "/submissions/{submission_id}/build-logs" in routes
 
 
+class TestTemplateMainFunctions:
+    """Tests to verify all templates have main() functions for proper execution."""
+
+    def test_python_template_has_main_function(self):
+        """Test Python template has main() function."""
+        from backend.api.distributed import get_template_from_filesystem
+
+        template = get_template_from_filesystem("python")
+
+        # Should have main function
+        assert "def main():" in template or 'if __name__ == "__main__":' in template
+        # Should not contain error message
+        assert "Template file not found" not in template
+        assert "Template not available" not in template
+
+    def test_go_template_has_main_function(self):
+        """Test Go template has main() function."""
+        from backend.api.distributed import get_template_from_filesystem
+
+        template = get_template_from_filesystem("go")
+
+        # Should have main function
+        assert "func main()" in template
+        # Should not contain error message
+        assert "Template file not found" not in template
+        assert "Template not available" not in template
+
+    def test_java_template_has_main_function(self):
+        """Test Java template has main() function."""
+        from backend.api.distributed import get_template_from_filesystem
+
+        template = get_template_from_filesystem("java")
+
+        # Should have main function
+        assert "public static void main" in template
+        # Should not contain error message
+        assert "Template file not found" not in template
+        assert "Template not available" not in template
+
+    def test_cpp_template_has_main_function(self):
+        """Test C++ template has main() function."""
+        from backend.api.distributed import get_template_from_filesystem
+
+        template = get_template_from_filesystem("cpp")
+
+        # Should have main function
+        assert "int main(" in template
+        # Should not contain error message
+        assert "Template file not found" not in template
+        assert "Template not available" not in template
+
+    def test_rust_template_has_main_function(self):
+        """Test Rust template has main() function."""
+        from backend.api.distributed import get_template_from_filesystem
+
+        template = get_template_from_filesystem("rust")
+
+        # Should have main function
+        assert "fn main()" in template or "async fn main()" in template
+        # Should not contain error message
+        assert "Template file not found" not in template
+        assert "Template not available" not in template
+
+    def test_all_templates_load_successfully(self):
+        """Test that all templates load without 'not found' errors."""
+        from backend.api.distributed import get_template_from_filesystem
+
+        languages = ["python", "go", "java", "cpp", "rust"]
+        for lang in languages:
+            template = get_template_from_filesystem(lang)
+            assert "Template file not found" not in template, f"{lang} template not found"
+            assert len(template) > 100, f"{lang} template too short"
+
+
+class TestCppCMakeListsGeneration:
+    """Tests for C++ CMakeLists.txt generation."""
+
+    def test_cpp_cmakelists_is_generated(self):
+        """Test that CMakeLists.txt is generated for C++ builds."""
+        from backend.services.distributed_build import DistributedBuildService
+
+        service = DistributedBuildService()
+        files = service._get_build_files("cpp")
+
+        assert "CMakeLists.txt" in files
+
+    def test_cpp_cmakelists_has_abseil_linking(self):
+        """Test CMakeLists.txt includes Abseil library linking."""
+        from backend.services.distributed_build import DistributedBuildService
+
+        service = DistributedBuildService()
+        cmake = service._get_cpp_cmakelists()
+
+        assert "find_package(absl" in cmake
+        assert "absl::base" in cmake
+        assert "absl::strings" in cmake
+
+    def test_cpp_cmakelists_has_grpc_linking(self):
+        """Test CMakeLists.txt includes gRPC library linking."""
+        from backend.services.distributed_build import DistributedBuildService
+
+        service = DistributedBuildService()
+        cmake = service._get_cpp_cmakelists()
+
+        assert "find_package(gRPC" in cmake
+        assert "grpc++" in cmake
+
+    def test_cpp_cmakelists_has_protobuf_linking(self):
+        """Test CMakeLists.txt includes Protobuf library linking."""
+        from backend.services.distributed_build import DistributedBuildService
+
+        service = DistributedBuildService()
+        cmake = service._get_cpp_cmakelists()
+
+        assert "find_package(Protobuf" in cmake
+        assert "Protobuf_LIBRARIES" in cmake
+
+    def test_cpp_cmakelists_generates_server_executable(self):
+        """Test CMakeLists.txt creates server executable."""
+        from backend.services.distributed_build import DistributedBuildService
+
+        service = DistributedBuildService()
+        cmake = service._get_cpp_cmakelists()
+
+        assert "add_executable(server" in cmake
+        assert "server.cpp" in cmake
+
+    def test_cpp_cmakelists_has_fallback_for_manual_linking(self):
+        """Test CMakeLists.txt has fallback for manual library linking."""
+        from backend.services.distributed_build import DistributedBuildService
+
+        service = DistributedBuildService()
+        cmake = service._get_cpp_cmakelists()
+
+        # Should have fallback mechanism for finding Abseil
+        assert "find_library(ABSL_BASE" in cmake
+
+
 class TestBuildLogsFetching:
     """Tests for build log fetching functionality."""
 
