@@ -1,0 +1,48 @@
+# Cloud Build configuration for prebuilt C++ base image
+# Run this once to create the base image, then user builds will be fast
+#
+# To build manually:
+# gcloud builds submit --config=distributed_problems/raft/docker/cloudbuild-cpp-base.yaml \
+#   --substitutions=_PROJECT_ID=$(gcloud config get-value project) .
+
+steps:
+  # Copy the proto file to the docker context
+  - name: 'gcr.io/cloud-builders/docker'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        cp distributed_problems/raft/proto/raft.proto distributed_problems/raft/docker/
+
+  # Build the C++ base image with all dependencies precompiled
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'gcr.io/${_PROJECT_ID}/raft-cpp-base:latest'
+      - '-t'
+      - 'gcr.io/${_PROJECT_ID}/raft-cpp-base:v1'
+      - '-f'
+      - 'distributed_problems/raft/docker/Dockerfile.cpp-base'
+      - 'distributed_problems/raft/docker'
+    timeout: '3600s'  # gRPC compilation takes ~30min
+
+  # Push the image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/${_PROJECT_ID}/raft-cpp-base:latest']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/${_PROJECT_ID}/raft-cpp-base:v1']
+
+images:
+  - 'gcr.io/${_PROJECT_ID}/raft-cpp-base:latest'
+  - 'gcr.io/${_PROJECT_ID}/raft-cpp-base:v1'
+
+substitutions:
+  _PROJECT_ID: 'system-design-platform-prod'
+
+timeout: '7200s'
+
+options:
+  machineType: 'E2_HIGHCPU_8'  # Use faster machine for compilation
+  logging: CLOUD_LOGGING_ONLY

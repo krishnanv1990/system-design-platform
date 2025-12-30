@@ -114,6 +114,61 @@ class TestDistributedBuildService:
         assert "go.mod" in files
         assert "grpc" in files["go.mod"].lower()
 
+    def test_cpp_uses_prebuilt_base_image(self):
+        """Test that C++ build uses prebuilt base image for faster builds."""
+        from backend.services.distributed_build import DistributedBuildService
+
+        service = DistributedBuildService()
+        config = service.get_cloudbuild_config("cpp", 123)
+
+        # Should use prebuilt base image
+        steps_str = str(config["steps"])
+        assert "raft-cpp-base" in steps_str
+        assert "latest" in steps_str
+
+    def test_cpp_build_has_reduced_timeout(self):
+        """Test that C++ build timeout is reduced due to prebuilt dependencies."""
+        from backend.services.distributed_build import DistributedBuildService
+
+        service = DistributedBuildService()
+        config = service.get_cloudbuild_config("cpp", 123)
+
+        # With prebuilt deps, timeout should be 300s or less (not 900s)
+        assert config["timeout"] == "300s"
+
+    def test_cpp_dockerfile_uses_base_image_libraries(self):
+        """Test that C++ Dockerfile copies libraries from prebuilt base image."""
+        from backend.services.distributed_build import DistributedBuildService
+
+        service = DistributedBuildService()
+        dockerfile = service._get_dockerfile("cpp")
+
+        # Should reference the base image for libraries
+        assert "raft-cpp-base" in dockerfile
+        assert "/usr/local/lib" in dockerfile
+        assert "ldconfig" in dockerfile
+
+    def test_cpp_dockerfile_includes_project_id(self):
+        """Test that C++ Dockerfile correctly includes project ID."""
+        from backend.services.distributed_build import DistributedBuildService
+
+        service = DistributedBuildService()
+        dockerfile = service._get_dockerfile("cpp")
+
+        # Should include the project ID from settings
+        assert service.project_id in dockerfile
+
+    def test_cpp_build_copies_pregenerated_proto_files(self):
+        """Test that C++ build copies pre-generated proto files from base image."""
+        from backend.services.distributed_build import DistributedBuildService
+
+        service = DistributedBuildService()
+        config = service.get_cloudbuild_config("cpp", 123)
+
+        # Should copy generated proto files
+        steps_str = str(config["steps"])
+        assert "cp -r /app/generated" in steps_str or "generated" in steps_str
+
 
 class TestDistributedTestRunner:
     """Tests for the distributed test runner."""

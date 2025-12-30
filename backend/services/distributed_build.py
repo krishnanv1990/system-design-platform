@@ -131,37 +131,50 @@ class DistributedBuildService:
         }
 
     def _cpp_build_config(self, image_name: str, submission_id: int) -> Dict:
-        """Cloud Build config for C++."""
+        """
+        Cloud Build config for C++ using prebuilt base image.
+
+        Uses gcr.io/{project}/raft-cpp-base which has:
+        - Pre-compiled gRPC and protobuf libraries
+        - Pre-generated proto stubs
+        - CMake template
+
+        This reduces build time from ~15min to ~1-2min.
+        """
+        base_image = f"gcr.io/{self.project_id}/raft-cpp-base:latest"
         return {
             "steps": [
+                # Step 1: Build user code using prebuilt base image
+                # The base image has CMakeLists.txt.template and pre-generated proto files
                 {
-                    "name": "gcr.io/cloud-builders/docker",
-                    "args": [
-                        "build",
-                        "-t", f"{image_name}-builder",
-                        "-f", "Dockerfile.cpp.builder",
-                        "."
-                    ],
-                },
-                {
-                    "name": f"{image_name}-builder",
+                    "name": base_image,
                     "entrypoint": "bash",
                     "args": [
                         "-c",
-                        "mkdir -p build && cd build && cmake .. && make"
+                        # Copy CMakeLists template from base image to workspace
+                        # Copy pre-generated proto files to workspace
+                        # Build the user's code
+                        "cp /app/CMakeLists.txt.template /workspace/CMakeLists.txt && "
+                        "cp -r /app/generated /workspace/ && "
+                        "cd /workspace && "
+                        "mkdir -p build && cd build && "
+                        "cmake -DCMAKE_BUILD_TYPE=Release .. && "
+                        "make -j$(nproc)"
                     ],
                 },
+                # Step 2: Build slim runtime image
                 {
                     "name": "gcr.io/cloud-builders/docker",
                     "args": ["build", "-t", image_name, "-f", "Dockerfile.cpp", "."],
                 },
+                # Step 3: Push image
                 {
                     "name": "gcr.io/cloud-builders/docker",
                     "args": ["push", image_name],
                 },
             ],
             "images": [image_name],
-            "timeout": "900s",
+            "timeout": "300s",  # Reduced from 900s since we use prebuilt deps
         }
 
     def _rust_build_config(self, image_name: str, submission_id: int) -> Dict:
@@ -296,6 +309,10 @@ class DistributedBuildService:
 
     def _get_dockerfile(self, language: str) -> str:
         """Get Dockerfile content for a language."""
+        # C++ needs dynamic generation for project ID
+        if language == "cpp":
+            return self._get_cpp_dockerfile()
+
         dockerfiles = {
             "python": """
 FROM python:3.11-slim
@@ -324,12 +341,6 @@ WORKDIR /app
 COPY build/libs/*.jar app.jar
 CMD ["java", "-jar", "app.jar"]
 """,
-            "cpp": """
-FROM ubuntu:22.04
-WORKDIR /app
-COPY build/server .
-CMD ["./server"]
-""",
             "rust": """
 FROM rust:1.74 AS builder
 WORKDIR /app
@@ -343,6 +354,44 @@ CMD ["./server"]
 """,
         }
         return dockerfiles.get(language, "FROM scratch")
+
+    def _get_cpp_dockerfile(self) -> str:
+        """
+        Generate C++ Dockerfile with project-specific base image reference.
+
+        Uses the prebuilt raft-cpp-base image which contains:
+        - Pre-compiled gRPC and protobuf libraries
+        - All necessary shared libraries for runtime
+        """
+        return f"""
+# Runtime image for C++ Raft server
+# Uses prebuilt base image for shared libraries
+FROM gcr.io/{self.project_id}/raft-cpp-base:latest AS base
+
+FROM ubuntu:22.04
+
+# Install minimal runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \\
+    libssl3 \\
+    ca-certificates \\
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy shared libraries from prebuilt base image
+COPY --from=base /usr/local/lib /usr/local/lib
+
+# Update library cache
+RUN ldconfig
+
+# Copy the built server binary
+COPY build/server .
+
+# Expose gRPC port
+EXPOSE 50051
+
+CMD ["./server"]
+"""
 
     def _get_build_files(self, language: str) -> Dict[str, str]:
         """Get additional build files for a language."""

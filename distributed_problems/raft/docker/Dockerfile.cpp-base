@@ -1,0 +1,139 @@
+# Prebuilt C++ base image for Raft consensus builds
+# This image contains pre-compiled gRPC, protobuf, and all build dependencies
+# Building user code against this image reduces build time from ~15min to ~1-2min
+
+FROM ubuntu:22.04 AS builder
+
+# Avoid prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    cmake \
+    git \
+    pkg-config \
+    libssl-dev \
+    autoconf \
+    automake \
+    libtool \
+    curl \
+    unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /opt
+
+# Install protobuf (version 3.21.12 - compatible with gRPC)
+ENV PROTOBUF_VERSION=3.21.12
+RUN git clone --depth 1 --branch v${PROTOBUF_VERSION} https://github.com/protocolbuffers/protobuf.git && \
+    cd protobuf && \
+    git submodule update --init --recursive && \
+    mkdir build && cd build && \
+    cmake -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_INSTALL_PREFIX=/usr/local \
+          -Dprotobuf_BUILD_TESTS=OFF \
+          -Dprotobuf_ABSL_PROVIDER=package \
+          -DABSL_ENABLE_INSTALL=ON \
+          .. && \
+    make -j$(nproc) && \
+    make install && \
+    ldconfig && \
+    cd /opt && rm -rf protobuf
+
+# Install gRPC (version 1.59.0)
+ENV GRPC_VERSION=1.59.0
+RUN git clone --depth 1 --branch v${GRPC_VERSION} https://github.com/grpc/grpc.git && \
+    cd grpc && \
+    git submodule update --init --recursive && \
+    mkdir -p cmake/build && cd cmake/build && \
+    cmake -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_INSTALL_PREFIX=/usr/local \
+          -DgRPC_INSTALL=ON \
+          -DgRPC_BUILD_TESTS=OFF \
+          -DgRPC_PROTOBUF_PROVIDER=package \
+          -DgRPC_SSL_PROVIDER=package \
+          ../.. && \
+    make -j$(nproc) && \
+    make install && \
+    ldconfig && \
+    cd /opt && rm -rf grpc
+
+# Create directory for proto files
+WORKDIR /app/proto
+
+# Copy and compile the Raft proto file
+COPY raft.proto /app/proto/
+
+# Generate C++ proto files
+RUN mkdir -p /app/generated && \
+    protoc --cpp_out=/app/generated --grpc_out=/app/generated \
+           --plugin=protoc-gen-grpc=$(which grpc_cpp_plugin) \
+           -I/app/proto /app/proto/raft.proto
+
+# Set up work directory for user code
+WORKDIR /app/build
+
+# Create a template CMakeLists.txt for user builds
+# Uses relative paths since it will be copied to /workspace during build
+RUN cat > /app/CMakeLists.txt.template << 'EOF'
+cmake_minimum_required(VERSION 3.16)
+project(raft_server)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Find required packages (installed in /usr/local by base image)
+find_package(Protobuf REQUIRED)
+find_package(gRPC CONFIG REQUIRED)
+
+# Include generated proto files (relative to workspace root)
+include_directories(${CMAKE_SOURCE_DIR}/generated)
+
+# Add executable with user code and pre-generated proto stubs
+add_executable(server
+    server.cpp
+    ${CMAKE_SOURCE_DIR}/generated/raft.pb.cc
+    ${CMAKE_SOURCE_DIR}/generated/raft.grpc.pb.cc
+)
+
+# Link libraries
+target_link_libraries(server
+    gRPC::grpc++
+    gRPC::grpc++_reflection
+    protobuf::libprotobuf
+    pthread
+)
+EOF
+
+# Final stage - create the development image
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    cmake \
+    libssl-dev \
+    pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy installed libraries from builder
+COPY --from=builder /usr/local /usr/local
+
+# Copy generated proto files and template
+COPY --from=builder /app/generated /app/generated
+COPY --from=builder /app/CMakeLists.txt.template /app/CMakeLists.txt.template
+
+# Update library cache
+RUN ldconfig
+
+WORKDIR /app/build
+
+# Set environment for builds
+ENV CMAKE_PREFIX_PATH=/usr/local
+ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
+
+# Default command for testing
+CMD ["bash"]
