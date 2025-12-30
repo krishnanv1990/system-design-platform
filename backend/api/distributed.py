@@ -1,0 +1,658 @@
+"""
+Distributed Consensus Problems API routes.
+
+Provides endpoints for:
+- Listing distributed consensus problems (Raft, Paxos, etc.)
+- Getting problem details with gRPC proto and language templates
+- Saving/loading user code
+- Creating and managing distributed submissions
+"""
+
+import os
+from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+from pydantic import BaseModel
+
+from backend.database import get_db
+from backend.models.problem import Problem, ProblemType, SupportedLanguage
+from backend.models.submission import Submission, SubmissionStatus, SubmissionType
+from backend.models.user import User
+from backend.auth.jwt_handler import get_current_user
+
+router = APIRouter()
+
+
+# ============================================================================
+# Pydantic Schemas
+# ============================================================================
+
+class LanguageTemplate(BaseModel):
+    """Code template for a language."""
+    language: str
+    template: str
+    build_command: str
+    run_command: str
+
+
+class TestScenario(BaseModel):
+    """Test scenario for distributed system testing."""
+    name: str
+    description: str
+    test_type: str  # functional, performance, chaos
+    parameters: Optional[dict] = None
+
+
+class DistributedProblemListResponse(BaseModel):
+    """List response for distributed problems."""
+    id: int
+    title: str
+    description: str
+    difficulty: str
+    problem_type: str
+    supported_languages: List[str]
+    cluster_size: int
+    tags: Optional[List[str]] = None
+    created_at: str
+
+    class Config:
+        from_attributes = True
+
+
+class DistributedProblemResponse(BaseModel):
+    """Full response for a distributed problem."""
+    id: int
+    title: str
+    description: str
+    difficulty: str
+    problem_type: str
+    grpc_proto: str
+    supported_languages: List[str]
+    cluster_size: int
+    language_templates: dict
+    test_scenarios: List[TestScenario]
+    hints: Optional[List[str]] = None
+    tags: Optional[List[str]] = None
+    created_at: str
+
+    class Config:
+        from_attributes = True
+
+
+class TemplateResponse(BaseModel):
+    """Response for template code."""
+    template: str
+
+
+class SavedCodeResponse(BaseModel):
+    """Response for saved code."""
+    code: str
+
+
+class SaveCodeRequest(BaseModel):
+    """Request to save code."""
+    language: str
+    code: str
+
+
+class DistributedSubmissionCreate(BaseModel):
+    """Create a distributed submission."""
+    problem_id: int
+    language: str
+    source_code: str
+
+
+class DistributedSubmissionResponse(BaseModel):
+    """Response for a distributed submission."""
+    id: int
+    problem_id: int
+    user_id: int
+    submission_type: str
+    language: str
+    source_code: str
+    status: str
+    build_logs: Optional[str] = None
+    build_artifact_url: Optional[str] = None
+    cluster_node_urls: Optional[List[str]] = None
+    error_message: Optional[str] = None
+    created_at: str
+
+    class Config:
+        from_attributes = True
+
+
+class BuildLogsResponse(BaseModel):
+    """Response for build logs."""
+    logs: str
+
+
+# ============================================================================
+# Helper Functions
+# ============================================================================
+
+def get_template_from_filesystem(language: str) -> str:
+    """Load template from the distributed_problems directory."""
+    # Map language to directory/file
+    file_map = {
+        "python": "python/server.py",
+        "go": "go/server.go",
+        "java": "java/RaftServer.java",
+        "cpp": "cpp/server.cpp",
+        "rust": "rust/src/main.rs",
+    }
+
+    if language not in file_map:
+        return f"// Template not available for {language}"
+
+    # Construct path relative to project root
+    base_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    template_path = os.path.join(
+        base_path,
+        "distributed_problems",
+        "raft",
+        "templates",
+        file_map[language]
+    )
+
+    try:
+        with open(template_path, "r") as f:
+            return f.read()
+    except FileNotFoundError:
+        return f"// Template file not found: {template_path}"
+
+
+def get_proto_from_filesystem() -> str:
+    """Load the Raft proto file from filesystem."""
+    base_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    proto_path = os.path.join(base_path, "distributed_problems", "raft", "proto", "raft.proto")
+
+    try:
+        with open(proto_path, "r") as f:
+            return f.read()
+    except FileNotFoundError:
+        return "// Proto file not found"
+
+
+# ============================================================================
+# Problems Endpoints
+# ============================================================================
+
+@router.get("/problems", response_model=List[DistributedProblemListResponse])
+async def list_distributed_problems(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    List all distributed consensus problems.
+
+    Returns:
+        List of distributed consensus problems
+    """
+    problems = db.query(Problem).filter(
+        Problem.problem_type == ProblemType.DISTRIBUTED_CONSENSUS.value
+    ).all()
+
+    # If no problems in DB, return a default Raft problem
+    if not problems:
+        return [{
+            "id": 1,
+            "title": "Implement Raft Consensus",
+            "description": "Implement the Raft consensus algorithm. Your implementation should handle leader election, log replication, and safety properties as defined in the Raft paper.",
+            "difficulty": "hard",
+            "problem_type": "distributed_consensus",
+            "supported_languages": ["python", "go", "java", "cpp", "rust"],
+            "cluster_size": 3,
+            "tags": ["distributed-systems", "consensus", "raft"],
+            "created_at": "2025-01-01T00:00:00Z",
+        }]
+
+    return [
+        {
+            "id": p.id,
+            "title": p.title,
+            "description": p.description,
+            "difficulty": p.difficulty,
+            "problem_type": p.problem_type,
+            "supported_languages": p.supported_languages or ["python", "go", "java", "cpp", "rust"],
+            "cluster_size": p.cluster_size or 3,
+            "tags": p.tags,
+            "created_at": p.created_at.isoformat() if p.created_at else None,
+        }
+        for p in problems
+    ]
+
+
+@router.get("/problems/{problem_id}", response_model=DistributedProblemResponse)
+async def get_distributed_problem(
+    problem_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Get a specific distributed problem by ID.
+
+    Args:
+        problem_id: Problem ID
+
+    Returns:
+        Full problem details with gRPC proto and language templates
+    """
+    # For the default Raft problem (id=1), return from filesystem
+    if problem_id == 1:
+        proto = get_proto_from_filesystem()
+        test_scenarios = [
+            {"name": "Leader Election", "description": "Verify that a leader is elected when the cluster starts", "test_type": "functional"},
+            {"name": "Leader Failure", "description": "Verify that a new leader is elected when the current leader fails", "test_type": "functional"},
+            {"name": "Log Replication", "description": "Verify that log entries are replicated to all followers", "test_type": "functional"},
+            {"name": "Consistency", "description": "Verify that all nodes have consistent logs after operations", "test_type": "functional"},
+            {"name": "Network Partition", "description": "Verify correct behavior during network partitions", "test_type": "chaos"},
+            {"name": "Node Restart", "description": "Verify that nodes rejoin the cluster correctly after restart", "test_type": "chaos"},
+            {"name": "High Throughput", "description": "Test cluster performance under high write load", "test_type": "performance"},
+            {"name": "Latency", "description": "Measure request latency under normal conditions", "test_type": "performance"},
+        ]
+
+        templates = {}
+        for lang in ["python", "go", "java", "cpp", "rust"]:
+            templates[lang] = {
+                "language": lang,
+                "template": get_template_from_filesystem(lang),
+                "build_command": get_build_command(lang),
+                "run_command": get_run_command(lang),
+            }
+
+        return {
+            "id": 1,
+            "title": "Implement Raft Consensus",
+            "description": "Implement the Raft consensus algorithm. Your implementation should handle leader election, log replication, and safety properties as defined in the Raft paper.\n\nKey features to implement:\n1. Leader Election - Use randomized timeouts to elect a leader\n2. Log Replication - Replicate commands from leader to followers\n3. Safety - Ensure only nodes with complete logs can become leader\n4. Heartbeats - Maintain leadership with periodic AppendEntries RPCs\n\nRefer to the gRPC proto file for the required service interfaces.",
+            "difficulty": "hard",
+            "problem_type": "distributed_consensus",
+            "grpc_proto": proto,
+            "supported_languages": ["python", "go", "java", "cpp", "rust"],
+            "cluster_size": 3,
+            "language_templates": templates,
+            "test_scenarios": test_scenarios,
+            "hints": [
+                "Start by implementing the election timeout - when it fires, transition to candidate state",
+                "Use randomized timeouts to prevent split votes",
+                "The leader sends empty AppendEntries as heartbeats to maintain authority",
+                "Remember to reset the election timer when receiving valid AppendEntries",
+                "Log matching: if two entries have the same index and term, they are identical",
+            ],
+            "tags": ["distributed-systems", "consensus", "raft"],
+            "created_at": "2025-01-01T00:00:00Z",
+        }
+
+    # Check database for other problems
+    problem = db.query(Problem).filter(
+        Problem.id == problem_id,
+        Problem.problem_type == ProblemType.DISTRIBUTED_CONSENSUS.value
+    ).first()
+
+    if not problem:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Problem not found"
+        )
+
+    return {
+        "id": problem.id,
+        "title": problem.title,
+        "description": problem.description,
+        "difficulty": problem.difficulty,
+        "problem_type": problem.problem_type,
+        "grpc_proto": problem.grpc_proto or "",
+        "supported_languages": problem.supported_languages or ["python", "go"],
+        "cluster_size": problem.cluster_size or 3,
+        "language_templates": problem.language_templates or {},
+        "test_scenarios": problem.test_scenarios or [],
+        "hints": problem.hints,
+        "tags": problem.tags,
+        "created_at": problem.created_at.isoformat() if problem.created_at else None,
+    }
+
+
+def get_build_command(language: str) -> str:
+    """Get the build command for a language."""
+    commands = {
+        "python": "pip install -r requirements.txt && python -m grpc_tools.protoc -I../proto --python_out=. --grpc_python_out=. ../proto/raft.proto",
+        "go": "go mod download && protoc --go_out=. --go-grpc_out=. ../proto/raft.proto && go build -o server .",
+        "java": "./gradlew build",
+        "cpp": "mkdir -p build && cd build && cmake .. && make",
+        "rust": "cargo build --release",
+    }
+    return commands.get(language, "echo 'Unknown language'")
+
+
+def get_run_command(language: str) -> str:
+    """Get the run command for a language."""
+    commands = {
+        "python": "python server.py --node-id $NODE_ID --port $PORT --peers $PEERS",
+        "go": "./server --node-id $NODE_ID --port $PORT --peers $PEERS",
+        "java": "java -jar build/libs/raft-server.jar --node-id $NODE_ID --port $PORT --peers $PEERS",
+        "cpp": "./build/server --node-id $NODE_ID --port $PORT --peers $PEERS",
+        "rust": "./target/release/server --node-id $NODE_ID --port $PORT --peers $PEERS",
+    }
+    return commands.get(language, "echo 'Unknown language'")
+
+
+@router.get("/problems/{problem_id}/template/{language}", response_model=TemplateResponse)
+async def get_language_template(
+    problem_id: int,
+    language: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Get the template code for a specific language.
+
+    Args:
+        problem_id: Problem ID
+        language: Programming language
+
+    Returns:
+        Template code for the specified language
+    """
+    if language not in [lang.value for lang in SupportedLanguage]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported language: {language}"
+        )
+
+    # For the default Raft problem, load from filesystem
+    if problem_id == 1:
+        template = get_template_from_filesystem(language)
+        return {"template": template}
+
+    # Check database for other problems
+    problem = db.query(Problem).filter(
+        Problem.id == problem_id,
+        Problem.problem_type == ProblemType.DISTRIBUTED_CONSENSUS.value
+    ).first()
+
+    if not problem:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Problem not found"
+        )
+
+    templates = problem.language_templates or {}
+    if language not in templates:
+        return {"template": f"// Template not available for {language}"}
+
+    return {"template": templates[language].get("template", "")}
+
+
+@router.get("/problems/{problem_id}/saved-code/{language}", response_model=SavedCodeResponse)
+async def get_saved_code(
+    problem_id: int,
+    language: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Get saved code for a problem/language combination.
+
+    This looks for the most recent submission by the user for this problem/language.
+    """
+    submission = db.query(Submission).filter(
+        Submission.problem_id == problem_id,
+        Submission.user_id == current_user.id,
+        Submission.submission_type == SubmissionType.DISTRIBUTED_CONSENSUS.value,
+        Submission.language == language,
+    ).order_by(Submission.created_at.desc()).first()
+
+    if not submission or not submission.source_code:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No saved code found"
+        )
+
+    return {"code": submission.source_code}
+
+
+@router.post("/problems/{problem_id}/save-code")
+async def save_code(
+    problem_id: int,
+    request: SaveCodeRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Save code for a problem (auto-save functionality).
+
+    Creates a draft submission with pending status.
+    """
+    # Look for existing draft
+    submission = db.query(Submission).filter(
+        Submission.problem_id == problem_id,
+        Submission.user_id == current_user.id,
+        Submission.submission_type == SubmissionType.DISTRIBUTED_CONSENSUS.value,
+        Submission.language == request.language,
+        Submission.status == SubmissionStatus.PENDING.value,
+    ).order_by(Submission.created_at.desc()).first()
+
+    if submission:
+        # Update existing draft
+        submission.source_code = request.code
+    else:
+        # Create new draft
+        submission = Submission(
+            problem_id=problem_id,
+            user_id=current_user.id,
+            submission_type=SubmissionType.DISTRIBUTED_CONSENSUS.value,
+            language=request.language,
+            source_code=request.code,
+            status=SubmissionStatus.PENDING.value,
+        )
+        db.add(submission)
+
+    db.commit()
+    return {"message": "Code saved successfully"}
+
+
+# ============================================================================
+# Submissions Endpoints
+# ============================================================================
+
+@router.post("/submissions", response_model=DistributedSubmissionResponse)
+async def create_distributed_submission(
+    data: DistributedSubmissionCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Submit code for compilation and testing.
+
+    This will:
+    1. Create a submission record
+    2. Queue the build process
+    3. Return the submission ID for status polling
+    """
+    if data.language not in [lang.value for lang in SupportedLanguage]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported language: {data.language}"
+        )
+
+    # Create submission
+    submission = Submission(
+        problem_id=data.problem_id,
+        user_id=current_user.id,
+        submission_type=SubmissionType.DISTRIBUTED_CONSENSUS.value,
+        language=data.language,
+        source_code=data.source_code,
+        status=SubmissionStatus.BUILDING.value,
+    )
+    db.add(submission)
+    db.commit()
+    db.refresh(submission)
+
+    # TODO: Queue build job in Cloud Build
+    # For now, simulate the build starting
+
+    return {
+        "id": submission.id,
+        "problem_id": submission.problem_id,
+        "user_id": submission.user_id,
+        "submission_type": submission.submission_type,
+        "language": submission.language,
+        "source_code": submission.source_code,
+        "status": submission.status,
+        "build_logs": submission.build_logs,
+        "build_artifact_url": submission.build_artifact_url,
+        "cluster_node_urls": submission.cluster_node_urls,
+        "error_message": submission.error_message,
+        "created_at": submission.created_at.isoformat(),
+    }
+
+
+@router.get("/submissions", response_model=List[DistributedSubmissionResponse])
+async def list_distributed_submissions(
+    problem_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    List user's distributed submissions.
+
+    Args:
+        problem_id: Optional filter by problem ID
+    """
+    query = db.query(Submission).filter(
+        Submission.user_id == current_user.id,
+        Submission.submission_type == SubmissionType.DISTRIBUTED_CONSENSUS.value,
+    )
+
+    if problem_id:
+        query = query.filter(Submission.problem_id == problem_id)
+
+    submissions = query.order_by(Submission.created_at.desc()).limit(50).all()
+
+    return [
+        {
+            "id": s.id,
+            "problem_id": s.problem_id,
+            "user_id": s.user_id,
+            "submission_type": s.submission_type,
+            "language": s.language,
+            "source_code": s.source_code,
+            "status": s.status,
+            "build_logs": s.build_logs,
+            "build_artifact_url": s.build_artifact_url,
+            "cluster_node_urls": s.cluster_node_urls,
+            "error_message": s.error_message,
+            "created_at": s.created_at.isoformat(),
+        }
+        for s in submissions
+    ]
+
+
+@router.get("/submissions/{submission_id}", response_model=DistributedSubmissionResponse)
+async def get_distributed_submission(
+    submission_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Get a specific distributed submission.
+
+    Args:
+        submission_id: Submission ID
+    """
+    submission = db.query(Submission).filter(
+        Submission.id == submission_id,
+        Submission.user_id == current_user.id,
+        Submission.submission_type == SubmissionType.DISTRIBUTED_CONSENSUS.value,
+    ).first()
+
+    if not submission:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Submission not found"
+        )
+
+    return {
+        "id": submission.id,
+        "problem_id": submission.problem_id,
+        "user_id": submission.user_id,
+        "submission_type": submission.submission_type,
+        "language": submission.language,
+        "source_code": submission.source_code,
+        "status": submission.status,
+        "build_logs": submission.build_logs,
+        "build_artifact_url": submission.build_artifact_url,
+        "cluster_node_urls": submission.cluster_node_urls,
+        "error_message": submission.error_message,
+        "created_at": submission.created_at.isoformat(),
+    }
+
+
+@router.get("/submissions/{submission_id}/build-logs", response_model=BuildLogsResponse)
+async def get_build_logs(
+    submission_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Get build logs for a submission.
+
+    Args:
+        submission_id: Submission ID
+    """
+    submission = db.query(Submission).filter(
+        Submission.id == submission_id,
+        Submission.user_id == current_user.id,
+    ).first()
+
+    if not submission:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Submission not found"
+        )
+
+    return {"logs": submission.build_logs or "No build logs available yet."}
+
+
+@router.get("/submissions/{submission_id}/tests")
+async def get_submission_tests(
+    submission_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Get test results for a distributed submission.
+
+    Args:
+        submission_id: Submission ID
+    """
+    from backend.models.test_result import TestResult
+
+    submission = db.query(Submission).filter(
+        Submission.id == submission_id,
+        Submission.user_id == current_user.id,
+    ).first()
+
+    if not submission:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Submission not found"
+        )
+
+    tests = db.query(TestResult).filter(
+        TestResult.submission_id == submission_id
+    ).all()
+
+    return [
+        {
+            "id": t.id,
+            "submission_id": t.submission_id,
+            "test_type": t.test_type,
+            "test_name": t.test_name,
+            "status": t.status,
+            "details": t.details,
+            "duration_ms": t.duration_ms,
+            "chaos_scenario": t.chaos_scenario,
+            "created_at": t.created_at.isoformat() if t.created_at else None,
+        }
+        for t in tests
+    ]

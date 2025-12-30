@@ -15,6 +15,9 @@ import TermsOfService from './pages/TermsOfService'
 import PrivacyPolicy from './pages/PrivacyPolicy'
 import AccountSettings from './pages/AccountSettings'
 import NotFound from './pages/NotFound'
+import DistributedProblemList from './pages/DistributedProblemList'
+import DistributedProblemDetail from './pages/DistributedProblemDetail'
+import DistributedSubmissionResults from './pages/DistributedSubmissionResults'
 
 /**
  * Protected route wrapper - redirects to login if not authenticated
@@ -90,6 +93,31 @@ function AppRoutes() {
           element={
             <ProtectedRoute>
               <UsageDashboard />
+            </ProtectedRoute>
+          }
+        />
+        {/* Distributed consensus problems */}
+        <Route
+          path="distributed"
+          element={
+            <ProtectedRoute>
+              <DistributedProblemList />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="distributed/:id"
+          element={
+            <ProtectedRoute>
+              <DistributedProblemDetail />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="distributed/submissions/:id"
+          element={
+            <ProtectedRoute>
+              <DistributedSubmissionResults />
             </ProtectedRoute>
           }
         />

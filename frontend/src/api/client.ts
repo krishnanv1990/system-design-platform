@@ -14,6 +14,11 @@ import {
   ValidationResponse,
   TestResult,
   TestSummary,
+  DistributedProblem,
+  DistributedProblemListItem,
+  DistributedSubmission,
+  DistributedSubmissionCreate,
+  SupportedLanguage,
 } from '../types'
 
 // Use relative URL in production (when served from load balancer)
@@ -673,6 +678,104 @@ export const adminApi = {
    */
   unbanUser: async (request: UnbanUserRequest): Promise<AdminUser> => {
     const response = await api.post('/user/admin/unban', request)
+    return response.data
+  },
+}
+
+/**
+ * Distributed Consensus Problems API
+ */
+export const distributedProblemsApi = {
+  /**
+   * List all distributed consensus problems
+   */
+  list: async (): Promise<DistributedProblemListItem[]> => {
+    const response = await api.get('/distributed/problems')
+    return response.data
+  },
+
+  /**
+   * Get a specific distributed problem with full details
+   */
+  get: async (id: number): Promise<DistributedProblem> => {
+    const response = await api.get(`/distributed/problems/${id}`)
+    return response.data
+  },
+
+  /**
+   * Get the template code for a specific language
+   */
+  getTemplate: async (problemId: number, language: SupportedLanguage): Promise<string> => {
+    const response = await api.get(`/distributed/problems/${problemId}/template/${language}`)
+    return response.data.template
+  },
+
+  /**
+   * Get saved code for a problem (if any)
+   */
+  getSavedCode: async (problemId: number, language: SupportedLanguage): Promise<string | null> => {
+    try {
+      const response = await api.get(`/distributed/problems/${problemId}/saved-code/${language}`)
+      return response.data.code
+    } catch {
+      return null
+    }
+  },
+
+  /**
+   * Save code for a problem (auto-save)
+   */
+  saveCode: async (problemId: number, language: SupportedLanguage, code: string): Promise<void> => {
+    await api.post(`/distributed/problems/${problemId}/save-code`, {
+      language,
+      code,
+    })
+  },
+}
+
+/**
+ * Distributed Submissions API
+ */
+export const distributedSubmissionsApi = {
+  /**
+   * Submit code for compilation and testing
+   */
+  submit: async (data: DistributedSubmissionCreate): Promise<DistributedSubmission> => {
+    const response = await api.post('/distributed/submissions', data)
+    return response.data
+  },
+
+  /**
+   * Get submission status and details
+   */
+  get: async (id: number): Promise<DistributedSubmission> => {
+    const response = await api.get(`/distributed/submissions/${id}`)
+    return response.data
+  },
+
+  /**
+   * List user's distributed submissions
+   */
+  list: async (problemId?: number): Promise<DistributedSubmission[]> => {
+    const response = await api.get('/distributed/submissions', {
+      params: problemId ? { problem_id: problemId } : undefined,
+    })
+    return response.data
+  },
+
+  /**
+   * Get build logs for a submission
+   */
+  getBuildLogs: async (id: number): Promise<string> => {
+    const response = await api.get(`/distributed/submissions/${id}/build-logs`)
+    return response.data.logs
+  },
+
+  /**
+   * Get test results for a distributed submission
+   */
+  getTestResults: async (id: number): Promise<TestResult[]> => {
+    const response = await api.get(`/distributed/submissions/${id}/tests`)
     return response.data
   },
 }

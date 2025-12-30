@@ -1,0 +1,20 @@
+[package]
+name = "raft-server"
+version = "0.1.0"
+edition = "2021"
+authors = ["System Design Platform"]
+description = "Raft Consensus Implementation"
+
+[dependencies]
+tonic = "0.10"
+prost = "0.12"
+tokio = { version = "1.35", features = ["full"] }
+clap = { version = "4.4", features = ["derive"] }
+rand = "0.8"
+
+[build-dependencies]
+tonic-build = "0.10"
+
+[[bin]]
+name = "server"
+path = "src/main.rs"

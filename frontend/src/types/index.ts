@@ -278,3 +278,70 @@ export interface LevelRequirementsResponse {
   level_info: DifficultyLevelInfo
   requirements: string
 }
+
+// Distributed Consensus Problem types
+export type ProblemType = 'system_design' | 'distributed_consensus'
+export type SupportedLanguage = 'python' | 'go' | 'java' | 'cpp' | 'rust'
+
+export interface LanguageTemplate {
+  language: SupportedLanguage
+  template: string
+  build_command: string
+  run_command: string
+}
+
+export interface TestScenario {
+  name: string
+  description: string
+  test_type: 'functional' | 'performance' | 'chaos'
+  parameters?: Record<string, unknown>
+}
+
+export interface DistributedProblem {
+  id: number
+  title: string
+  description: string
+  difficulty: DifficultyLevel
+  problem_type: ProblemType
+  grpc_proto: string
+  supported_languages: SupportedLanguage[]
+  cluster_size: number
+  language_templates: Record<SupportedLanguage, LanguageTemplate>
+  test_scenarios: TestScenario[]
+  hints: string[] | null
+  tags: string[] | null
+  created_at: string
+}
+
+export interface DistributedProblemListItem {
+  id: number
+  title: string
+  description: string
+  difficulty: DifficultyLevel
+  problem_type: ProblemType
+  supported_languages: SupportedLanguage[]
+  cluster_size: number
+  tags: string[] | null
+  created_at: string
+}
+
+export interface DistributedSubmissionCreate {
+  problem_id: number
+  language: SupportedLanguage
+  source_code: string
+}
+
+export interface DistributedSubmission {
+  id: number
+  problem_id: number
+  user_id: number
+  submission_type: 'distributed_consensus'
+  language: SupportedLanguage
+  source_code: string
+  status: SubmissionStatus | 'building' | 'build_failed'
+  build_logs: string | null
+  build_artifact_url: string | null
+  cluster_node_urls: string[] | null
+  error_message: string | null
+  created_at: string
+}

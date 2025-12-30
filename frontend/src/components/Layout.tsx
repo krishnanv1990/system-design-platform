@@ -10,7 +10,7 @@
 
 import { useState } from "react"
 import { Outlet, Link, useNavigate, useLocation } from "react-router-dom"
-import { LogOut, Moon, Sun, User, Menu, X, Home, FileText, Settings, Activity } from "lucide-react"
+import { LogOut, Moon, Sun, User, Menu, X, Home, FileText, Settings, Activity, Network } from "lucide-react"
 import { useAuth } from "./AuthContext"
 import { useTheme } from "@/hooks/useTheme"
 import { Button } from "@/components/ui/button"
@@ -49,6 +49,7 @@ export default function Layout() {
 
   const navLinks = [
     { to: "/problems", label: "Problems", icon: FileText },
+    { to: "/distributed", label: "Distributed", icon: Network },
     { to: "/usage", label: "My Usage", icon: Activity },
   ]
 

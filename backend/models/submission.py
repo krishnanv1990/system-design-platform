@@ -1,5 +1,9 @@
 """
 Submission model for candidate solutions.
+
+Supports two types of submissions:
+1. System Design: Schema, API spec, and design canvas
+2. Distributed Consensus: Source code in a specific language
 """
 
 from datetime import datetime
@@ -17,6 +21,8 @@ class SubmissionStatus(str, Enum):
     VALIDATING = "validating"
     VALIDATION_FAILED = "validation_failed"
     GENERATING_INFRA = "generating_infra"
+    BUILDING = "building"  # For distributed consensus: compiling code
+    BUILD_FAILED = "build_failed"
     DEPLOYING = "deploying"
     DEPLOY_FAILED = "deploy_failed"
     TESTING = "testing"
@@ -24,17 +30,38 @@ class SubmissionStatus(str, Enum):
     FAILED = "failed"
 
 
+class SubmissionType(str, Enum):
+    """Type of submission."""
+    SYSTEM_DESIGN = "system_design"
+    DISTRIBUTED_CONSENSUS = "distributed_consensus"
+
+
 class Submission(Base):
     """
     Candidate's solution submission.
+
+    Supports two submission types:
+    1. System Design: Schema, API spec, design canvas
+    2. Distributed Consensus: Source code implementation
 
     Attributes:
         id: Primary key
         problem_id: Reference to the problem being solved
         user_id: Reference to the submitting user
+        submission_type: Type of submission (system_design or distributed_consensus)
+
+        # System Design fields:
         schema_input: Candidate's database schema design
         api_spec_input: Candidate's API specification
         design_text: Free-form design description
+
+        # Distributed Consensus fields:
+        language: Selected programming language
+        source_code: Candidate's implementation code
+        build_logs: Compilation output and logs
+        cluster_node_urls: URLs for each cluster node
+
+        # Common fields:
         generated_terraform: Terraform code generated from design
         deployment_id: GCP resource identifier for deployed solution
         status: Current status in the evaluation pipeline
@@ -46,11 +73,19 @@ class Submission(Base):
     id = Column(Integer, primary_key=True, index=True)
     problem_id = Column(Integer, ForeignKey("problems.id"), nullable=False)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    submission_type = Column(String(50), default=SubmissionType.SYSTEM_DESIGN.value)
 
-    # Candidate's solution inputs
+    # System Design solution inputs
     schema_input = Column(JSONB, nullable=True)
     api_spec_input = Column(JSONB, nullable=True)
     design_text = Column(Text, nullable=True)
+
+    # Distributed Consensus solution inputs
+    language = Column(String(20), nullable=True)  # python, go, java, cpp, rust
+    source_code = Column(Text, nullable=True)  # The implementation code
+    build_logs = Column(Text, nullable=True)  # Compilation output
+    build_artifact_url = Column(String(512), nullable=True)  # GCS URL of built artifact
+    cluster_node_urls = Column(JSONB, nullable=True)  # ["http://node1:8080", "http://node2:8080", ...]
 
     # Generated infrastructure code
     generated_terraform = Column(Text, nullable=True)
@@ -58,7 +93,7 @@ class Submission(Base):
     # Deployment tracking
     deployment_id = Column(String(255), nullable=True)
     namespace = Column(String(255), nullable=True)  # Candidate isolation namespace
-    endpoint_url = Column(String(512), nullable=True)  # Deployed service URL
+    endpoint_url = Column(String(512), nullable=True)  # Deployed service URL (or leader URL for clusters)
 
     # Status and errors
     status = Column(String(50), default=SubmissionStatus.PENDING.value)
