@@ -194,28 +194,24 @@ async def run_distributed_build(submission_id: int, language: str, source_code: 
                 # Fetch logs periodically (every 5 seconds)
                 if time.time() - last_log_fetch > 5:
                     try:
-                        # Get logs from Cloud Storage
-                        log_url = build_result.log_url
-                        if log_url:
-                            from google.cloud import storage
-                            # Parse bucket and object from log URL
-                            # Format: gs://bucket/log-build-id.txt
-                            if log_url.startswith("gs://"):
-                                parts = log_url[5:].split("/", 1)
-                                bucket_name = parts[0]
-                                blob_name = parts[1] if len(parts) > 1 else ""
+                        from google.cloud import storage
+                        # logs_bucket is like "gs://xxx.cloudbuild-logs.googleusercontent.com"
+                        logs_bucket = build_result.logs_bucket
+                        if logs_bucket:
+                            bucket_name = logs_bucket.replace("gs://", "")
+                            blob_name = f"log-{build_id}.txt"
 
-                                storage_client = storage.Client(project=project_id)
-                                bucket = storage_client.bucket(bucket_name)
-                                blob = bucket.blob(blob_name)
+                            storage_client = storage.Client(project=project_id)
+                            bucket = storage_client.bucket(bucket_name)
+                            blob = bucket.blob(blob_name)
 
-                                if blob.exists():
-                                    log_content = blob.download_as_text()
-                                    logs_buffer = [f"Build ID: {build_id}\n", "=" * 50 + "\n", log_content]
+                            if blob.exists():
+                                log_content = blob.download_as_text()
+                                logs_buffer = [f"Build ID: {build_id}\n", "=" * 50 + "\n", log_content]
 
-                                    # Update logs in database
-                                    submission.build_logs = "".join(logs_buffer)
-                                    db.commit()
+                                # Update logs in database
+                                submission.build_logs = "".join(logs_buffer)
+                                db.commit()
                     except Exception as log_err:
                         logger.debug(f"Could not fetch logs: {log_err}")
 
@@ -225,14 +221,13 @@ async def run_distributed_build(submission_id: int, language: str, source_code: 
                 if build_result.status == cloudbuild_v1.Build.Status.SUCCESS:
                     logger.info(f"Build {build_id} succeeded")
 
-                    # Final log fetch
+                    # Final log fetch - use logs_bucket
                     try:
-                        log_url = build_result.log_url
-                        if log_url and log_url.startswith("gs://"):
-                            from google.cloud import storage
-                            parts = log_url[5:].split("/", 1)
-                            bucket_name = parts[0]
-                            blob_name = parts[1] if len(parts) > 1 else ""
+                        from google.cloud import storage
+                        logs_bucket = build_result.logs_bucket
+                        if logs_bucket:
+                            bucket_name = logs_bucket.replace("gs://", "")
+                            blob_name = f"log-{build_id}.txt"
 
                             storage_client = storage.Client(project=project_id)
                             bucket = storage_client.bucket(bucket_name)
@@ -289,15 +284,16 @@ async def run_distributed_build(submission_id: int, language: str, source_code: 
                 ]:
                     logger.error(f"Build {build_id} failed with status: {build_result.status.name}")
 
-                    # Final log fetch
+                    # Final log fetch - use logs_bucket, not log_url
                     log_content = ""
                     try:
-                        log_url = build_result.log_url
-                        if log_url and log_url.startswith("gs://"):
-                            from google.cloud import storage
-                            parts = log_url[5:].split("/", 1)
-                            bucket_name = parts[0]
-                            blob_name = parts[1] if len(parts) > 1 else ""
+                        from google.cloud import storage
+                        # logs_bucket is like "gs://xxx.cloudbuild-logs.googleusercontent.com"
+                        logs_bucket = build_result.logs_bucket
+                        if logs_bucket:
+                            # Remove gs:// prefix if present
+                            bucket_name = logs_bucket.replace("gs://", "")
+                            blob_name = f"log-{build_id}.txt"
 
                             storage_client = storage.Client(project=project_id)
                             bucket = storage_client.bucket(bucket_name)
@@ -305,6 +301,7 @@ async def run_distributed_build(submission_id: int, language: str, source_code: 
 
                             if blob.exists():
                                 log_content = blob.download_as_text()
+                                logger.info(f"Fetched {len(log_content)} bytes of build logs")
                     except Exception as e:
                         logger.warning(f"Final log fetch failed: {e}")
 
