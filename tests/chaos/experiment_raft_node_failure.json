@@ -1,0 +1,251 @@
+{
+    "title": "Raft Consensus - Multiple Node Failure Resilience",
+    "description": "Tests the Raft cluster's behavior when multiple nodes fail (up to minority), ensuring the cluster remains available",
+    "tags": ["raft", "consensus", "node-failure", "availability", "distributed"],
+    "configuration": {
+        "target_url": {
+            "type": "env",
+            "key": "TARGET_URL",
+            "default": "http://localhost:8000"
+        },
+        "gcp_project": {
+            "type": "env",
+            "key": "GCP_PROJECT"
+        },
+        "raft_cluster_name": {
+            "type": "env",
+            "key": "RAFT_CLUSTER_NAME",
+            "default": "raft-cluster"
+        },
+        "cluster_size": {
+            "type": "env",
+            "key": "CLUSTER_SIZE",
+            "default": "5"
+        }
+    },
+    "steady-state-hypothesis": {
+        "title": "Raft cluster is operational with all nodes healthy",
+        "probes": [
+            {
+                "name": "cluster-has-leader",
+                "type": "probe",
+                "tolerance": true,
+                "provider": {
+                    "type": "python",
+                    "module": "tests.chaos.probes",
+                    "func": "raft_cluster_has_leader",
+                    "arguments": {
+                        "cluster_name": "${raft_cluster_name}"
+                    }
+                }
+            },
+            {
+                "name": "all-nodes-healthy",
+                "type": "probe",
+                "tolerance": true,
+                "provider": {
+                    "type": "python",
+                    "module": "tests.chaos.probes",
+                    "func": "raft_all_nodes_healthy",
+                    "arguments": {
+                        "cluster_name": "${raft_cluster_name}",
+                        "cluster_size": "${cluster_size}"
+                    }
+                }
+            }
+        ]
+    },
+    "method": [
+        {
+            "type": "action",
+            "name": "write-initial-data",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "raft_write_test_data",
+                "arguments": {
+                    "cluster_name": "${raft_cluster_name}",
+                    "key": "node_failure_test_1",
+                    "value": "initial_data"
+                }
+            },
+            "pauses": {
+                "after": 2
+            }
+        },
+        {
+            "type": "action",
+            "name": "kill-first-follower",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "raft_kill_random_follower",
+                "arguments": {
+                    "cluster_name": "${raft_cluster_name}"
+                }
+            },
+            "pauses": {
+                "after": 5
+            }
+        },
+        {
+            "type": "probe",
+            "name": "verify-cluster-still-operational-1",
+            "tolerance": true,
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.probes",
+                "func": "raft_can_write",
+                "arguments": {
+                    "cluster_name": "${raft_cluster_name}"
+                }
+            }
+        },
+        {
+            "type": "action",
+            "name": "write-after-first-failure",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "raft_write_test_data",
+                "arguments": {
+                    "cluster_name": "${raft_cluster_name}",
+                    "key": "node_failure_test_2",
+                    "value": "after_first_failure"
+                }
+            },
+            "pauses": {
+                "after": 2
+            }
+        },
+        {
+            "type": "action",
+            "name": "kill-second-follower",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "raft_kill_random_follower",
+                "arguments": {
+                    "cluster_name": "${raft_cluster_name}"
+                }
+            },
+            "pauses": {
+                "after": 5
+            }
+        },
+        {
+            "type": "probe",
+            "name": "verify-cluster-still-operational-2",
+            "tolerance": true,
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.probes",
+                "func": "raft_can_write",
+                "arguments": {
+                    "cluster_name": "${raft_cluster_name}"
+                }
+            }
+        },
+        {
+            "type": "action",
+            "name": "write-after-second-failure",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "raft_write_test_data",
+                "arguments": {
+                    "cluster_name": "${raft_cluster_name}",
+                    "key": "node_failure_test_3",
+                    "value": "after_second_failure"
+                }
+            },
+            "pauses": {
+                "after": 2
+            }
+        },
+        {
+            "type": "probe",
+            "name": "verify-all-data-readable",
+            "tolerance": true,
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.probes",
+                "func": "raft_all_keys_readable",
+                "arguments": {
+                    "cluster_name": "${raft_cluster_name}",
+                    "keys": ["node_failure_test_1", "node_failure_test_2", "node_failure_test_3"]
+                }
+            }
+        },
+        {
+            "type": "action",
+            "name": "restart-killed-nodes",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "raft_restart_killed_nodes",
+                "arguments": {
+                    "cluster_name": "${raft_cluster_name}"
+                }
+            },
+            "pauses": {
+                "after": 15
+            }
+        },
+        {
+            "type": "probe",
+            "name": "verify-restarted-nodes-caught-up",
+            "tolerance": true,
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.probes",
+                "func": "raft_logs_converged",
+                "arguments": {
+                    "cluster_name": "${raft_cluster_name}",
+                    "timeout_seconds": 60
+                }
+            }
+        },
+        {
+            "type": "probe",
+            "name": "verify-data-on-restarted-nodes",
+            "tolerance": true,
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.probes",
+                "func": "raft_data_consistent_across_nodes",
+                "arguments": {
+                    "cluster_name": "${raft_cluster_name}",
+                    "keys": ["node_failure_test_1", "node_failure_test_2", "node_failure_test_3"]
+                }
+            }
+        }
+    ],
+    "rollbacks": [
+        {
+            "type": "action",
+            "name": "restart-all-killed-nodes",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "raft_restart_killed_nodes",
+                "arguments": {
+                    "cluster_name": "${raft_cluster_name}"
+                }
+            }
+        },
+        {
+            "type": "action",
+            "name": "cleanup-test-data",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "raft_cleanup_test_data",
+                "arguments": {
+                    "cluster_name": "${raft_cluster_name}",
+                    "key_prefix": "node_failure_test_"
+                }
+            }
+        }
+    ]
+}

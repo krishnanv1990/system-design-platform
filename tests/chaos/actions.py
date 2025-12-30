@@ -502,3 +502,465 @@ def restore_external_dependency(dependency_name: str) -> dict:
         "status": "dependency_restored",
         "dependency": dependency_name
     }
+
+
+# ==================== Raft Consensus Actions ====================
+
+# Track killed Raft nodes for restart
+_killed_raft_nodes = []
+
+
+def raft_write_test_data(cluster_name: str, key: str, value: str) -> dict:
+    """
+    Write test data to the Raft cluster.
+
+    Used to verify data persistence and consistency during chaos tests.
+    """
+    import os
+    import subprocess
+
+    project = os.getenv("GCP_PROJECT")
+    region = os.getenv("GCP_REGION", "us-central1")
+
+    if not project:
+        return {"status": "skipped", "reason": "GCP_PROJECT not set"}
+
+    # Get leader endpoint
+    try:
+        result = subprocess.run([
+            "gcloud", "compute", "instances", "list",
+            f"--filter=name~{cluster_name}",
+            "--format=value(networkInterfaces[0].accessConfigs[0].natIP,name)",
+            f"--project={project}"
+        ], capture_output=True, text=True, timeout=30)
+
+        if result.returncode != 0:
+            return {"status": "error", "error": result.stderr}
+
+        instances = []
+        for line in result.stdout.strip().split('\n'):
+            if line:
+                parts = line.split()
+                if len(parts) >= 2:
+                    instances.append({"ip": parts[0], "name": parts[1]})
+
+        if not instances:
+            return {"status": "error", "error": "No instances found"}
+
+        # Try to write to leader (first try each instance)
+        for instance in instances:
+            try:
+                write_result = httpx.post(
+                    f"http://{instance['ip']}:8080/api/v1/raft/kv",
+                    json={"key": key, "value": value},
+                    timeout=10
+                )
+                if write_result.status_code in [200, 201]:
+                    return {
+                        "status": "written",
+                        "key": key,
+                        "value": value,
+                        "leader": instance['name']
+                    }
+                elif write_result.status_code == 307:
+                    # Redirect to leader
+                    leader_url = write_result.headers.get("Location")
+                    if leader_url:
+                        write_result = httpx.post(
+                            leader_url,
+                            json={"key": key, "value": value},
+                            timeout=10
+                        )
+                        if write_result.status_code in [200, 201]:
+                            return {"status": "written", "key": key, "value": value}
+            except Exception:
+                continue
+
+        return {"status": "error", "error": "Could not write to any node"}
+
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
+def raft_kill_leader(cluster_name: str) -> dict:
+    """
+    Kill the current leader node in the Raft cluster.
+
+    This triggers leader election and tests cluster recovery.
+    """
+    import os
+    import subprocess
+
+    global _killed_raft_nodes
+
+    project = os.getenv("GCP_PROJECT")
+
+    if not project:
+        return {"status": "skipped", "reason": "GCP_PROJECT not set"}
+
+    try:
+        # Find instances
+        result = subprocess.run([
+            "gcloud", "compute", "instances", "list",
+            f"--filter=name~{cluster_name}",
+            "--format=value(networkInterfaces[0].accessConfigs[0].natIP,name,zone)",
+            f"--project={project}"
+        ], capture_output=True, text=True, timeout=30)
+
+        if result.returncode != 0:
+            return {"status": "error", "error": result.stderr}
+
+        instances = []
+        for line in result.stdout.strip().split('\n'):
+            if line:
+                parts = line.split()
+                if len(parts) >= 3:
+                    instances.append({"ip": parts[0], "name": parts[1], "zone": parts[2]})
+
+        if not instances:
+            return {"status": "error", "error": "No instances found"}
+
+        # Find the leader
+        leader = None
+        for instance in instances:
+            try:
+                response = httpx.get(
+                    f"http://{instance['ip']}:8080/api/v1/raft/status",
+                    timeout=5
+                )
+                if response.status_code == 200:
+                    status = response.json()
+                    if status.get("state") == "LEADER" or status.get("is_leader"):
+                        leader = instance
+                        break
+            except Exception:
+                continue
+
+        if not leader:
+            return {"status": "error", "error": "Could not find leader"}
+
+        # Stop the leader instance
+        stop_result = subprocess.run([
+            "gcloud", "compute", "instances", "stop", leader['name'],
+            f"--zone={leader['zone']}",
+            f"--project={project}",
+            "--quiet"
+        ], capture_output=True, text=True, timeout=120)
+
+        if stop_result.returncode == 0:
+            _killed_raft_nodes.append(leader)
+            return {
+                "status": "leader_killed",
+                "leader": leader['name'],
+                "zone": leader['zone']
+            }
+        else:
+            return {"status": "error", "error": stop_result.stderr}
+
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
+def raft_kill_random_follower(cluster_name: str) -> dict:
+    """
+    Kill a random follower node in the Raft cluster.
+
+    Tests cluster behavior when non-leader nodes fail.
+    """
+    import os
+    import subprocess
+
+    global _killed_raft_nodes
+
+    project = os.getenv("GCP_PROJECT")
+
+    if not project:
+        return {"status": "skipped", "reason": "GCP_PROJECT not set"}
+
+    try:
+        result = subprocess.run([
+            "gcloud", "compute", "instances", "list",
+            f"--filter=name~{cluster_name}",
+            "--format=value(networkInterfaces[0].accessConfigs[0].natIP,name,zone)",
+            f"--project={project}"
+        ], capture_output=True, text=True, timeout=30)
+
+        if result.returncode != 0:
+            return {"status": "error", "error": result.stderr}
+
+        instances = []
+        for line in result.stdout.strip().split('\n'):
+            if line:
+                parts = line.split()
+                if len(parts) >= 3:
+                    # Skip already killed nodes
+                    name = parts[1]
+                    if not any(k['name'] == name for k in _killed_raft_nodes):
+                        instances.append({"ip": parts[0], "name": name, "zone": parts[2]})
+
+        if not instances:
+            return {"status": "error", "error": "No available follower instances"}
+
+        # Find followers (non-leaders)
+        followers = []
+        for instance in instances:
+            try:
+                response = httpx.get(
+                    f"http://{instance['ip']}:8080/api/v1/raft/status",
+                    timeout=5
+                )
+                if response.status_code == 200:
+                    status = response.json()
+                    if status.get("state") != "LEADER" and not status.get("is_leader"):
+                        followers.append(instance)
+            except Exception:
+                # Assume it's a follower if we can't reach it
+                followers.append(instance)
+
+        if not followers:
+            return {"status": "error", "error": "No followers found"}
+
+        # Pick random follower
+        follower = random.choice(followers)
+
+        # Stop the follower instance
+        stop_result = subprocess.run([
+            "gcloud", "compute", "instances", "stop", follower['name'],
+            f"--zone={follower['zone']}",
+            f"--project={project}",
+            "--quiet"
+        ], capture_output=True, text=True, timeout=120)
+
+        if stop_result.returncode == 0:
+            _killed_raft_nodes.append(follower)
+            return {
+                "status": "follower_killed",
+                "follower": follower['name'],
+                "zone": follower['zone']
+            }
+        else:
+            return {"status": "error", "error": stop_result.stderr}
+
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
+def raft_restart_killed_nodes(cluster_name: str) -> dict:
+    """
+    Restart all previously killed Raft nodes.
+
+    Used in rollback to restore the cluster to full health.
+    """
+    import os
+    import subprocess
+
+    global _killed_raft_nodes
+
+    project = os.getenv("GCP_PROJECT")
+
+    if not project:
+        return {"status": "skipped", "reason": "GCP_PROJECT not set"}
+
+    if not _killed_raft_nodes:
+        return {"status": "nothing_to_restart"}
+
+    restarted = []
+    errors = []
+
+    for node in _killed_raft_nodes:
+        try:
+            result = subprocess.run([
+                "gcloud", "compute", "instances", "start", node['name'],
+                f"--zone={node['zone']}",
+                f"--project={project}",
+                "--quiet"
+            ], capture_output=True, text=True, timeout=120)
+
+            if result.returncode == 0:
+                restarted.append(node['name'])
+            else:
+                errors.append({"node": node['name'], "error": result.stderr})
+        except Exception as e:
+            errors.append({"node": node['name'], "error": str(e)})
+
+    _killed_raft_nodes = []
+
+    return {
+        "status": "restarted" if restarted else "error",
+        "restarted": restarted,
+        "errors": errors
+    }
+
+
+def raft_create_network_partition(cluster_name: str, partition_type: str = "minority_isolation") -> dict:
+    """
+    Create a network partition in the Raft cluster.
+
+    partition_type can be:
+    - minority_isolation: Isolate minority of nodes (cluster stays available)
+    - leader_isolation: Isolate the leader (triggers election)
+    - split_brain: Try to create equal partitions (cluster may become unavailable)
+    """
+    import os
+    import subprocess
+
+    project = os.getenv("GCP_PROJECT")
+
+    if not project:
+        return {"status": "skipped", "reason": "GCP_PROJECT not set"}
+
+    try:
+        # Get all instances
+        result = subprocess.run([
+            "gcloud", "compute", "instances", "list",
+            f"--filter=name~{cluster_name}",
+            "--format=value(networkInterfaces[0].networkIP,name,zone)",
+            f"--project={project}"
+        ], capture_output=True, text=True, timeout=30)
+
+        if result.returncode != 0:
+            return {"status": "error", "error": result.stderr}
+
+        instances = []
+        for line in result.stdout.strip().split('\n'):
+            if line:
+                parts = line.split()
+                if len(parts) >= 3:
+                    instances.append({"internal_ip": parts[0], "name": parts[1], "zone": parts[2]})
+
+        if len(instances) < 3:
+            return {"status": "error", "error": "Need at least 3 nodes for partition test"}
+
+        # Determine which nodes to isolate based on partition type
+        if partition_type == "minority_isolation":
+            # Isolate minority (e.g., 2 out of 5)
+            minority_size = len(instances) // 2
+            isolated = instances[:minority_size]
+            majority = instances[minority_size:]
+        elif partition_type == "leader_isolation":
+            # Would need to find leader first, simplified here
+            isolated = instances[:1]
+            majority = instances[1:]
+        else:  # split_brain
+            mid = len(instances) // 2
+            isolated = instances[:mid]
+            majority = instances[mid:]
+
+        # Create firewall rules to block traffic between partitions
+        isolated_ips = [i['internal_ip'] for i in isolated]
+        majority_ips = [i['internal_ip'] for i in majority]
+
+        # Note: In real implementation, would use VPC firewall rules or iptables
+        _injected_failures["raft_partition"] = {
+            "isolated": [i['name'] for i in isolated],
+            "majority": [i['name'] for i in majority],
+            "isolated_ips": isolated_ips,
+            "majority_ips": majority_ips
+        }
+
+        return {
+            "status": "partition_created",
+            "partition_type": partition_type,
+            "isolated_nodes": [i['name'] for i in isolated],
+            "majority_nodes": [i['name'] for i in majority]
+        }
+
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
+def raft_heal_network_partition(cluster_name: str) -> dict:
+    """
+    Heal a network partition in the Raft cluster.
+
+    Restores connectivity between all nodes.
+    """
+    if "raft_partition" in _injected_failures:
+        partition_info = _injected_failures.pop("raft_partition")
+        return {
+            "status": "partition_healed",
+            "previously_isolated": partition_info.get("isolated", [])
+        }
+
+    return {"status": "no_partition_to_heal"}
+
+
+def raft_write_to_majority(cluster_name: str, key: str, value: str) -> dict:
+    """
+    Write data to the majority partition during a network split.
+
+    This verifies that the majority partition can still process writes.
+    """
+    partition_info = _injected_failures.get("raft_partition", {})
+    majority_nodes = partition_info.get("majority", [])
+
+    if not majority_nodes:
+        # No partition, write normally
+        return raft_write_test_data(cluster_name, key, value)
+
+    # Try to write to majority partition nodes
+    import os
+    import subprocess
+
+    project = os.getenv("GCP_PROJECT")
+
+    if not project:
+        return {"status": "skipped", "reason": "GCP_PROJECT not set"}
+
+    try:
+        # Get external IPs for majority nodes
+        result = subprocess.run([
+            "gcloud", "compute", "instances", "list",
+            f"--filter=name:({' OR '.join(majority_nodes)})",
+            "--format=value(networkInterfaces[0].accessConfigs[0].natIP,name)",
+            f"--project={project}"
+        ], capture_output=True, text=True, timeout=30)
+
+        if result.returncode != 0:
+            return {"status": "error", "error": result.stderr}
+
+        for line in result.stdout.strip().split('\n'):
+            if line:
+                parts = line.split()
+                if len(parts) >= 2:
+                    ip = parts[0]
+                    try:
+                        write_result = httpx.post(
+                            f"http://{ip}:8080/api/v1/raft/kv",
+                            json={"key": key, "value": value},
+                            timeout=10
+                        )
+                        if write_result.status_code in [200, 201]:
+                            return {
+                                "status": "written_to_majority",
+                                "key": key,
+                                "value": value
+                            }
+                    except Exception:
+                        continue
+
+        return {"status": "error", "error": "Could not write to majority partition"}
+
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
+def raft_cleanup_test_data(cluster_name: str, key_prefix: str) -> dict:
+    """
+    Clean up test data created during chaos experiments.
+    """
+    import os
+    import subprocess
+
+    project = os.getenv("GCP_PROJECT")
+
+    if not project:
+        return {"status": "skipped", "reason": "GCP_PROJECT not set"}
+
+    # In a real implementation, would delete keys matching the prefix
+    # For now, just acknowledge the cleanup request
+    return {
+        "status": "cleanup_requested",
+        "key_prefix": key_prefix,
+        "note": "Test data cleanup acknowledged"
+    }

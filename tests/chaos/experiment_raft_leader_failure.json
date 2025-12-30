@@ -1,0 +1,205 @@
+{
+    "title": "Raft Consensus - Leader Failure Resilience",
+    "description": "Tests the Raft cluster's ability to elect a new leader and maintain consistency when the current leader fails",
+    "tags": ["raft", "consensus", "leader-election", "fault-tolerance", "distributed"],
+    "configuration": {
+        "target_url": {
+            "type": "env",
+            "key": "TARGET_URL",
+            "default": "http://localhost:8000"
+        },
+        "gcp_project": {
+            "type": "env",
+            "key": "GCP_PROJECT"
+        },
+        "raft_cluster_name": {
+            "type": "env",
+            "key": "RAFT_CLUSTER_NAME",
+            "default": "raft-cluster"
+        },
+        "cluster_size": {
+            "type": "env",
+            "key": "CLUSTER_SIZE",
+            "default": "5"
+        }
+    },
+    "steady-state-hypothesis": {
+        "title": "Raft cluster is operational with a stable leader",
+        "probes": [
+            {
+                "name": "cluster-has-leader",
+                "type": "probe",
+                "tolerance": true,
+                "provider": {
+                    "type": "python",
+                    "module": "tests.chaos.probes",
+                    "func": "raft_cluster_has_leader",
+                    "arguments": {
+                        "cluster_name": "${raft_cluster_name}"
+                    }
+                }
+            },
+            {
+                "name": "majority-nodes-healthy",
+                "type": "probe",
+                "tolerance": true,
+                "provider": {
+                    "type": "python",
+                    "module": "tests.chaos.probes",
+                    "func": "raft_majority_healthy",
+                    "arguments": {
+                        "cluster_name": "${raft_cluster_name}",
+                        "cluster_size": "${cluster_size}"
+                    }
+                }
+            },
+            {
+                "name": "can-write-to-cluster",
+                "type": "probe",
+                "tolerance": true,
+                "provider": {
+                    "type": "python",
+                    "module": "tests.chaos.probes",
+                    "func": "raft_can_write",
+                    "arguments": {
+                        "cluster_name": "${raft_cluster_name}"
+                    }
+                }
+            }
+        ]
+    },
+    "method": [
+        {
+            "type": "action",
+            "name": "write-test-data-before-failure",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "raft_write_test_data",
+                "arguments": {
+                    "cluster_name": "${raft_cluster_name}",
+                    "key": "chaos_test_key_1",
+                    "value": "before_leader_failure"
+                }
+            },
+            "pauses": {
+                "after": 2
+            }
+        },
+        {
+            "type": "probe",
+            "name": "verify-data-written",
+            "tolerance": "before_leader_failure",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.probes",
+                "func": "raft_read_value",
+                "arguments": {
+                    "cluster_name": "${raft_cluster_name}",
+                    "key": "chaos_test_key_1"
+                }
+            }
+        },
+        {
+            "type": "action",
+            "name": "identify-and-kill-leader",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "raft_kill_leader",
+                "arguments": {
+                    "cluster_name": "${raft_cluster_name}"
+                }
+            },
+            "pauses": {
+                "after": 5
+            }
+        },
+        {
+            "type": "probe",
+            "name": "verify-new-leader-elected",
+            "tolerance": true,
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.probes",
+                "func": "raft_cluster_has_leader",
+                "arguments": {
+                    "cluster_name": "${raft_cluster_name}",
+                    "timeout_seconds": 30
+                }
+            }
+        },
+        {
+            "type": "probe",
+            "name": "verify-data-still-readable",
+            "tolerance": "before_leader_failure",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.probes",
+                "func": "raft_read_value",
+                "arguments": {
+                    "cluster_name": "${raft_cluster_name}",
+                    "key": "chaos_test_key_1"
+                }
+            }
+        },
+        {
+            "type": "action",
+            "name": "write-after-leader-change",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "raft_write_test_data",
+                "arguments": {
+                    "cluster_name": "${raft_cluster_name}",
+                    "key": "chaos_test_key_2",
+                    "value": "after_leader_failure"
+                }
+            },
+            "pauses": {
+                "after": 2
+            }
+        },
+        {
+            "type": "probe",
+            "name": "verify-write-after-recovery",
+            "tolerance": "after_leader_failure",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.probes",
+                "func": "raft_read_value",
+                "arguments": {
+                    "cluster_name": "${raft_cluster_name}",
+                    "key": "chaos_test_key_2"
+                }
+            }
+        }
+    ],
+    "rollbacks": [
+        {
+            "type": "action",
+            "name": "restart-killed-node",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "raft_restart_killed_nodes",
+                "arguments": {
+                    "cluster_name": "${raft_cluster_name}"
+                }
+            }
+        },
+        {
+            "type": "action",
+            "name": "cleanup-test-data",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "raft_cleanup_test_data",
+                "arguments": {
+                    "cluster_name": "${raft_cluster_name}",
+                    "key_prefix": "chaos_test_key_"
+                }
+            }
+        }
+    ]
+}

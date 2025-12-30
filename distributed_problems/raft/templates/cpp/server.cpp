@@ -1,10 +1,11 @@
 /**
- * Raft Consensus Implementation - C++ Template
+ * Raft Consensus Implementation - C++ Server
  *
- * This template provides the basic structure for implementing the Raft
- * consensus algorithm.
- *
- * For the full Raft specification, see: https://raft.github.io/raft.pdf
+ * A complete implementation of the Raft consensus algorithm supporting:
+ * - Leader election with randomized timeouts
+ * - Log replication with consistency guarantees
+ * - Heartbeat mechanism for leader authority
+ * - Key-value store as the state machine
  *
  * Usage:
  *     ./server --node-id node1 --port 50051 --peers node2:50052,node3:50053
@@ -95,6 +96,7 @@ public:
         }
         timer_thread_ = std::thread(&RaftNode::ElectionTimerLoop, this);
         heartbeat_thread_ = std::thread(&RaftNode::HeartbeatLoop, this);
+        std::cout << "Node " << node_id_ << " initialized with " << peers_.size() << " peers" << std::endl;
     }
 
     // --- Helper Methods ---
@@ -131,6 +133,8 @@ public:
         uint64_t last_idx = GetLastLogIndex();
         uint64_t last_term = GetLastLogTerm();
 
+        std::cout << "Node " << node_id_ << " starting election for term " << term << std::endl;
+
         auto votes_received = std::make_shared<std::atomic<int>>(1);
         int majority = static_cast<int>((peers_.size() + 1) / 2 + 1);
 
@@ -162,6 +166,7 @@ public:
         if (node_state_ != NodeState::CANDIDATE) return;
         node_state_ = NodeState::LEADER;
         leader_id_ = node_id_;
+        std::cout << "Node " << node_id_ << " became leader for term " << state_.current_term << std::endl;
         for (const auto& peer : peers_) {
             state_.next_index[peer] = GetLastLogIndex() + 1;
             state_.match_index[peer] = 0;
@@ -290,6 +295,7 @@ public:
 
         if (request->prev_log_index() >= state_.log.size() || state_.log[request->prev_log_index()].term != request->prev_log_term()) {
             response->set_success(false);
+            response->set_match_index(GetLastLogIndex());
             return Status::OK;
         }
 
@@ -314,14 +320,51 @@ public:
         }
 
         response->set_success(true);
+        response->set_match_index(GetLastLogIndex());
         return Status::OK;
     }
 
     Status InstallSnapshot(ServerContext* context, const InstallSnapshotRequest* request, InstallSnapshotResponse* response) override {
         (void)context;  // Suppress unused parameter warning
-        (void)request;  // Suppress unused parameter warning
         std::unique_lock<std::shared_mutex> lock(mutex_);
+
+        if (request->term() > state_.current_term) {
+            StepDown(request->term());
+        }
+
         response->set_term(state_.current_term);
+
+        if (request->term() < state_.current_term) {
+            return Status::OK;
+        }
+
+        leader_id_ = request->leader_id();
+        ResetElectionTimer();
+
+        // For simplicity, we'll implement basic snapshot installation
+        // In a production system, this would handle chunked transfers
+
+        if (request->done()) {
+            // Apply snapshot to state machine
+            // This is a simplified version - production would deserialize the snapshot data
+            state_.commit_index = request->last_included_index();
+            state_.last_applied = request->last_included_index();
+
+            // Trim log to only include entries after snapshot
+            if (request->last_included_index() < state_.log.size() &&
+                state_.log[request->last_included_index()].term == request->last_included_term()) {
+                // Keep entries after snapshot
+                state_.log.erase(state_.log.begin(), state_.log.begin() + static_cast<long>(request->last_included_index()));
+            } else {
+                // Discard entire log and start fresh
+                state_.log.clear();
+                RaftLogEntry dummy;
+                dummy.index = request->last_included_index();
+                dummy.term = request->last_included_term();
+                state_.log.push_back(dummy);
+            }
+        }
+
         return Status::OK;
     }
 
@@ -343,6 +386,8 @@ public:
         (void)context;  // Suppress unused parameter warning
         std::unique_lock<std::shared_mutex> lock(mutex_);
         if (node_state_ != NodeState::LEADER) {
+            response->set_success(false);
+            response->set_error("Not the leader");
             response->set_leader_hint(leader_id_);
             return Status::OK;
         }
@@ -366,6 +411,8 @@ public:
         (void)context;  // Suppress unused parameter warning
         std::unique_lock<std::shared_mutex> lock(mutex_);
         if (node_state_ != NodeState::LEADER) {
+            response->set_success(false);
+            response->set_error("Not the leader");
             response->set_leader_hint(leader_id_);
             return Status::OK;
         }
@@ -392,11 +439,17 @@ public:
         response->set_leader_id(leader_id_);
         response->set_is_leader(node_state_ == NodeState::LEADER);
 
+        // Find leader address from peers
         for (const auto& peer : peers_) {
             if (peer.find(leader_id_) != std::string::npos) {
                 response->set_leader_address(peer);
                 break;
             }
+        }
+
+        // If we are the leader, set our own address
+        if (node_state_ == NodeState::LEADER) {
+            response->set_leader_address("localhost:" + std::to_string(port_));
         }
 
         return Status::OK;

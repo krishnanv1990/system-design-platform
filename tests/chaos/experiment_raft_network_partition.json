@@ -1,0 +1,219 @@
+{
+    "title": "Raft Consensus - Network Partition Resilience",
+    "description": "Tests the Raft cluster's behavior during network partitions (split-brain scenarios) and recovery",
+    "tags": ["raft", "consensus", "network-partition", "split-brain", "distributed"],
+    "configuration": {
+        "target_url": {
+            "type": "env",
+            "key": "TARGET_URL",
+            "default": "http://localhost:8000"
+        },
+        "gcp_project": {
+            "type": "env",
+            "key": "GCP_PROJECT"
+        },
+        "raft_cluster_name": {
+            "type": "env",
+            "key": "RAFT_CLUSTER_NAME",
+            "default": "raft-cluster"
+        },
+        "cluster_size": {
+            "type": "env",
+            "key": "CLUSTER_SIZE",
+            "default": "5"
+        }
+    },
+    "steady-state-hypothesis": {
+        "title": "Raft cluster is fully connected and operational",
+        "probes": [
+            {
+                "name": "cluster-has-leader",
+                "type": "probe",
+                "tolerance": true,
+                "provider": {
+                    "type": "python",
+                    "module": "tests.chaos.probes",
+                    "func": "raft_cluster_has_leader",
+                    "arguments": {
+                        "cluster_name": "${raft_cluster_name}"
+                    }
+                }
+            },
+            {
+                "name": "all-nodes-connected",
+                "type": "probe",
+                "tolerance": true,
+                "provider": {
+                    "type": "python",
+                    "module": "tests.chaos.probes",
+                    "func": "raft_all_nodes_connected",
+                    "arguments": {
+                        "cluster_name": "${raft_cluster_name}",
+                        "cluster_size": "${cluster_size}"
+                    }
+                }
+            }
+        ]
+    },
+    "method": [
+        {
+            "type": "action",
+            "name": "write-before-partition",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "raft_write_test_data",
+                "arguments": {
+                    "cluster_name": "${raft_cluster_name}",
+                    "key": "partition_test_1",
+                    "value": "before_partition"
+                }
+            },
+            "pauses": {
+                "after": 2
+            }
+        },
+        {
+            "type": "action",
+            "name": "create-network-partition",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "raft_create_network_partition",
+                "arguments": {
+                    "cluster_name": "${raft_cluster_name}",
+                    "partition_type": "minority_isolation"
+                }
+            },
+            "pauses": {
+                "after": 10
+            }
+        },
+        {
+            "type": "probe",
+            "name": "verify-majority-has-leader",
+            "tolerance": true,
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.probes",
+                "func": "raft_majority_partition_has_leader",
+                "arguments": {
+                    "cluster_name": "${raft_cluster_name}"
+                }
+            }
+        },
+        {
+            "type": "probe",
+            "name": "verify-minority-no-writes",
+            "tolerance": true,
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.probes",
+                "func": "raft_minority_rejects_writes",
+                "arguments": {
+                    "cluster_name": "${raft_cluster_name}"
+                }
+            }
+        },
+        {
+            "type": "action",
+            "name": "write-to-majority-partition",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "raft_write_to_majority",
+                "arguments": {
+                    "cluster_name": "${raft_cluster_name}",
+                    "key": "partition_test_2",
+                    "value": "during_partition"
+                }
+            },
+            "pauses": {
+                "after": 2
+            }
+        },
+        {
+            "type": "action",
+            "name": "heal-network-partition",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "raft_heal_network_partition",
+                "arguments": {
+                    "cluster_name": "${raft_cluster_name}"
+                }
+            },
+            "pauses": {
+                "after": 15
+            }
+        },
+        {
+            "type": "probe",
+            "name": "verify-single-leader-after-heal",
+            "tolerance": true,
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.probes",
+                "func": "raft_single_leader_exists",
+                "arguments": {
+                    "cluster_name": "${raft_cluster_name}"
+                }
+            }
+        },
+        {
+            "type": "probe",
+            "name": "verify-data-consistent-after-heal",
+            "tolerance": true,
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.probes",
+                "func": "raft_data_consistent_across_nodes",
+                "arguments": {
+                    "cluster_name": "${raft_cluster_name}",
+                    "keys": ["partition_test_1", "partition_test_2"]
+                }
+            }
+        },
+        {
+            "type": "probe",
+            "name": "verify-logs-converged",
+            "tolerance": true,
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.probes",
+                "func": "raft_logs_converged",
+                "arguments": {
+                    "cluster_name": "${raft_cluster_name}",
+                    "timeout_seconds": 30
+                }
+            }
+        }
+    ],
+    "rollbacks": [
+        {
+            "type": "action",
+            "name": "heal-any-partitions",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "raft_heal_network_partition",
+                "arguments": {
+                    "cluster_name": "${raft_cluster_name}"
+                }
+            }
+        },
+        {
+            "type": "action",
+            "name": "cleanup-test-data",
+            "provider": {
+                "type": "python",
+                "module": "tests.chaos.actions",
+                "func": "raft_cleanup_test_data",
+                "arguments": {
+                    "cluster_name": "${raft_cluster_name}",
+                    "key_prefix": "partition_test_"
+                }
+            }
+        }
+    ]
+}
