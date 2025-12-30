@@ -109,9 +109,9 @@ export default function AdminUserManagement() {
   const handleUnban = async (user: AdminUser) => {
     const confirmed = await confirm({
       title: "Unban User",
-      description: `Are you sure you want to unban ${user.email}? They will be able to use the platform again.`,
-      confirmText: "Unban",
-      cancelText: "Cancel",
+      message: `Are you sure you want to unban ${user.email}? They will be able to use the platform again.`,
+      confirmLabel: "Unban",
+      cancelLabel: "Cancel",
     })
 
     if (!confirmed) return
@@ -134,10 +134,10 @@ export default function AdminUserManagement() {
 
     const confirmed = await confirm({
       title: "Ban User",
-      description: `Are you sure you want to ban ${user.email}? Reason: ${reason}`,
-      confirmText: "Ban",
-      cancelText: "Cancel",
-      variant: "destructive",
+      message: `Are you sure you want to ban ${user.email}? Reason: ${reason}`,
+      confirmLabel: "Ban",
+      cancelLabel: "Cancel",
+      type: "danger",
     })
 
     if (!confirmed) return
