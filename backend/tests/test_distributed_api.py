@@ -172,6 +172,64 @@ class TestDistributedTestRunner:
         assert TestStatus.ERROR.value == "error"
 
 
+class TestDistributedPathResolution:
+    """Tests for distributed problems path resolution."""
+
+    def test_get_distributed_problems_base_path_default(self):
+        """Test that base path is resolved correctly."""
+        from backend.api.distributed import get_distributed_problems_base_path
+
+        base_path = get_distributed_problems_base_path()
+
+        # Should return a valid path string
+        assert isinstance(base_path, str)
+        assert len(base_path) > 0
+
+    def test_get_distributed_problems_base_path_with_env_var(self, monkeypatch):
+        """Test that APP_BASE_PATH environment variable is used."""
+        from backend.api.distributed import get_distributed_problems_base_path
+
+        monkeypatch.setenv("APP_BASE_PATH", "/custom/path")
+        base_path = get_distributed_problems_base_path()
+
+        assert base_path == "/custom/path"
+
+    def test_get_distributed_problems_base_path_finds_files(self):
+        """Test that the resolved path contains the expected files."""
+        import os
+        from backend.api.distributed import get_distributed_problems_base_path
+
+        base_path = get_distributed_problems_base_path()
+        proto_path = os.path.join(
+            base_path,
+            "distributed_problems",
+            "raft",
+            "proto",
+            "raft.proto"
+        )
+
+        # The file should exist at the resolved path
+        assert os.path.exists(proto_path), f"Proto file not found at {proto_path}"
+
+    def test_template_file_exists_at_resolved_path(self):
+        """Test that template files exist at the resolved path."""
+        import os
+        from backend.api.distributed import get_distributed_problems_base_path
+
+        base_path = get_distributed_problems_base_path()
+        python_template = os.path.join(
+            base_path,
+            "distributed_problems",
+            "raft",
+            "templates",
+            "python",
+            "server.py"
+        )
+
+        # The Python template should exist
+        assert os.path.exists(python_template), f"Python template not found at {python_template}"
+
+
 class TestDistributedAPIHelpers:
     """Tests for distributed API helper functions."""
 

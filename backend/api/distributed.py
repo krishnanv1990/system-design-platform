@@ -130,6 +130,37 @@ class BuildLogsResponse(BaseModel):
 # Helper Functions
 # ============================================================================
 
+def get_distributed_problems_base_path() -> str:
+    """
+    Get the base path for distributed problems files.
+
+    Tries multiple strategies:
+    1. APP_BASE_PATH environment variable (for Docker containers)
+    2. Relative path calculation from this file
+    3. Current working directory
+    """
+    # Strategy 1: Environment variable (most reliable for containers)
+    env_base = os.environ.get("APP_BASE_PATH")
+    if env_base:
+        return env_base
+
+    # Strategy 2: Relative path from this file
+    # This works when running from source: backend/api/distributed.py -> project root
+    file_based_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+    # Strategy 3: Check /app (Docker standard location)
+    docker_path = "/app"
+
+    # Check which path has the distributed_problems directory
+    for base_path in [file_based_path, docker_path, os.getcwd()]:
+        check_path = os.path.join(base_path, "distributed_problems", "raft", "proto", "raft.proto")
+        if os.path.exists(check_path):
+            return base_path
+
+    # Default to file-based path (original behavior)
+    return file_based_path
+
+
 def get_template_from_filesystem(language: str) -> str:
     """Load template from the distributed_problems directory."""
     # Map language to directory/file
@@ -145,7 +176,7 @@ def get_template_from_filesystem(language: str) -> str:
         return f"// Template not available for {language}"
 
     # Construct path relative to project root
-    base_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    base_path = get_distributed_problems_base_path()
     template_path = os.path.join(
         base_path,
         "distributed_problems",
@@ -158,19 +189,27 @@ def get_template_from_filesystem(language: str) -> str:
         with open(template_path, "r") as f:
             return f.read()
     except FileNotFoundError:
-        return f"// Template file not found: {template_path}"
+        # Include debug info for troubleshooting
+        debug_info = f"base_path={base_path}, cwd={os.getcwd()}"
+        return f"// Template file not found: {template_path} ({debug_info})"
+    except PermissionError:
+        return f"// Template file permission denied: {template_path}"
 
 
 def get_proto_from_filesystem() -> str:
     """Load the Raft proto file from filesystem."""
-    base_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    base_path = get_distributed_problems_base_path()
     proto_path = os.path.join(base_path, "distributed_problems", "raft", "proto", "raft.proto")
 
     try:
         with open(proto_path, "r") as f:
             return f.read()
     except FileNotFoundError:
-        return "// Proto file not found"
+        # Include debug info for troubleshooting
+        debug_info = f"base_path={base_path}, cwd={os.getcwd()}"
+        return f"// Proto file not found: {proto_path} ({debug_info})"
+    except PermissionError:
+        return f"// Proto file permission denied: {proto_path}"
 
 
 # ============================================================================

@@ -49,8 +49,14 @@ COPY distributed_problems/ ./distributed_problems/
 # Set tests directory path as environment variable
 ENV TESTS_DIR=/app/tests
 
+# Set app base path for distributed problems files
+ENV APP_BASE_PATH=/app
+
 # Ensure test files are readable
 RUN chmod -R 755 /app/tests
+
+# Ensure distributed_problems files are readable
+RUN chmod -R 755 /app/distributed_problems
 
 # Create non-root user and set permissions
 RUN useradd -m appuser && chown -R appuser:appuser /app
