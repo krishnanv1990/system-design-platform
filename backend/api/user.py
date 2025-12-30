@@ -16,6 +16,7 @@ from backend.models.user import User
 from backend.models.audit_log import AuditLog, UsageCost
 from backend.services.audit_service import AuditService
 from backend.auth.jwt_handler import get_current_user
+from backend.config import get_settings
 
 router = APIRouter()
 
@@ -399,12 +400,31 @@ async def get_activity_log(
 # ============ Admin Endpoints ============
 
 def require_admin(current_user: User = Depends(get_current_user)) -> User:
-    """Dependency to require admin privileges."""
+    """
+    Dependency to require admin privileges.
+
+    Checks two conditions for admin access:
+    1. User must have is_admin=True in the database
+    2. User's email must be in the ADMIN_EMAILS whitelist
+
+    Both conditions must be met for admin access.
+    """
+    settings = get_settings()
+    allowed_emails = [e.strip().lower() for e in settings.admin_emails.split(",") if e.strip()]
+
+    # Check both database flag AND email whitelist
     if not current_user.is_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin privileges required"
         )
+
+    if current_user.email.lower() not in allowed_emails:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin privileges required"
+        )
+
     return current_user
 
 

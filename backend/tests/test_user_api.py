@@ -172,10 +172,10 @@ class TestAdminUserAPI:
 
     @pytest.fixture
     def mock_admin_user(self):
-        """Create a mock admin user."""
+        """Create a mock admin user with whitelisted email."""
         user = MagicMock(spec=User)
         user.id = 1
-        user.email = "admin@example.com"
+        user.email = "krishnanv2005@gmail.com"  # Must match ADMIN_EMAILS whitelist
         user.name = "Admin"
         user.is_admin = True
         user.is_banned = False
@@ -285,9 +285,10 @@ class TestRequireAdminDependency:
     """Tests for the require_admin dependency."""
 
     def test_require_admin_with_admin_user(self):
-        """Test that admin users pass the check."""
+        """Test that admin users with whitelisted email pass the check."""
         admin_user = MagicMock(spec=User)
         admin_user.is_admin = True
+        admin_user.email = "krishnanv2005@gmail.com"  # Must match ADMIN_EMAILS whitelist
 
         # Should not raise - call the function directly
         result = require_admin(admin_user)

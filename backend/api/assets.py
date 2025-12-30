@@ -14,6 +14,7 @@ from backend.models.submission import Submission
 from backend.models.user import User
 from backend.auth.jwt_handler import get_current_user
 from backend.config import get_settings
+from backend.api.user import require_admin
 
 settings = get_settings()
 
@@ -223,18 +224,12 @@ async def get_submission_code(
 @router.get("/admin/all", response_model=AdminAssetsSummary)
 async def get_all_assets(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    admin_user: User = Depends(require_admin),
 ):
     """
     Admin endpoint: Get all GCP assets across all candidates.
-    Only accessible by admin users.
+    Only accessible by admin users (requires is_admin flag AND email in whitelist).
     """
-    # Check if user is admin using the is_admin field on the User model
-    if not current_user.is_admin:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin access required"
-        )
 
     # Get all submissions with deployments
     submissions = db.query(Submission).filter(
@@ -273,20 +268,14 @@ async def get_all_assets(
 async def get_cleanup_candidates(
     hours_old: int = 1,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    admin_user: User = Depends(require_admin),
 ):
     """
     Admin endpoint: Get list of deployments that are candidates for cleanup.
     Returns deployments older than specified hours.
+    Only accessible by admin users (requires is_admin flag AND email in whitelist).
     """
     from datetime import timedelta
-
-    # Check if user is admin using the is_admin field on the User model
-    if not current_user.is_admin:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin access required"
-        )
 
     cutoff_time = datetime.utcnow() - timedelta(hours=hours_old)
 

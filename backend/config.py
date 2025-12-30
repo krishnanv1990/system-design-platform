@@ -60,6 +60,10 @@ class Settings(BaseSettings):
     admin_url: str = "http://localhost:5174"  # Admin portal URL
     backend_url: str = "http://localhost:8000"
 
+    # Admin Access Control
+    # Comma-separated list of emails allowed admin access (in addition to is_admin flag)
+    admin_emails: str = "krishnanv2005@gmail.com"
+
     # Rate Limiting
     rate_limit_enabled: bool = True
     rate_limit_submissions_per_hour: int = 5  # Authenticated users

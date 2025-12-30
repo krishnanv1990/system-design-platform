@@ -22,10 +22,10 @@ class TestAssetsAPIAdminAccess:
 
     @pytest.fixture
     def mock_admin_user(self):
-        """Create a mock admin user."""
+        """Create a mock admin user with whitelisted email."""
         user = MagicMock(spec=User)
         user.id = 1
-        user.email = "admin@example.com"
+        user.email = "krishnanv2005@gmail.com"  # Must match ADMIN_EMAILS whitelist
         user.name = "Admin User"
         user.is_admin = True
         user.is_banned = False
@@ -116,10 +116,10 @@ class TestAssetsAPIWithData:
 
     @pytest.fixture
     def mock_admin_user(self):
-        """Create a mock admin user."""
+        """Create a mock admin user with whitelisted email."""
         user = MagicMock(spec=User)
         user.id = 1
-        user.email = "admin@example.com"
+        user.email = "krishnanv2005@gmail.com"  # Must match ADMIN_EMAILS whitelist
         user.is_admin = True
         user.is_banned = False
         return user
