@@ -5,8 +5,7 @@ Tests the DistributedTestRunner and GrpcClientManager classes.
 """
 
 import pytest
-import asyncio
-from unittest.mock import Mock, patch, MagicMock, AsyncMock
+from unittest.mock import Mock, patch, MagicMock
 import grpc
 
 from backend.services.distributed_tests import (
@@ -80,9 +79,11 @@ class TestGrpcClientManager:
         GrpcClientManager._instance = None
         GrpcClientManager._stubs_compiled = False
         GrpcClientManager._proto_module_path = None
+        GrpcClientManager._compilation_error = None
 
-        manager1 = GrpcClientManager()
-        manager2 = GrpcClientManager()
+        with patch('backend.services.distributed_tests.os.path.exists', return_value=False):
+            manager1 = GrpcClientManager()
+            manager2 = GrpcClientManager()
 
         assert manager1 is manager2
 
@@ -95,16 +96,34 @@ class TestGrpcClientManager:
         GrpcClientManager._instance = None
         GrpcClientManager._stubs_compiled = False
         GrpcClientManager._proto_module_path = None
+        GrpcClientManager._compilation_error = None
 
         manager = GrpcClientManager()
         proto_path = manager._get_proto_path()
 
         assert proto_path is None
 
+    def test_is_ready_with_error(self):
+        """Test is_ready when there's a compilation error."""
+        GrpcClientManager._instance = None
+        GrpcClientManager._stubs_compiled = False
+        GrpcClientManager._compilation_error = "Test error"
+
+        with patch('backend.services.distributed_tests.os.path.exists', return_value=False):
+            manager = GrpcClientManager()
+
+        ready, error = manager.is_ready()
+        assert ready is False
+        assert error == "Test error"
+
+        # Reset
+        GrpcClientManager._compilation_error = None
+
     def test_create_channel_https(self):
         """Test creating a secure channel for HTTPS URLs."""
         GrpcClientManager._instance = None
         GrpcClientManager._stubs_compiled = False
+        GrpcClientManager._compilation_error = None
 
         with patch('backend.services.distributed_tests.os.path.exists', return_value=False):
             manager = GrpcClientManager()
@@ -118,6 +137,7 @@ class TestGrpcClientManager:
         """Test creating an insecure channel for HTTP URLs."""
         GrpcClientManager._instance = None
         GrpcClientManager._stubs_compiled = False
+        GrpcClientManager._compilation_error = None
 
         with patch('backend.services.distributed_tests.os.path.exists', return_value=False):
             manager = GrpcClientManager()
@@ -130,6 +150,7 @@ class TestGrpcClientManager:
         """Test creating a channel for raw host:port."""
         GrpcClientManager._instance = None
         GrpcClientManager._stubs_compiled = False
+        GrpcClientManager._compilation_error = None
 
         with patch('backend.services.distributed_tests.os.path.exists', return_value=False):
             manager = GrpcClientManager()
@@ -142,14 +163,16 @@ class TestGrpcClientManager:
         """Test getting stub when proto isn't compiled."""
         GrpcClientManager._instance = None
         GrpcClientManager._stubs_compiled = False
+        GrpcClientManager._compilation_error = None
 
         with patch('backend.services.distributed_tests.os.path.exists', return_value=False):
             manager = GrpcClientManager()
 
-        stub, proto = manager.get_kv_stub("https://example.run.app")
+        stub, proto, error = manager.get_kv_stub("https://example.run.app")
 
         assert stub is None
         assert proto is None
+        assert error is not None  # Should have an error message
 
 
 class TestDistributedTestRunner:
@@ -157,10 +180,12 @@ class TestDistributedTestRunner:
 
     @pytest.fixture
     def mock_grpc_manager(self):
-        """Create a mock GrpcClientManager."""
+        """Create a mock GrpcClientManager that returns proper errors."""
         with patch.object(GrpcClientManager, '__new__') as mock_new:
             mock_manager = Mock()
-            mock_manager.get_kv_stub.return_value = (None, None)
+            # Return error tuple - no mock mode anymore
+            mock_manager.get_kv_stub.return_value = (None, None, "Proto not compiled")
+            mock_manager.is_ready.return_value = (False, "Proto not compiled")
             mock_new.return_value = mock_manager
             yield mock_manager
 
@@ -205,160 +230,69 @@ class TestDistributedTestRunner:
         assert service_name is None
 
     @pytest.mark.asyncio
-    async def test_find_leader_mock_mode(self, runner):
-        """Test finding leader in mock mode (no proto compiled)."""
-        leader = await runner._find_leader()
+    async def test_find_leader_no_grpc(self, runner):
+        """Test finding leader when gRPC isn't available."""
+        leader, error = await runner._find_leader()
 
-        # In mock mode, first URL is considered leader
-        assert leader == runner.cluster_urls[0]
-
-    @pytest.mark.asyncio
-    async def test_get_cluster_status_mock_mode(self, runner):
-        """Test getting cluster status in mock mode."""
-        status = await runner._get_cluster_status(runner.cluster_urls[0])
-
-        assert status is not None
-        assert status["state"] == "leader"
-
-        status = await runner._get_cluster_status(runner.cluster_urls[1])
-        assert status["state"] == "follower"
+        # Should return error when gRPC isn't available
+        assert leader is None
+        assert error is not None
 
     @pytest.mark.asyncio
-    async def test_put_mock_mode(self, runner):
-        """Test put operation in mock mode."""
-        result = await runner._put(runner.cluster_urls[0], "key", "value")
+    async def test_get_cluster_status_no_grpc(self, runner):
+        """Test getting cluster status when gRPC isn't available."""
+        status, error = await runner._get_cluster_status(runner.cluster_urls[0])
 
-        assert result["success"] is True
-
-    @pytest.mark.asyncio
-    async def test_get_mock_mode(self, runner):
-        """Test get operation in mock mode."""
-        result = await runner._get(runner.cluster_urls[0], "key")
-
-        assert result["found"] is True
-        assert result["value"] == "test_value"
+        assert status is None
+        assert error is not None
 
     @pytest.mark.asyncio
-    async def test_leader_election_test(self, runner):
-        """Test the leader election test."""
+    async def test_put_no_grpc(self, runner):
+        """Test put operation when gRPC isn't available."""
+        result, error = await runner._put(runner.cluster_urls[0], "key", "value")
+
+        assert result == {}
+        assert error is not None
+
+    @pytest.mark.asyncio
+    async def test_get_no_grpc(self, runner):
+        """Test get operation when gRPC isn't available."""
+        result, error = await runner._get(runner.cluster_urls[0], "key")
+
+        assert result == {}
+        assert error is not None
+
+    @pytest.mark.asyncio
+    async def test_leader_election_test_fails_without_grpc(self, runner):
+        """Test the leader election test fails properly without gRPC."""
         result = await runner._test_leader_election()
 
         assert result.test_name == "Leader Election"
         assert result.test_type == TestType.FUNCTIONAL
-        assert result.status == TestStatus.PASSED
-        assert result.duration_ms >= 0
-        assert result.details is not None
+        assert result.status == TestStatus.FAILED
+        assert result.error_message is not None
+        assert "hint" in result.details
 
     @pytest.mark.asyncio
-    async def test_basic_put_get_test(self, runner):
-        """Test the basic put/get test."""
+    async def test_basic_put_get_fails_without_grpc(self, runner):
+        """Test the basic put/get test fails properly without gRPC."""
         result = await runner._test_basic_put_get()
 
         assert result.test_name == "Basic Put/Get"
         assert result.test_type == TestType.FUNCTIONAL
-        # Note: In mock mode without proper gRPC setup, this may fail
-        # because the mock _get returns a fixed "test_value" that doesn't match
-        assert result.status in [TestStatus.PASSED, TestStatus.FAILED]
+        assert result.status == TestStatus.FAILED
+        assert result.error_message is not None
 
     @pytest.mark.asyncio
-    async def test_log_replication_test(self, runner):
-        """Test the log replication test."""
-        result = await runner._test_log_replication()
-
-        assert result.test_name == "Log Replication"
-        assert result.test_type == TestType.FUNCTIONAL
-        # In mock mode with fixed values, this may not match expected
-        assert result.status in [TestStatus.PASSED, TestStatus.FAILED]
-
-    @pytest.mark.asyncio
-    async def test_read_consistency_test(self, runner):
-        """Test the read consistency test."""
-        result = await runner._test_read_consistency()
-
-        assert result.test_name == "Read Consistency"
-        assert result.test_type == TestType.FUNCTIONAL
-        # In mock mode with fixed values, this may not match expected
-        assert result.status in [TestStatus.PASSED, TestStatus.FAILED]
-
-    @pytest.mark.asyncio
-    async def test_leader_redirect_test(self, runner):
-        """Test the leader redirect test."""
-        result = await runner._test_leader_redirect()
-
-        assert result.test_name == "Leader Redirect"
-        assert result.test_type == TestType.FUNCTIONAL
-        # In mock mode with 3 nodes, should pass
-        assert result.status == TestStatus.PASSED
-
-    @pytest.mark.asyncio
-    async def test_throughput_test(self, runner):
-        """Test the throughput performance test."""
-        result = await runner._test_throughput()
-
-        assert result.test_name == "Throughput"
-        assert result.test_type == TestType.PERFORMANCE
-        # In mock mode, operations should be fast
-        assert result.status == TestStatus.PASSED
-        assert result.details is not None
-        assert "ops_per_second" in result.details
-
-    @pytest.mark.asyncio
-    async def test_latency_test(self, runner):
-        """Test the latency performance test."""
-        result = await runner._test_latency()
-
-        assert result.test_name == "Latency"
-        assert result.test_type == TestType.PERFORMANCE
-        # In mock mode, latency should be low
-        assert result.status == TestStatus.PASSED
-        assert result.details is not None
-        assert "p95_ms" in result.details
-
-    @pytest.mark.asyncio
-    async def test_leader_failure_test_simulated(self, runner):
-        """Test the leader failure chaos test (simulated mode)."""
-        result = await runner._test_leader_failure()
-
-        assert result.test_name == "Leader Failure"
-        assert result.test_type == TestType.CHAOS
-        # Without real infrastructure control, should be simulated
-        assert result.chaos_scenario in ["simulated", "leader_service_stop"]
-
-    @pytest.mark.asyncio
-    async def test_network_partition_test_simulated(self, runner):
-        """Test the network partition chaos test (simulated mode)."""
-        result = await runner._test_network_partition()
-
-        assert result.test_name == "Network Partition"
-        assert result.test_type == TestType.CHAOS
-        # Without real infrastructure control, should be simulated
-        assert result.chaos_scenario in ["simulated", "minority_partition"]
-
-    @pytest.mark.asyncio
-    async def test_node_restart_test_simulated(self, runner):
-        """Test the node restart chaos test (simulated mode)."""
-        result = await runner._test_node_restart()
-
-        assert result.test_name == "Node Restart"
-        assert result.test_type == TestType.CHAOS
-        # Without real infrastructure control, should be simulated
-        assert result.chaos_scenario in ["simulated", "node_restart"]
-
-    @pytest.mark.asyncio
-    async def test_run_all_tests(self, runner):
-        """Test running all tests."""
+    async def test_run_all_tests_returns_results(self, runner):
+        """Test running all tests returns results even without gRPC."""
         results = await runner.run_all_tests()
 
         assert len(results) > 0
 
-        # Count results by type
-        functional = [r for r in results if r.test_type == TestType.FUNCTIONAL]
-        performance = [r for r in results if r.test_type == TestType.PERFORMANCE]
-        chaos = [r for r in results if r.test_type == TestType.CHAOS]
-
-        assert len(functional) == 5
-        assert len(performance) == 2
-        assert len(chaos) == 3
+        # All tests should have completed (passed, failed, or error)
+        for result in results:
+            assert result.status in [TestStatus.PASSED, TestStatus.FAILED, TestStatus.ERROR]
 
     @pytest.mark.asyncio
     async def test_run_functional_tests(self, runner):
@@ -434,7 +368,8 @@ class TestDistributedTestRunnerWithGrpc:
 
         with patch.object(GrpcClientManager, '__new__') as mock_new:
             mock_manager = Mock()
-            mock_manager.get_kv_stub.return_value = (mock_stub, mock_proto)
+            mock_manager.get_kv_stub.return_value = (mock_stub, mock_proto, None)
+            mock_manager.is_ready.return_value = (True, None)
             mock_new.return_value = mock_manager
 
             runner = DistributedTestRunner(
@@ -442,8 +377,9 @@ class TestDistributedTestRunnerWithGrpc:
                 submission_id=123,
             )
 
-            status = await runner._get_cluster_status("https://raft-123-node1.run.app")
+            status, error = await runner._get_cluster_status("https://raft-123-node1.run.app")
 
+            assert error is None
             assert status["node_id"] == "node1"
             assert status["state"] == "leader"
             assert status["current_term"] == 1
@@ -455,7 +391,8 @@ class TestDistributedTestRunnerWithGrpc:
 
         with patch.object(GrpcClientManager, '__new__') as mock_new:
             mock_manager = Mock()
-            mock_manager.get_kv_stub.return_value = (mock_stub, mock_proto)
+            mock_manager.get_kv_stub.return_value = (mock_stub, mock_proto, None)
+            mock_manager.is_ready.return_value = (True, None)
             mock_new.return_value = mock_manager
 
             runner = DistributedTestRunner(
@@ -463,8 +400,9 @@ class TestDistributedTestRunnerWithGrpc:
                 submission_id=123,
             )
 
-            result = await runner._put("https://raft-123-node1.run.app", "key", "value")
+            result, error = await runner._put("https://raft-123-node1.run.app", "key", "value")
 
+            assert error is None
             assert result["success"] is True
 
     @pytest.mark.asyncio
@@ -474,7 +412,8 @@ class TestDistributedTestRunnerWithGrpc:
 
         with patch.object(GrpcClientManager, '__new__') as mock_new:
             mock_manager = Mock()
-            mock_manager.get_kv_stub.return_value = (mock_stub, mock_proto)
+            mock_manager.get_kv_stub.return_value = (mock_stub, mock_proto, None)
+            mock_manager.is_ready.return_value = (True, None)
             mock_new.return_value = mock_manager
 
             runner = DistributedTestRunner(
@@ -482,8 +421,9 @@ class TestDistributedTestRunnerWithGrpc:
                 submission_id=123,
             )
 
-            result = await runner._get("https://raft-123-node1.run.app", "key")
+            result, error = await runner._get("https://raft-123-node1.run.app", "key")
 
+            assert error is None
             assert result["found"] is True
             assert result["value"] == "test_value"
 
@@ -494,10 +434,12 @@ class TestDistributedTestRunnerWithGrpc:
             mock_manager = Mock()
             mock_stub = Mock()
             mock_proto = Mock()
+            mock_proto.GetClusterStatusRequest.return_value = Mock()
 
             # Simulate a gRPC error
             mock_stub.GetClusterStatus.side_effect = grpc.RpcError()
-            mock_manager.get_kv_stub.return_value = (mock_stub, mock_proto)
+            mock_manager.get_kv_stub.return_value = (mock_stub, mock_proto, None)
+            mock_manager.is_ready.return_value = (True, None)
             mock_new.return_value = mock_manager
 
             runner = DistributedTestRunner(
@@ -505,10 +447,12 @@ class TestDistributedTestRunnerWithGrpc:
                 submission_id=123,
             )
 
-            status = await runner._get_cluster_status("https://raft-123-node1.run.app")
+            status, error = await runner._get_cluster_status("https://raft-123-node1.run.app")
 
-            # Should return None on gRPC error
+            # Should return None status with error message
             assert status is None
+            assert error is not None
+            assert "gRPC error" in error or "Error" in error
 
 
 class TestDistributedTestRunnerChaosWithInfrastructure:
@@ -532,7 +476,8 @@ class TestDistributedTestRunnerChaosWithInfrastructure:
 
             with patch.object(GrpcClientManager, '__new__') as mock_grpc:
                 mock_manager = Mock()
-                mock_manager.get_kv_stub.return_value = (None, None)
+                mock_manager.get_kv_stub.return_value = (None, None, "Not available")
+                mock_manager.is_ready.return_value = (False, "Not available")
                 mock_grpc.return_value = mock_manager
 
                 runner = DistributedTestRunner(
@@ -564,7 +509,8 @@ class TestDistributedTestRunnerChaosWithInfrastructure:
 
             with patch.object(GrpcClientManager, '__new__') as mock_grpc:
                 mock_manager = Mock()
-                mock_manager.get_kv_stub.return_value = (None, None)
+                mock_manager.get_kv_stub.return_value = (None, None, "Not available")
+                mock_manager.is_ready.return_value = (False, "Not available")
                 mock_grpc.return_value = mock_manager
 
                 runner = DistributedTestRunner(
@@ -587,7 +533,8 @@ class TestDistributedTestRunnerChaosWithInfrastructure:
 
             with patch.object(GrpcClientManager, '__new__') as mock_grpc:
                 mock_manager = Mock()
-                mock_manager.get_kv_stub.return_value = (None, None)
+                mock_manager.get_kv_stub.return_value = (None, None, "Not available")
+                mock_manager.is_ready.return_value = (False, "Not available")
                 mock_grpc.return_value = mock_manager
 
                 runner = DistributedTestRunner(
@@ -608,22 +555,14 @@ class TestSingleNodeCluster:
         """Create a runner with a single node."""
         with patch.object(GrpcClientManager, '__new__') as mock_new:
             mock_manager = Mock()
-            mock_manager.get_kv_stub.return_value = (None, None)
+            mock_manager.get_kv_stub.return_value = (None, None, "Not available")
+            mock_manager.is_ready.return_value = (False, "Not available")
             mock_new.return_value = mock_manager
 
             return DistributedTestRunner(
                 cluster_urls=["https://raft-123-node1.run.app"],
                 submission_id=123,
             )
-
-    @pytest.mark.asyncio
-    async def test_leader_redirect_single_node(self, single_node_runner):
-        """Test leader redirect with single node cluster."""
-        result = await single_node_runner._test_leader_redirect()
-
-        assert result.test_name == "Leader Redirect"
-        assert result.status == TestStatus.PASSED
-        assert "Single node cluster" in result.details.get("note", "")
 
     @pytest.mark.asyncio
     async def test_network_partition_small_cluster(self, single_node_runner):
@@ -633,12 +572,50 @@ class TestSingleNodeCluster:
         assert result.test_name == "Network Partition"
         assert result.status == TestStatus.PASSED
         assert result.chaos_scenario == "skipped"
+        assert "too small" in result.details.get("note", "")
+
+
+class TestErrorMessages:
+    """Test that error messages are clear and helpful."""
+
+    @pytest.fixture
+    def runner_with_error(self):
+        """Create a runner that will produce errors."""
+        with patch.object(GrpcClientManager, '__new__') as mock_new:
+            mock_manager = Mock()
+            mock_manager.get_kv_stub.return_value = (None, None, "Proto file not found")
+            mock_manager.is_ready.return_value = (False, "Proto file not found")
+            mock_new.return_value = mock_manager
+
+            return DistributedTestRunner(
+                cluster_urls=["https://raft-123-node1.run.app"],
+                submission_id=123,
+            )
 
     @pytest.mark.asyncio
-    async def test_node_restart_single_node(self, single_node_runner):
-        """Test node restart with single node cluster."""
-        result = await single_node_runner._test_node_restart()
+    async def test_leader_election_error_has_hint(self, runner_with_error):
+        """Test that leader election failure includes a hint."""
+        result = await runner_with_error._test_leader_election()
 
-        assert result.test_name == "Node Restart"
-        assert result.status == TestStatus.PASSED
-        assert "Single node cluster" in result.details.get("note", "")
+        assert result.status == TestStatus.FAILED
+        assert result.details is not None
+        assert "hint" in result.details
+
+    @pytest.mark.asyncio
+    async def test_put_get_error_has_hint(self, runner_with_error):
+        """Test that put/get failure includes a hint."""
+        result = await runner_with_error._test_basic_put_get()
+
+        assert result.status == TestStatus.FAILED
+        # Error should be about not finding leader
+        assert "leader" in result.error_message.lower() or "Could not" in result.error_message
+
+    @pytest.mark.asyncio
+    async def test_framework_errors_marked_correctly(self, runner_with_error):
+        """Test that framework errors are marked as ERROR, not FAILED."""
+        # Simulate a framework exception
+        with patch.object(runner_with_error, '_find_leader', side_effect=Exception("Framework crash")):
+            result = await runner_with_error._test_basic_put_get()
+
+        assert result.status == TestStatus.ERROR
+        assert "framework" in result.error_message.lower()

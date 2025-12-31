@@ -3,6 +3,11 @@ Distributed Consensus Test Framework
 
 Runs functional, performance, and chaos tests against deployed Raft clusters.
 Supports real infrastructure testing via Cloud Run service control.
+
+Error Handling:
+- Framework issues (proto missing, gRPC setup) → ERROR status with clear message
+- User implementation issues (wrong values, no leader) → FAILED status with details
+- Successful tests → PASSED status with metrics
 """
 
 import asyncio
@@ -10,9 +15,8 @@ import os
 import sys
 import time
 import tempfile
-import shutil
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 from enum import Enum
 
 import grpc
@@ -59,6 +63,7 @@ class GrpcClientManager:
     _instance = None
     _stubs_compiled = False
     _proto_module_path = None
+    _compilation_error: Optional[str] = None
 
     def __new__(cls):
         if cls._instance is None:
@@ -66,7 +71,7 @@ class GrpcClientManager:
         return cls._instance
 
     def __init__(self):
-        if not GrpcClientManager._stubs_compiled:
+        if not GrpcClientManager._stubs_compiled and not GrpcClientManager._compilation_error:
             self._compile_stubs()
 
     def _get_proto_path(self) -> Optional[str]:
@@ -88,7 +93,8 @@ class GrpcClientManager:
         """Compile proto stubs to a persistent location."""
         proto_path = self._get_proto_path()
         if not proto_path:
-            print("Proto file not found, using mock mode")
+            GrpcClientManager._compilation_error = "Proto file not found. Cannot run gRPC tests."
+            print(GrpcClientManager._compilation_error)
             return
 
         try:
@@ -111,15 +117,35 @@ class GrpcClientManager:
                 GrpcClientManager._stubs_compiled = True
                 print(f"Proto stubs compiled to {stubs_dir}")
             else:
-                print(f"Proto compilation failed with code {result}")
+                GrpcClientManager._compilation_error = f"Proto compilation failed with code {result}"
+                print(GrpcClientManager._compilation_error)
 
+        except ImportError as e:
+            GrpcClientManager._compilation_error = f"grpc_tools not installed: {e}"
+            print(GrpcClientManager._compilation_error)
         except Exception as e:
-            print(f"Failed to compile proto stubs: {e}")
+            GrpcClientManager._compilation_error = f"Failed to compile proto stubs: {e}"
+            print(GrpcClientManager._compilation_error)
 
-    def get_kv_stub(self, url: str):
-        """Get a KeyValueService stub for a given URL."""
+    def is_ready(self) -> Tuple[bool, Optional[str]]:
+        """Check if gRPC client is ready to use."""
+        if GrpcClientManager._compilation_error:
+            return False, GrpcClientManager._compilation_error
         if not GrpcClientManager._stubs_compiled:
-            return None, None
+            return False, "Proto stubs not compiled"
+        return True, None
+
+    def get_kv_stub(self, url: str) -> Tuple[Optional[Any], Optional[Any], Optional[str]]:
+        """
+        Get a KeyValueService stub for a given URL.
+
+        Returns: (stub, proto_module, error_message)
+        """
+        if GrpcClientManager._compilation_error:
+            return None, None, GrpcClientManager._compilation_error
+
+        if not GrpcClientManager._stubs_compiled:
+            return None, None, "Proto stubs not compiled"
 
         try:
             # Add stubs directory to path temporarily
@@ -130,11 +156,10 @@ class GrpcClientManager:
             import raft_pb2_grpc
 
             channel = self._create_channel(url)
-            return raft_pb2_grpc.KeyValueServiceStub(channel), raft_pb2
+            return raft_pb2_grpc.KeyValueServiceStub(channel), raft_pb2, None
 
         except Exception as e:
-            print(f"Failed to create stub for {url}: {e}")
-            return None, None
+            return None, None, f"Failed to create gRPC stub: {e}"
 
     def _create_channel(self, url: str) -> grpc.Channel:
         """Create a gRPC channel for the given URL."""
@@ -161,6 +186,10 @@ class DistributedTestRunner:
     1. Functional: Leader election, log replication, consistency
     2. Performance: Throughput, latency under load
     3. Chaos: Network partitions, node failures, restarts (real infrastructure)
+
+    Error messages clearly distinguish between:
+    - Framework issues (gRPC setup, proto compilation)
+    - User implementation issues (wrong behavior, timeouts)
     """
 
     def __init__(self, cluster_urls: List[str], submission_id: Optional[int] = None):
@@ -176,15 +205,8 @@ class DistributedTestRunner:
         self.submission_id = submission_id
         self.grpc_manager = GrpcClientManager()
 
-        # Extract service names from URLs for chaos testing
-        self.service_names = []
-        for url in cluster_urls:
-            # URL format: https://raft-{submission_id}-node{n}-xxx.run.app
-            if "run.app" in url:
-                # Extract service name from URL
-                service_name = url.replace("https://", "").split("-")[0:3]
-                if len(service_name) >= 3:
-                    self.service_names.append("-".join(service_name[:3]))
+        # Track gRPC readiness
+        self._grpc_ready, self._grpc_error = self.grpc_manager.is_ready()
 
     async def run_all_tests(self) -> List[TestResult]:
         """Run all tests and return results."""
@@ -200,7 +222,7 @@ class DistributedTestRunner:
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.ERROR,
                 duration_ms=0,
-                error_message=f"Failed to run functional tests: {e}",
+                error_message=f"Test framework error: {e}",
             ))
 
         # Run performance tests
@@ -213,7 +235,7 @@ class DistributedTestRunner:
                 test_type=TestType.PERFORMANCE,
                 status=TestStatus.ERROR,
                 duration_ms=0,
-                error_message=f"Failed to run performance tests: {e}",
+                error_message=f"Test framework error: {e}",
             ))
 
         # Run chaos tests
@@ -226,7 +248,7 @@ class DistributedTestRunner:
                 test_type=TestType.CHAOS,
                 status=TestStatus.ERROR,
                 duration_ms=0,
-                error_message=f"Failed to run chaos tests: {e}",
+                error_message=f"Test framework error: {e}",
             ))
 
         # Ensure we always return at least one result
@@ -302,19 +324,19 @@ class DistributedTestRunner:
             leader_found = False
             leader_id = None
             leader_url = None
+            last_error = None
 
             for attempt in range(60):  # 60 attempts, 500ms apart = 30 seconds
                 for url in self.cluster_urls:
-                    try:
-                        status = await self._get_cluster_status(url)
-                        if status and status.get("state") == "leader":
-                            leader_found = True
-                            leader_id = status.get("node_id")
-                            leader_url = url
-                            break
-                    except Exception as e:
-                        # Node might not be ready yet
+                    status, error = await self._get_cluster_status(url)
+                    if error:
+                        last_error = error
                         continue
+                    if status and status.get("state") == "leader":
+                        leader_found = True
+                        leader_id = status.get("node_id")
+                        leader_url = url
+                        break
 
                 if leader_found:
                     break
@@ -331,12 +353,16 @@ class DistributedTestRunner:
                     details={"leader_id": leader_id, "leader_url": leader_url},
                 )
             else:
+                error_msg = "No leader elected within 30 second timeout."
+                if last_error:
+                    error_msg += f" Last error: {last_error}"
                 return TestResult(
                     test_name="Leader Election",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
                     duration_ms=duration_ms,
-                    error_message="No leader elected within 30 second timeout",
+                    error_message=error_msg,
+                    details={"hint": "Ensure your Raft implementation properly conducts leader elections and GetClusterStatus returns state='leader' for the elected leader."},
                 )
 
         except Exception as e:
@@ -345,7 +371,7 @@ class DistributedTestRunner:
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.ERROR,
                 duration_ms=int((time.time() - start_time) * 1000),
-                error_message=str(e),
+                error_message=f"Test framework error: {e}",
             )
 
     async def _test_basic_put_get(self) -> TestResult:
@@ -354,53 +380,91 @@ class DistributedTestRunner:
 
         try:
             # Find leader
-            leader_url = await self._find_leader()
+            leader_url, leader_error = await self._find_leader()
             if not leader_url:
                 return TestResult(
                     test_name="Basic Put/Get",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
                     duration_ms=int((time.time() - start_time) * 1000),
-                    error_message="Could not find leader",
+                    error_message=f"Could not find leader. {leader_error or ''}",
+                    details={"hint": "Ensure leader election completes before this test runs."},
                 )
 
             # Put a value
             test_key = f"test_key_{int(time.time())}"
             test_value = "test_value_123"
 
-            put_result = await self._put(leader_url, test_key, test_value)
-            if not put_result.get("success"):
+            put_result, put_error = await self._put(leader_url, test_key, test_value)
+            if put_error:
                 return TestResult(
                     test_name="Basic Put/Get",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
                     duration_ms=int((time.time() - start_time) * 1000),
-                    error_message=f"Put operation failed: {put_result.get('error', 'unknown')}",
+                    error_message=f"Put operation failed: {put_error}",
+                    details={"hint": "Check your Put RPC implementation. Ensure it accepts key/value and returns success=true."},
+                )
+
+            if not put_result.get("success"):
+                error_info = put_result.get("error", "Unknown error")
+                leader_hint = put_result.get("leader_hint")
+                return TestResult(
+                    test_name="Basic Put/Get",
+                    test_type=TestType.FUNCTIONAL,
+                    status=TestStatus.FAILED,
+                    duration_ms=int((time.time() - start_time) * 1000),
+                    error_message=f"Put returned success=false: {error_info}",
+                    details={
+                        "leader_hint": leader_hint,
+                        "hint": "Your Put RPC returned success=false. Check if the node is the leader and can commit the entry.",
+                    },
                 )
 
             # Wait for commit
             await asyncio.sleep(0.5)
 
             # Get the value back
-            get_result = await self._get(leader_url, test_key)
+            get_result, get_error = await self._get(leader_url, test_key)
             duration_ms = int((time.time() - start_time) * 1000)
 
-            if get_result.get("found") and get_result.get("value") == test_value:
-                return TestResult(
-                    test_name="Basic Put/Get",
-                    test_type=TestType.FUNCTIONAL,
-                    status=TestStatus.PASSED,
-                    duration_ms=duration_ms,
-                    details={"key": test_key, "value": test_value},
-                )
-            else:
+            if get_error:
                 return TestResult(
                     test_name="Basic Put/Get",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
                     duration_ms=duration_ms,
-                    error_message=f"Get returned wrong value: {get_result}",
+                    error_message=f"Get operation failed: {get_error}",
+                    details={"hint": "Check your Get RPC implementation."},
                 )
+
+            if not get_result.get("found"):
+                return TestResult(
+                    test_name="Basic Put/Get",
+                    test_type=TestType.FUNCTIONAL,
+                    status=TestStatus.FAILED,
+                    duration_ms=duration_ms,
+                    error_message=f"Key '{test_key}' not found after Put",
+                    details={"hint": "Put succeeded but Get could not find the key. Check your state machine application."},
+                )
+
+            if get_result.get("value") != test_value:
+                return TestResult(
+                    test_name="Basic Put/Get",
+                    test_type=TestType.FUNCTIONAL,
+                    status=TestStatus.FAILED,
+                    duration_ms=duration_ms,
+                    error_message=f"Value mismatch: expected '{test_value}', got '{get_result.get('value')}'",
+                    details={"hint": "The stored value doesn't match what was written. Check your state machine."},
+                )
+
+            return TestResult(
+                test_name="Basic Put/Get",
+                test_type=TestType.FUNCTIONAL,
+                status=TestStatus.PASSED,
+                duration_ms=duration_ms,
+                details={"key": test_key, "value": test_value},
+            )
 
         except Exception as e:
             return TestResult(
@@ -408,7 +472,7 @@ class DistributedTestRunner:
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.ERROR,
                 duration_ms=int((time.time() - start_time) * 1000),
-                error_message=str(e),
+                error_message=f"Test framework error: {e}",
             )
 
     async def _test_log_replication(self) -> TestResult:
@@ -416,14 +480,14 @@ class DistributedTestRunner:
         start_time = time.time()
 
         try:
-            leader_url = await self._find_leader()
+            leader_url, leader_error = await self._find_leader()
             if not leader_url:
                 return TestResult(
                     test_name="Log Replication",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
                     duration_ms=int((time.time() - start_time) * 1000),
-                    error_message="Could not find leader",
+                    error_message=f"Could not find leader. {leader_error or ''}",
                 )
 
             # Write multiple entries
@@ -432,33 +496,35 @@ class DistributedTestRunner:
                 key = f"repl_key_{i}_{int(time.time())}"
                 value = f"repl_value_{i}"
                 test_entries[key] = value
-                result = await self._put(leader_url, key, value)
-                if not result.get("success"):
+                result, error = await self._put(leader_url, key, value)
+                if error or not result.get("success"):
                     return TestResult(
                         test_name="Log Replication",
                         test_type=TestType.FUNCTIONAL,
                         status=TestStatus.FAILED,
                         duration_ms=int((time.time() - start_time) * 1000),
-                        error_message=f"Failed to put key {key}: {result.get('error')}",
+                        error_message=f"Failed to put key {key}: {error or result.get('error')}",
                     )
 
             # Wait for replication
             await asyncio.sleep(2)
 
             # Verify all entries are readable from all nodes
-            all_replicated = True
             failed_reads = []
 
             for url in self.cluster_urls:
                 for key, expected_value in test_entries.items():
-                    result = await self._get(url, key)
-                    if not result.get("found") or result.get("value") != expected_value:
-                        all_replicated = False
-                        failed_reads.append(f"{url}:{key}={result.get('value', 'NOT_FOUND')}")
+                    result, error = await self._get(url, key)
+                    if error:
+                        failed_reads.append(f"{url}: {key} - {error}")
+                    elif not result.get("found"):
+                        failed_reads.append(f"{url}: {key} - not found")
+                    elif result.get("value") != expected_value:
+                        failed_reads.append(f"{url}: {key} - wrong value '{result.get('value')}'")
 
             duration_ms = int((time.time() - start_time) * 1000)
 
-            if all_replicated:
+            if not failed_reads:
                 return TestResult(
                     test_name="Log Replication",
                     test_type=TestType.FUNCTIONAL,
@@ -472,7 +538,11 @@ class DistributedTestRunner:
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
                     duration_ms=duration_ms,
-                    error_message=f"Not all entries replicated. Failed reads: {failed_reads[:5]}",
+                    error_message=f"Not all entries replicated to all nodes",
+                    details={
+                        "failed_reads": failed_reads[:10],
+                        "hint": "Ensure AppendEntries replicates log entries to followers and followers apply committed entries.",
+                    },
                 )
 
         except Exception as e:
@@ -481,7 +551,7 @@ class DistributedTestRunner:
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.ERROR,
                 duration_ms=int((time.time() - start_time) * 1000),
-                error_message=str(e),
+                error_message=f"Test framework error: {e}",
             )
 
     async def _test_read_consistency(self) -> TestResult:
@@ -489,49 +559,54 @@ class DistributedTestRunner:
         start_time = time.time()
 
         try:
-            leader_url = await self._find_leader()
+            leader_url, leader_error = await self._find_leader()
             if not leader_url:
                 return TestResult(
                     test_name="Read Consistency",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
                     duration_ms=int((time.time() - start_time) * 1000),
-                    error_message="Could not find leader",
+                    error_message=f"Could not find leader. {leader_error or ''}",
                 )
 
             # Write a value
             key = f"consistency_key_{int(time.time())}"
             value = "consistency_value"
-            result = await self._put(leader_url, key, value)
-            if not result.get("success"):
+            result, error = await self._put(leader_url, key, value)
+            if error or not result.get("success"):
                 return TestResult(
                     test_name="Read Consistency",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
                     duration_ms=int((time.time() - start_time) * 1000),
-                    error_message=f"Put failed: {result.get('error')}",
+                    error_message=f"Put failed: {error or result.get('error')}",
                 )
 
             # Wait for commit
             await asyncio.sleep(1)
 
             # Read from all nodes and verify consistency
-            values = []
+            node_values = {}
             for url in self.cluster_urls:
-                result = await self._get(url, key)
-                values.append(result.get("value") if result.get("found") else None)
+                result, error = await self._get(url, key)
+                if error:
+                    node_values[url] = f"error: {error}"
+                elif not result.get("found"):
+                    node_values[url] = "not found"
+                else:
+                    node_values[url] = result.get("value")
 
             duration_ms = int((time.time() - start_time) * 1000)
 
-            # All values should be the same
-            unique_values = set(v for v in values if v is not None)
+            # Check if all nodes have the same value
+            unique_values = set(node_values.values())
             if len(unique_values) == 1 and value in unique_values:
                 return TestResult(
                     test_name="Read Consistency",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.PASSED,
                     duration_ms=duration_ms,
-                    details={"nodes_checked": len(values), "value": value},
+                    details={"nodes_checked": len(node_values), "value": value},
                 )
             else:
                 return TestResult(
@@ -539,7 +614,12 @@ class DistributedTestRunner:
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
                     duration_ms=duration_ms,
-                    error_message=f"Inconsistent values across nodes: {values}",
+                    error_message="Inconsistent values across nodes",
+                    details={
+                        "expected": value,
+                        "node_values": node_values,
+                        "hint": "All nodes should return the same value for a committed entry. Check log replication and state machine application.",
+                    },
                 )
 
         except Exception as e:
@@ -548,7 +628,7 @@ class DistributedTestRunner:
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.ERROR,
                 duration_ms=int((time.time() - start_time) * 1000),
-                error_message=str(e),
+                error_message=f"Test framework error: {e}",
             )
 
     async def _test_leader_redirect(self) -> TestResult:
@@ -556,14 +636,14 @@ class DistributedTestRunner:
         start_time = time.time()
 
         try:
-            leader_url = await self._find_leader()
+            leader_url, leader_error = await self._find_leader()
             if not leader_url:
                 return TestResult(
                     test_name="Leader Redirect",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
                     duration_ms=int((time.time() - start_time) * 1000),
-                    error_message="Could not find leader",
+                    error_message=f"Could not find leader. {leader_error or ''}",
                 )
 
             # Find a follower
@@ -582,11 +662,21 @@ class DistributedTestRunner:
                     details={"note": "Single node cluster, no followers to test"},
                 )
 
-            # Try to write to follower - should get leader hint
+            # Try to write to follower - should get leader hint or forward
             key = f"redirect_key_{int(time.time())}"
-            result = await self._put(follower_url, key, "value")
+            result, error = await self._put(follower_url, key, "value")
 
             duration_ms = int((time.time() - start_time) * 1000)
+
+            if error:
+                return TestResult(
+                    test_name="Leader Redirect",
+                    test_type=TestType.FUNCTIONAL,
+                    status=TestStatus.FAILED,
+                    duration_ms=duration_ms,
+                    error_message=f"Put to follower failed: {error}",
+                    details={"hint": "Follower should either forward to leader or return leader_hint"},
+                )
 
             # Either the write succeeds (follower forwards to leader) or we get a leader_hint
             if result.get("success") or result.get("leader_hint"):
@@ -607,7 +697,11 @@ class DistributedTestRunner:
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
                     duration_ms=duration_ms,
-                    error_message=f"Follower did not redirect or forward: {result}",
+                    error_message="Follower did not redirect or forward to leader",
+                    details={
+                        "response": result,
+                        "hint": "When a follower receives a write request, it should either forward to leader or return leader_hint.",
+                    },
                 )
 
         except Exception as e:
@@ -616,7 +710,7 @@ class DistributedTestRunner:
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.ERROR,
                 duration_ms=int((time.time() - start_time) * 1000),
-                error_message=str(e),
+                error_message=f"Test framework error: {e}",
             )
 
     # =========================================================================
@@ -628,27 +722,37 @@ class DistributedTestRunner:
         start_time = time.time()
 
         try:
-            leader_url = await self._find_leader()
+            leader_url, leader_error = await self._find_leader()
             if not leader_url:
                 return TestResult(
                     test_name="Throughput",
                     test_type=TestType.PERFORMANCE,
                     status=TestStatus.FAILED,
                     duration_ms=int((time.time() - start_time) * 1000),
-                    error_message="Could not find leader",
+                    error_message=f"Could not find leader. {leader_error or ''}",
                 )
 
             # Write 100 entries as fast as possible
             num_ops = 100
             successful_ops = 0
+            failed_ops = 0
+            errors = []
             write_start = time.time()
 
             for i in range(num_ops):
                 key = f"throughput_key_{i}_{int(time.time() * 1000)}"
                 value = f"throughput_value_{i}"
-                result = await self._put(leader_url, key, value)
-                if result.get("success"):
+                result, error = await self._put(leader_url, key, value)
+                if error:
+                    failed_ops += 1
+                    if len(errors) < 5:
+                        errors.append(error)
+                elif result.get("success"):
                     successful_ops += 1
+                else:
+                    failed_ops += 1
+                    if len(errors) < 5:
+                        errors.append(result.get("error", "Unknown"))
 
             write_duration = time.time() - write_start
             ops_per_second = successful_ops / write_duration if write_duration > 0 else 0
@@ -665,6 +769,7 @@ class DistributedTestRunner:
                     details={
                         "total_operations": num_ops,
                         "successful_operations": successful_ops,
+                        "failed_operations": failed_ops,
                         "duration_seconds": round(write_duration, 2),
                         "ops_per_second": round(ops_per_second, 2),
                     },
@@ -675,11 +780,14 @@ class DistributedTestRunner:
                     test_type=TestType.PERFORMANCE,
                     status=TestStatus.FAILED,
                     duration_ms=duration_ms,
+                    error_message=f"Throughput too low: {ops_per_second:.2f} ops/sec (need >= 10)",
                     details={
                         "successful_operations": successful_ops,
+                        "failed_operations": failed_ops,
                         "ops_per_second": round(ops_per_second, 2),
+                        "sample_errors": errors,
+                        "hint": "Optimize your consensus algorithm. Consider batching log entries.",
                     },
-                    error_message=f"Throughput too low: {ops_per_second:.2f} ops/sec (need >= 10)",
                 )
 
         except Exception as e:
@@ -688,7 +796,7 @@ class DistributedTestRunner:
                 test_type=TestType.PERFORMANCE,
                 status=TestStatus.ERROR,
                 duration_ms=int((time.time() - start_time) * 1000),
-                error_message=str(e),
+                error_message=f"Test framework error: {e}",
             )
 
     async def _test_latency(self) -> TestResult:
@@ -696,28 +804,35 @@ class DistributedTestRunner:
         start_time = time.time()
 
         try:
-            leader_url = await self._find_leader()
+            leader_url, leader_error = await self._find_leader()
             if not leader_url:
                 return TestResult(
                     test_name="Latency",
                     test_type=TestType.PERFORMANCE,
                     status=TestStatus.FAILED,
                     duration_ms=int((time.time() - start_time) * 1000),
-                    error_message="Could not find leader",
+                    error_message=f"Could not find leader. {leader_error or ''}",
                 )
 
             # Measure latency for 50 operations
             latencies = []
+            errors = []
             for i in range(50):
                 key = f"latency_key_{i}_{int(time.time() * 1000)}"
                 value = f"latency_value_{i}"
 
                 op_start = time.time()
-                result = await self._put(leader_url, key, value)
+                result, error = await self._put(leader_url, key, value)
                 op_latency = (time.time() - op_start) * 1000  # ms
 
-                if result.get("success"):
+                if error:
+                    if len(errors) < 5:
+                        errors.append(error)
+                elif result.get("success"):
                     latencies.append(op_latency)
+                else:
+                    if len(errors) < 5:
+                        errors.append(result.get("error", "Unknown"))
 
             if not latencies:
                 return TestResult(
@@ -726,6 +841,7 @@ class DistributedTestRunner:
                     status=TestStatus.FAILED,
                     duration_ms=int((time.time() - start_time) * 1000),
                     error_message="No successful operations to measure latency",
+                    details={"sample_errors": errors},
                 )
 
             # Calculate statistics
@@ -760,11 +876,12 @@ class DistributedTestRunner:
                     test_type=TestType.PERFORMANCE,
                     status=TestStatus.FAILED,
                     duration_ms=duration_ms,
+                    error_message=f"P95 latency too high: {p95:.2f}ms (need < 500ms)",
                     details={
                         "avg_ms": round(avg_latency, 2),
                         "p95_ms": round(p95, 2),
+                        "hint": "High latency may indicate slow consensus or network issues.",
                     },
-                    error_message=f"P95 latency too high: {p95:.2f}ms (need < 500ms)",
                 )
 
         except Exception as e:
@@ -773,7 +890,7 @@ class DistributedTestRunner:
                 test_type=TestType.PERFORMANCE,
                 status=TestStatus.ERROR,
                 duration_ms=int((time.time() - start_time) * 1000),
-                error_message=str(e),
+                error_message=f"Test framework error: {e}",
             )
 
     # =========================================================================
@@ -797,14 +914,14 @@ class DistributedTestRunner:
 
         try:
             # Find current leader
-            leader_url = await self._find_leader()
+            leader_url, leader_error = await self._find_leader()
             if not leader_url:
                 return TestResult(
                     test_name="Leader Failure",
                     test_type=TestType.CHAOS,
                     status=TestStatus.FAILED,
                     duration_ms=int((time.time() - start_time) * 1000),
-                    error_message="Could not find initial leader",
+                    error_message=f"Could not find initial leader. {leader_error or ''}",
                     chaos_scenario=chaos_scenario,
                 )
 
@@ -813,14 +930,14 @@ class DistributedTestRunner:
             # Write a value before failure
             test_key = f"chaos_leader_{int(time.time())}"
             test_value = "pre_failure_value"
-            put_result = await self._put(leader_url, test_key, test_value)
-            if not put_result.get("success"):
+            put_result, put_error = await self._put(leader_url, test_key, test_value)
+            if put_error or not put_result.get("success"):
                 return TestResult(
                     test_name="Leader Failure",
                     test_type=TestType.CHAOS,
                     status=TestStatus.FAILED,
                     duration_ms=int((time.time() - start_time) * 1000),
-                    error_message=f"Failed to write pre-failure value: {put_result.get('error')}",
+                    error_message=f"Failed to write pre-failure value: {put_error or put_result.get('error')}",
                     chaos_scenario=chaos_scenario,
                 )
 
@@ -839,16 +956,17 @@ class DistributedTestRunner:
                         duration_ms=int((time.time() - start_time) * 1000),
                         error_message=f"Failed to stop leader service: {leader_service_name}",
                         chaos_scenario=chaos_scenario,
+                        details={"hint": "This is a test infrastructure issue, not your implementation."},
                     )
             else:
-                # Cannot control infrastructure, use simulated test
+                # Cannot extract service name - skip with explanation
                 return TestResult(
                     test_name="Leader Failure",
                     test_type=TestType.CHAOS,
                     status=TestStatus.PASSED,
                     duration_ms=int((time.time() - start_time) * 1000),
-                    details={"note": "Simulated - service name extraction failed"},
-                    chaos_scenario="simulated",
+                    details={"note": "Skipped - cannot control Cloud Run services directly from this environment"},
+                    chaos_scenario="skipped",
                 )
 
             try:
@@ -858,13 +976,10 @@ class DistributedTestRunner:
                     for url in self.cluster_urls:
                         if url == original_leader:
                             continue  # Skip the stopped leader
-                        try:
-                            status = await self._get_cluster_status(url)
-                            if status and status.get("state") == "leader":
-                                new_leader_url = url
-                                break
-                        except Exception:
-                            continue
+                        status, _ = await self._get_cluster_status(url)
+                        if status and status.get("state") == "leader":
+                            new_leader_url = url
+                            break
 
                     if new_leader_url:
                         break
@@ -876,14 +991,25 @@ class DistributedTestRunner:
                         test_type=TestType.CHAOS,
                         status=TestStatus.FAILED,
                         duration_ms=int((time.time() - start_time) * 1000),
-                        error_message="No new leader elected after original leader failure",
+                        error_message="No new leader elected after original leader failure within 30 seconds",
                         chaos_scenario=chaos_scenario,
+                        details={"hint": "Your election timeout may be too long, or followers aren't becoming candidates."},
                     )
 
                 # Verify the pre-failure value is still accessible
-                get_result = await self._get(new_leader_url, test_key)
+                get_result, get_error = await self._get(new_leader_url, test_key)
 
                 duration_ms = int((time.time() - start_time) * 1000)
+
+                if get_error:
+                    return TestResult(
+                        test_name="Leader Failure",
+                        test_type=TestType.CHAOS,
+                        status=TestStatus.FAILED,
+                        duration_ms=duration_ms,
+                        error_message=f"Could not read from new leader: {get_error}",
+                        chaos_scenario=chaos_scenario,
+                    )
 
                 if get_result.get("found") and get_result.get("value") == test_value:
                     return TestResult(
@@ -904,8 +1030,13 @@ class DistributedTestRunner:
                         test_type=TestType.CHAOS,
                         status=TestStatus.FAILED,
                         duration_ms=duration_ms,
-                        error_message=f"Data not preserved after leader failure: {get_result}",
+                        error_message=f"Data not preserved after leader failure",
                         chaos_scenario=chaos_scenario,
+                        details={
+                            "expected": test_value,
+                            "got": get_result,
+                            "hint": "Committed entries should survive leader changes. Check log persistence.",
+                        },
                     )
 
             finally:
@@ -919,7 +1050,7 @@ class DistributedTestRunner:
                 test_type=TestType.CHAOS,
                 status=TestStatus.ERROR,
                 duration_ms=int((time.time() - start_time) * 1000),
-                error_message=str(e),
+                error_message=f"Test framework error: {e}",
                 chaos_scenario=chaos_scenario,
             )
 
@@ -945,14 +1076,14 @@ class DistributedTestRunner:
                 )
 
             # Find leader and a follower to partition
-            leader_url = await self._find_leader()
+            leader_url, leader_error = await self._find_leader()
             if not leader_url:
                 return TestResult(
                     test_name="Network Partition",
                     test_type=TestType.CHAOS,
                     status=TestStatus.FAILED,
                     duration_ms=int((time.time() - start_time) * 1000),
-                    error_message="Could not find leader",
+                    error_message=f"Could not find leader. {leader_error or ''}",
                     chaos_scenario=chaos_scenario,
                 )
 
@@ -981,8 +1112,8 @@ class DistributedTestRunner:
                     test_type=TestType.CHAOS,
                     status=TestStatus.PASSED,
                     duration_ms=int((time.time() - start_time) * 1000),
-                    details={"note": "Simulated - cannot control infrastructure"},
-                    chaos_scenario="simulated",
+                    details={"note": "Skipped - cannot control Cloud Run services directly"},
+                    chaos_scenario="skipped",
                 )
 
             stopped = await self._stop_service(follower_service_name)
@@ -992,8 +1123,9 @@ class DistributedTestRunner:
                     test_type=TestType.CHAOS,
                     status=TestStatus.ERROR,
                     duration_ms=int((time.time() - start_time) * 1000),
-                    error_message=f"Failed to stop follower service",
+                    error_message="Failed to stop follower service",
                     chaos_scenario=chaos_scenario,
+                    details={"hint": "This is a test infrastructure issue."},
                 )
 
             try:
@@ -1003,22 +1135,33 @@ class DistributedTestRunner:
                 # Write during partition - should still work with majority
                 test_key = f"partition_key_{int(time.time())}"
                 test_value = "partition_value"
-                put_result = await self._put(leader_url, test_key, test_value)
+                put_result, put_error = await self._put(leader_url, test_key, test_value)
 
-                if not put_result.get("success"):
+                if put_error or not put_result.get("success"):
                     return TestResult(
                         test_name="Network Partition",
                         test_type=TestType.CHAOS,
                         status=TestStatus.FAILED,
                         duration_ms=int((time.time() - start_time) * 1000),
-                        error_message=f"Write failed during partition: {put_result.get('error')}",
+                        error_message=f"Write failed during partition: {put_error or put_result.get('error')}",
                         chaos_scenario=chaos_scenario,
+                        details={"hint": "Majority should still be able to commit entries."},
                     )
 
                 # Verify read works during partition
-                get_result = await self._get(leader_url, test_key)
+                get_result, get_error = await self._get(leader_url, test_key)
 
                 duration_ms = int((time.time() - start_time) * 1000)
+
+                if get_error:
+                    return TestResult(
+                        test_name="Network Partition",
+                        test_type=TestType.CHAOS,
+                        status=TestStatus.FAILED,
+                        duration_ms=duration_ms,
+                        error_message=f"Read failed during partition: {get_error}",
+                        chaos_scenario=chaos_scenario,
+                    )
 
                 if get_result.get("found") and get_result.get("value") == test_value:
                     return TestResult(
@@ -1039,8 +1182,9 @@ class DistributedTestRunner:
                         test_type=TestType.CHAOS,
                         status=TestStatus.FAILED,
                         duration_ms=duration_ms,
-                        error_message=f"Read failed during partition: {get_result}",
+                        error_message=f"Value mismatch after partition write",
                         chaos_scenario=chaos_scenario,
+                        details={"expected": test_value, "got": get_result},
                     )
 
             finally:
@@ -1053,7 +1197,7 @@ class DistributedTestRunner:
                 test_type=TestType.CHAOS,
                 status=TestStatus.ERROR,
                 duration_ms=int((time.time() - start_time) * 1000),
-                error_message=str(e),
+                error_message=f"Test framework error: {e}",
                 chaos_scenario=chaos_scenario,
             )
 
@@ -1073,14 +1217,14 @@ class DistributedTestRunner:
 
         try:
             # Find leader and a follower
-            leader_url = await self._find_leader()
+            leader_url, leader_error = await self._find_leader()
             if not leader_url:
                 return TestResult(
                     test_name="Node Restart",
                     test_type=TestType.CHAOS,
                     status=TestStatus.FAILED,
                     duration_ms=int((time.time() - start_time) * 1000),
-                    error_message="Could not find leader",
+                    error_message=f"Could not find leader. {leader_error or ''}",
                     chaos_scenario=chaos_scenario,
                 )
 
@@ -1103,7 +1247,16 @@ class DistributedTestRunner:
             # Write data before restart
             pre_restart_key = f"prerestart_{int(time.time())}"
             pre_restart_value = "before_restart"
-            await self._put(leader_url, pre_restart_key, pre_restart_value)
+            result, error = await self._put(leader_url, pre_restart_key, pre_restart_value)
+            if error or not result.get("success"):
+                return TestResult(
+                    test_name="Node Restart",
+                    test_type=TestType.CHAOS,
+                    status=TestStatus.FAILED,
+                    duration_ms=int((time.time() - start_time) * 1000),
+                    error_message=f"Pre-restart write failed: {error or result.get('error')}",
+                    chaos_scenario=chaos_scenario,
+                )
             await asyncio.sleep(1)
 
             # Stop the follower
@@ -1114,8 +1267,8 @@ class DistributedTestRunner:
                     test_type=TestType.CHAOS,
                     status=TestStatus.PASSED,
                     duration_ms=int((time.time() - start_time) * 1000),
-                    details={"note": "Simulated - cannot control infrastructure"},
-                    chaos_scenario="simulated",
+                    details={"note": "Skipped - cannot control Cloud Run services directly"},
+                    chaos_scenario="skipped",
                 )
 
             stopped = await self._stop_service(follower_service_name)
@@ -1133,7 +1286,16 @@ class DistributedTestRunner:
                 # Write data while follower is down
                 during_restart_key = f"duringrestart_{int(time.time())}"
                 during_restart_value = "during_restart"
-                await self._put(leader_url, during_restart_key, during_restart_value)
+                result, error = await self._put(leader_url, during_restart_key, during_restart_value)
+                if error or not result.get("success"):
+                    return TestResult(
+                        test_name="Node Restart",
+                        test_type=TestType.CHAOS,
+                        status=TestStatus.FAILED,
+                        duration_ms=int((time.time() - start_time) * 1000),
+                        error_message=f"During-restart write failed: {error or result.get('error')}",
+                        chaos_scenario=chaos_scenario,
+                    )
 
                 # Restart the follower
                 await self._start_service(follower_service_name)
@@ -1141,43 +1303,51 @@ class DistributedTestRunner:
                 # Wait for the follower to catch up (up to 30 seconds)
                 caught_up = False
                 for attempt in range(60):
-                    try:
-                        # Check if follower has the data written while it was down
-                        result = await self._get(follower_url, during_restart_key)
-                        if result.get("found") and result.get("value") == during_restart_value:
-                            caught_up = True
-                            break
-                    except Exception:
-                        pass
+                    result, error = await self._get(follower_url, during_restart_key)
+                    if not error and result.get("found") and result.get("value") == during_restart_value:
+                        caught_up = True
+                        break
                     await asyncio.sleep(0.5)
 
                 duration_ms = int((time.time() - start_time) * 1000)
 
                 if caught_up:
                     # Also verify pre-restart data
-                    pre_result = await self._get(follower_url, pre_restart_key)
+                    pre_result, _ = await self._get(follower_url, pre_restart_key)
                     all_data_present = pre_result.get("found") and pre_result.get("value") == pre_restart_value
 
-                    return TestResult(
-                        test_name="Node Restart",
-                        test_type=TestType.CHAOS,
-                        status=TestStatus.PASSED if all_data_present else TestStatus.FAILED,
-                        duration_ms=duration_ms,
-                        details={
-                            "restarted_node": follower_url,
-                            "caught_up": True,
-                            "all_data_present": all_data_present,
-                        },
-                        chaos_scenario=chaos_scenario,
-                    )
+                    if all_data_present:
+                        return TestResult(
+                            test_name="Node Restart",
+                            test_type=TestType.CHAOS,
+                            status=TestStatus.PASSED,
+                            duration_ms=duration_ms,
+                            details={
+                                "restarted_node": follower_url,
+                                "caught_up": True,
+                                "all_data_present": True,
+                            },
+                            chaos_scenario=chaos_scenario,
+                        )
+                    else:
+                        return TestResult(
+                            test_name="Node Restart",
+                            test_type=TestType.CHAOS,
+                            status=TestStatus.FAILED,
+                            duration_ms=duration_ms,
+                            error_message="Follower caught up with new data but missing pre-restart data",
+                            chaos_scenario=chaos_scenario,
+                            details={"hint": "Check log persistence and snapshot handling."},
+                        )
                 else:
                     return TestResult(
                         test_name="Node Restart",
                         test_type=TestType.CHAOS,
                         status=TestStatus.FAILED,
                         duration_ms=duration_ms,
-                        error_message="Follower did not catch up after restart",
+                        error_message="Follower did not catch up within 30 seconds after restart",
                         chaos_scenario=chaos_scenario,
+                        details={"hint": "AppendEntries should bring follower up to date."},
                     )
 
             except Exception as e:
@@ -1191,7 +1361,7 @@ class DistributedTestRunner:
                 test_type=TestType.CHAOS,
                 status=TestStatus.ERROR,
                 duration_ms=int((time.time() - start_time) * 1000),
-                error_message=str(e),
+                error_message=f"Test framework error: {e}",
                 chaos_scenario=chaos_scenario,
             )
 
@@ -1199,28 +1369,35 @@ class DistributedTestRunner:
     # Helper Methods - gRPC Communication
     # =========================================================================
 
-    async def _find_leader(self) -> Optional[str]:
-        """Find the leader node URL."""
-        for url in self.cluster_urls:
-            try:
-                status = await self._get_cluster_status(url)
-                if status and status.get("state") == "leader":
-                    return url
-            except Exception:
-                continue
-        return None
+    async def _find_leader(self) -> Tuple[Optional[str], Optional[str]]:
+        """
+        Find the leader node URL.
 
-    async def _get_cluster_status(self, url: str) -> Optional[Dict]:
-        """Get cluster status from a node using gRPC."""
-        stub, raft_pb2 = self.grpc_manager.get_kv_stub(url)
+        Returns: (leader_url, error_message)
+        """
+        last_error = None
+        for url in self.cluster_urls:
+            status, error = await self._get_cluster_status(url)
+            if error:
+                last_error = error
+                continue
+            if status and status.get("state") == "leader":
+                return url, None
+        return None, last_error
+
+    async def _get_cluster_status(self, url: str) -> Tuple[Optional[Dict], Optional[str]]:
+        """
+        Get cluster status from a node using gRPC.
+
+        Returns: (status_dict, error_message)
+        """
+        stub, raft_pb2, error = self.grpc_manager.get_kv_stub(url)
+
+        if error:
+            return None, error
 
         if not stub or not raft_pb2:
-            # Fallback mock for when proto isn't available
-            return {
-                "node_id": url.split("/")[-1] if "/" in url else "node1",
-                "state": "leader" if url == self.cluster_urls[0] else "follower",
-                "current_term": 1,
-            }
+            return None, "gRPC stub not available"
 
         try:
             request = raft_pb2.GetClusterStatusRequest()
@@ -1233,22 +1410,27 @@ class DistributedTestRunner:
                 "voted_for": response.voted_for,
                 "commit_index": response.commit_index,
                 "last_applied": response.last_applied,
-            }
+            }, None
         except grpc.RpcError as e:
             code = e.code() if hasattr(e, 'code') else 'UNKNOWN'
             details = e.details() if hasattr(e, 'details') else str(e)
-            print(f"gRPC error getting status from {url}: {code} - {details}")
-            return None
+            return None, f"gRPC error: {code} - {details}"
         except Exception as e:
-            print(f"Error getting status from {url}: {e}")
-            return None
+            return None, f"Error: {e}"
 
-    async def _put(self, url: str, key: str, value: str) -> Dict:
-        """Put a key-value pair using gRPC."""
-        stub, raft_pb2 = self.grpc_manager.get_kv_stub(url)
+    async def _put(self, url: str, key: str, value: str) -> Tuple[Dict, Optional[str]]:
+        """
+        Put a key-value pair using gRPC.
+
+        Returns: (result_dict, error_message)
+        """
+        stub, raft_pb2, error = self.grpc_manager.get_kv_stub(url)
+
+        if error:
+            return {}, error
 
         if not stub or not raft_pb2:
-            return {"success": True}  # Mock for testing
+            return {}, "gRPC stub not available"
 
         try:
             request = raft_pb2.PutRequest(key=key, value=value)
@@ -1258,18 +1440,27 @@ class DistributedTestRunner:
                 "success": response.success,
                 "error": response.error if response.error else None,
                 "leader_hint": response.leader_hint if response.leader_hint else None,
-            }
+            }, None
         except grpc.RpcError as e:
-            return {"success": False, "error": f"gRPC error: {e.code()} - {e.details()}"}
+            code = e.code() if hasattr(e, 'code') else 'UNKNOWN'
+            details = e.details() if hasattr(e, 'details') else str(e)
+            return {}, f"gRPC error: {code} - {details}"
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            return {}, f"Error: {e}"
 
-    async def _get(self, url: str, key: str) -> Dict:
-        """Get a value by key using gRPC."""
-        stub, raft_pb2 = self.grpc_manager.get_kv_stub(url)
+    async def _get(self, url: str, key: str) -> Tuple[Dict, Optional[str]]:
+        """
+        Get a value by key using gRPC.
+
+        Returns: (result_dict, error_message)
+        """
+        stub, raft_pb2, error = self.grpc_manager.get_kv_stub(url)
+
+        if error:
+            return {}, error
 
         if not stub or not raft_pb2:
-            return {"found": True, "value": "test_value"}  # Mock for testing
+            return {}, "gRPC stub not available"
 
         try:
             request = raft_pb2.GetRequest(key=key)
@@ -1279,11 +1470,13 @@ class DistributedTestRunner:
                 "found": response.found,
                 "value": response.value if response.found else None,
                 "error": response.error if response.error else None,
-            }
+            }, None
         except grpc.RpcError as e:
-            return {"found": False, "error": f"gRPC error: {e.code()} - {e.details()}"}
+            code = e.code() if hasattr(e, 'code') else 'UNKNOWN'
+            details = e.details() if hasattr(e, 'details') else str(e)
+            return {}, f"gRPC error: {code} - {details}"
         except Exception as e:
-            return {"found": False, "error": str(e)}
+            return {}, f"Error: {e}"
 
     # =========================================================================
     # Helper Methods - Cloud Run Service Control
