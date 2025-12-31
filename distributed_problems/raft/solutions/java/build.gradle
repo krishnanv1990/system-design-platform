@@ -1,0 +1,63 @@
+plugins {
+    id 'java'
+    id 'application'
+    id 'com.google.protobuf' version '0.9.4'
+}
+
+group = 'com.sdp.raft'
+version = '1.0-SNAPSHOT'
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'io.grpc:grpc-netty-shaded:1.59.0'
+    implementation 'io.grpc:grpc-protobuf:1.59.0'
+    implementation 'io.grpc:grpc-stub:1.59.0'
+    implementation 'com.google.protobuf:protobuf-java:3.24.4'
+    compileOnly 'org.apache.tomcat:annotations-api:6.0.53'
+}
+
+protobuf {
+    protoc {
+        artifact = 'com.google.protobuf:protoc:3.24.4'
+    }
+    plugins {
+        grpc {
+            artifact = 'io.grpc:protoc-gen-grpc-java:1.59.0'
+        }
+    }
+    generateProtoTasks {
+        all()*.plugins {
+            grpc {}
+        }
+    }
+}
+
+sourceSets {
+    main {
+        proto {
+            srcDir '../../proto'
+        }
+    }
+}
+
+application {
+    mainClass = 'com.sdp.raft.RaftServer'
+}
+
+jar {
+    manifest {
+        attributes 'Main-Class': 'com.sdp.raft.RaftServer'
+    }
+    from {
+        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+    }
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
