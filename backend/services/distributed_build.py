@@ -465,7 +465,8 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
-CMD ["python", "server.py"]
+# Cloud Run sets PORT env var; pass it along with NODE_ID and PEERS to the server
+CMD ["sh", "-c", "python server.py --node-id ${NODE_ID} --port ${PORT} --peers ${PEERS}"]
 """,
             "go": """
 FROM golang:1.21-alpine AS builder
@@ -478,13 +479,15 @@ RUN go build -o server .
 FROM alpine:3.18
 WORKDIR /app
 COPY --from=builder /app/server .
-CMD ["./server"]
+# Cloud Run sets PORT env var; pass it along with NODE_ID and PEERS to the server
+CMD ["sh", "-c", "./server --node-id ${NODE_ID} --port ${PORT} --peers ${PEERS}"]
 """,
             "java": """
 FROM eclipse-temurin:17-jre-alpine
 WORKDIR /app
 COPY build/libs/*.jar app.jar
-CMD ["java", "-jar", "app.jar"]
+# Cloud Run sets PORT env var; pass it along with NODE_ID and PEERS to the server
+CMD ["sh", "-c", "java -jar app.jar --node-id ${NODE_ID} --port ${PORT} --peers ${PEERS}"]
 """,
             "rust": """
 FROM rust:1.74 AS builder
@@ -495,7 +498,8 @@ RUN cargo build --release
 FROM debian:bookworm-slim
 WORKDIR /app
 COPY --from=builder /app/target/release/server .
-CMD ["./server"]
+# Cloud Run sets PORT env var; pass it along with NODE_ID and PEERS to the server
+CMD ["sh", "-c", "./server --node-id ${NODE_ID} --port ${PORT} --peers ${PEERS}"]
 """,
         }
         return dockerfiles.get(language, "FROM scratch")
@@ -535,7 +539,8 @@ COPY build/server .
 # Expose gRPC port
 EXPOSE 50051
 
-CMD ["./server"]
+# Cloud Run sets PORT env var; pass it along with NODE_ID and PEERS to the server
+CMD ["sh", "-c", "./server --node-id ${{NODE_ID}} --port ${{PORT}} --peers ${{PEERS}}"]
 """
 
     def _get_build_files(
@@ -900,8 +905,7 @@ install(TARGETS server DESTINATION bin)
                             ports=[run_v2.ContainerPort(container_port=50051)],
                             env=[
                                 run_v2.EnvVar(name="NODE_ID", value=node_id),
-                                # PORT is reserved by Cloud Run, use GRPC_PORT instead
-                                run_v2.EnvVar(name="GRPC_PORT", value="50051"),
+                                # PORT is set automatically by Cloud Run based on container_port
                                 run_v2.EnvVar(name="PEERS", value=",".join(peers)),
                             ],
                             resources=run_v2.ResourceRequirements(

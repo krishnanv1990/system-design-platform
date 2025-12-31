@@ -1175,8 +1175,8 @@ class TestCppTemplateContainsTodos:
 class TestCloudRunEnvVars:
     """Tests for Cloud Run environment variable configuration."""
 
-    def test_cloud_run_uses_grpc_port_not_port(self):
-        """Test that Cloud Run deployment uses GRPC_PORT instead of reserved PORT."""
+    def test_cloud_run_does_not_set_port_env_var(self):
+        """Test that Cloud Run deployment does not set PORT env var (Cloud Run sets it automatically)."""
         from backend.services.distributed_build import DistributedBuildService
         import inspect
 
@@ -1185,12 +1185,9 @@ class TestCloudRunEnvVars:
         # Get the source code of the deploy_cluster method
         source = inspect.getsource(service.deploy_cluster)
 
-        # Should use GRPC_PORT, not PORT
-        assert 'name="GRPC_PORT"' in source, \
-            "Cloud Run deployment should use GRPC_PORT env var"
-        # PORT is a reserved env var in Cloud Run
-        assert 'name="PORT"' not in source or "reserved" in source.lower(), \
-            "Cloud Run deployment should not use reserved PORT env var"
+        # Should NOT explicitly set PORT (Cloud Run sets it automatically based on container_port)
+        assert 'name="PORT"' not in source, \
+            "Cloud Run deployment should not set PORT env var (Cloud Run sets it automatically)"
 
     def test_cloud_run_env_vars_include_node_id_and_peers(self):
         """Test that Cloud Run deployment includes NODE_ID and PEERS env vars."""
@@ -1205,3 +1202,64 @@ class TestCloudRunEnvVars:
             "Cloud Run deployment should include NODE_ID env var"
         assert 'name="PEERS"' in source, \
             "Cloud Run deployment should include PEERS env var"
+
+
+class TestDockerfilePortHandling:
+    """Tests for Dockerfile PORT environment variable handling."""
+
+    def test_python_dockerfile_passes_port_to_server(self):
+        """Test that Python Dockerfile passes PORT env var to server."""
+        from backend.services.distributed_build import DistributedBuildService
+
+        service = DistributedBuildService()
+        dockerfile = service._get_dockerfile("python")
+
+        # Should pass PORT env var as --port argument
+        assert "${PORT}" in dockerfile, \
+            "Python Dockerfile should pass PORT env var to server"
+        assert "--port" in dockerfile, \
+            "Python Dockerfile should use --port argument"
+
+    def test_cpp_dockerfile_passes_port_to_server(self):
+        """Test that C++ Dockerfile passes PORT env var to server."""
+        from backend.services.distributed_build import DistributedBuildService
+
+        service = DistributedBuildService()
+        dockerfile = service._get_cpp_dockerfile()
+
+        # Should pass PORT env var as --port argument
+        assert "${PORT}" in dockerfile, \
+            "C++ Dockerfile should pass PORT env var to server"
+        assert "--port" in dockerfile, \
+            "C++ Dockerfile should use --port argument"
+
+    def test_go_dockerfile_passes_port_to_server(self):
+        """Test that Go Dockerfile passes PORT env var to server."""
+        from backend.services.distributed_build import DistributedBuildService
+
+        service = DistributedBuildService()
+        dockerfile = service._get_dockerfile("go")
+
+        # Should pass PORT env var as --port argument
+        assert "${PORT}" in dockerfile, \
+            "Go Dockerfile should pass PORT env var to server"
+
+    def test_all_dockerfiles_pass_node_id_and_peers(self):
+        """Test that all Dockerfiles pass NODE_ID and PEERS env vars."""
+        from backend.services.distributed_build import DistributedBuildService
+
+        service = DistributedBuildService()
+
+        for lang in ["python", "go", "rust"]:
+            dockerfile = service._get_dockerfile(lang)
+            assert "${NODE_ID}" in dockerfile, \
+                f"{lang} Dockerfile should pass NODE_ID env var"
+            assert "${PEERS}" in dockerfile, \
+                f"{lang} Dockerfile should pass PEERS env var"
+
+        # C++ uses a separate method
+        cpp_dockerfile = service._get_cpp_dockerfile()
+        assert "${NODE_ID}" in cpp_dockerfile, \
+            "C++ Dockerfile should pass NODE_ID env var"
+        assert "${PEERS}" in cpp_dockerfile, \
+            "C++ Dockerfile should pass PEERS env var"
