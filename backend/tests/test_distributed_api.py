@@ -1263,3 +1263,71 @@ class TestDockerfilePortHandling:
             "C++ Dockerfile should pass NODE_ID env var"
         assert "${PEERS}" in cpp_dockerfile, \
             "C++ Dockerfile should pass PEERS env var"
+
+
+class TestTeardownEndpoint:
+    """Tests for the cluster teardown API endpoint."""
+
+    def test_teardown_endpoint_exists(self):
+        """Test that the teardown endpoint is defined."""
+        from backend.api.distributed import teardown_cluster
+        import inspect
+
+        # Verify it's an async function
+        assert inspect.iscoroutinefunction(teardown_cluster)
+
+    def test_teardown_requires_cluster_urls(self):
+        """Test that teardown checks for cluster_node_urls."""
+        from backend.api.distributed import teardown_cluster
+        import inspect
+
+        source = inspect.getsource(teardown_cluster)
+
+        # Should check for cluster_node_urls
+        assert "cluster_node_urls" in source
+        assert "No cluster deployed" in source
+
+    def test_teardown_calls_cleanup_cluster(self):
+        """Test that teardown calls the cleanup_cluster method."""
+        from backend.api.distributed import teardown_cluster
+        import inspect
+
+        source = inspect.getsource(teardown_cluster)
+
+        # Should call cleanup_cluster
+        assert "cleanup_cluster" in source
+
+
+class TestAutoTeardown:
+    """Tests for automatic cluster teardown functionality."""
+
+    def test_auto_teardown_function_exists(self):
+        """Test that the schedule_auto_teardown function exists."""
+        from backend.api.distributed import schedule_auto_teardown
+        import inspect
+
+        # Verify it's an async function
+        assert inspect.iscoroutinefunction(schedule_auto_teardown)
+
+    def test_auto_teardown_has_default_delay(self):
+        """Test that auto-teardown has a default delay of 1 hour."""
+        from backend.api.distributed import schedule_auto_teardown
+        import inspect
+
+        sig = inspect.signature(schedule_auto_teardown)
+        params = sig.parameters
+
+        # Should have delay_seconds parameter with default of 3600
+        assert "delay_seconds" in params
+        assert params["delay_seconds"].default == 3600
+
+    def test_auto_teardown_is_scheduled_after_tests(self):
+        """Test that auto-teardown is scheduled after tests complete."""
+        from backend.api.distributed import run_distributed_build
+        import inspect
+
+        source = inspect.getsource(run_distributed_build)
+
+        # Should schedule auto-teardown after tests complete
+        assert "schedule_auto_teardown" in source
+        assert "asyncio.create_task" in source

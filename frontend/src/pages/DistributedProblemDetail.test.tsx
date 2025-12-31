@@ -235,7 +235,7 @@ describe('DistributedProblemDetail', () => {
     renderWithRouter()
 
     await waitFor(() => {
-      const saveButton = screen.getByRole('button', { name: /Save/i })
+      const saveButton = screen.getByRole('button', { name: /^Save$/i })
       expect(saveButton).toBeDisabled()
     })
   })
@@ -254,7 +254,8 @@ describe('DistributedProblemDetail', () => {
     await user.type(editor, 'some new code')
 
     await waitFor(() => {
-      const saveButton = screen.getByRole('button', { name: /Save/i })
+      // Match exact "Save" button (not "Reset to Saved")
+      const saveButton = screen.getByRole('button', { name: /^Save$/i })
       expect(saveButton).not.toBeDisabled()
     })
   })
@@ -296,7 +297,7 @@ describe('DistributedProblemDetail', () => {
       renderWithRouter()
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /Reset/i })).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: /Reset to Template/i })).toBeInTheDocument()
       })
     })
 
@@ -308,10 +309,10 @@ describe('DistributedProblemDetail', () => {
       renderWithRouter()
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /Reset/i })).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: /Reset to Template/i })).toBeInTheDocument()
       })
 
-      const resetButton = screen.getByRole('button', { name: /Reset/i })
+      const resetButton = screen.getByRole('button', { name: /Reset to Template/i })
       await user.click(resetButton)
 
       // Confirm dialog should have been called
@@ -319,7 +320,7 @@ describe('DistributedProblemDetail', () => {
         expect.objectContaining({
           title: 'Reset to Template',
           type: 'warning',
-          confirmLabel: 'Reset',
+          confirmLabel: 'Reset to Template',
         })
       )
     })
@@ -332,13 +333,13 @@ describe('DistributedProblemDetail', () => {
       renderWithRouter()
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /Reset/i })).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: /Reset to Template/i })).toBeInTheDocument()
       })
 
       // Clear any calls from initial load
       vi.mocked(distributedProblemsApi.getTemplate).mockClear()
 
-      const resetButton = screen.getByRole('button', { name: /Reset/i })
+      const resetButton = screen.getByRole('button', { name: /Reset to Template/i })
       await user.click(resetButton)
 
       // getTemplate should NOT have been called after clicking reset (user cancelled)
@@ -354,10 +355,10 @@ describe('DistributedProblemDetail', () => {
       renderWithRouter()
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /Reset/i })).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: /Reset to Template/i })).toBeInTheDocument()
       })
 
-      const resetButton = screen.getByRole('button', { name: /Reset/i })
+      const resetButton = screen.getByRole('button', { name: /Reset to Template/i })
       await user.click(resetButton)
 
       // getTemplate should have been called with the current language
@@ -392,7 +393,7 @@ describe('DistributedProblemDetail', () => {
       vi.mocked(distributedProblemsApi.getTemplate).mockResolvedValue('// Go template code')
 
       // Click reset
-      const resetButton = screen.getByRole('button', { name: /Reset/i })
+      const resetButton = screen.getByRole('button', { name: /Reset to Template/i })
       await user.click(resetButton)
 
       // Should call getTemplate with 'go' language
@@ -410,10 +411,10 @@ describe('DistributedProblemDetail', () => {
       renderWithRouter()
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /Reset/i })).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: /Reset to Template/i })).toBeInTheDocument()
       })
 
-      const resetButton = screen.getByRole('button', { name: /Reset/i })
+      const resetButton = screen.getByRole('button', { name: /Reset to Template/i })
       await user.click(resetButton)
 
       // Should show unsaved changes indicator

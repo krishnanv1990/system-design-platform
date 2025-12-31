@@ -345,12 +345,18 @@ async def run_distributed_build(submission_id: int, language: str, source_code: 
                                 submission.status = SubmissionStatus.COMPLETED.value  # Still completed, but with failures
                                 submission.build_logs += f"\n✗ Tests completed with {failed} failures and {errors} errors."
 
+                            # Schedule auto-teardown after 1 hour
+                            submission.build_logs += "\n\nNote: Cluster will be automatically torn down in 1 hour. Use 'Tear Down' button to remove it earlier."
+
                         except Exception as test_err:
                             logger.error(f"Test execution failed: {test_err}")
                             submission.status = SubmissionStatus.COMPLETED.value
                             submission.build_logs += f"\n\nTest execution error: {test_err}"
 
                         db.commit()
+
+                        # Schedule auto-teardown after 1 hour (3600 seconds)
+                        asyncio.create_task(schedule_auto_teardown(submission_id))
 
                     except Exception as deploy_err:
                         logger.error(f"Deployment failed: {deploy_err}")
@@ -1012,3 +1018,80 @@ async def get_submission_tests(
         }
         for t in tests
     ]
+
+
+@router.post("/submissions/{submission_id}/teardown")
+async def teardown_cluster(
+    submission_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Tear down the deployed cluster for a submission.
+
+    This will delete all Cloud Run services associated with the submission.
+    """
+    submission = db.query(Submission).filter(
+        Submission.id == submission_id,
+        Submission.user_id == current_user.id,
+    ).first()
+
+    if not submission:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Submission not found"
+        )
+
+    if not submission.cluster_node_urls or len(submission.cluster_node_urls) == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No cluster deployed for this submission"
+        )
+
+    try:
+        build_service = DistributedBuildService()
+        await build_service.cleanup_cluster(submission_id)
+
+        # Update submission to indicate cluster is torn down
+        submission.cluster_node_urls = []
+        submission.build_logs += "\n\nCluster torn down successfully."
+        db.commit()
+
+        logger.info(f"Cluster torn down for submission {submission_id}")
+        return {"message": "Cluster torn down successfully"}
+
+    except Exception as e:
+        logger.error(f"Failed to tear down cluster for submission {submission_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to tear down cluster: {str(e)}"
+        )
+
+
+# Auto-teardown background task
+async def schedule_auto_teardown(submission_id: int, delay_seconds: int = 3600):
+    """
+    Schedule automatic teardown of a cluster after a delay.
+
+    Args:
+        submission_id: Submission ID
+        delay_seconds: Delay before teardown (default: 1 hour)
+    """
+    await asyncio.sleep(delay_seconds)
+
+    db = SessionLocal()
+    try:
+        submission = db.query(Submission).filter(Submission.id == submission_id).first()
+        if submission and submission.cluster_node_urls and len(submission.cluster_node_urls) > 0:
+            logger.info(f"Auto-tearing down cluster for submission {submission_id}")
+            build_service = DistributedBuildService()
+            await build_service.cleanup_cluster(submission_id)
+
+            submission.cluster_node_urls = []
+            submission.build_logs += "\n\nCluster auto-torn down after 1 hour."
+            db.commit()
+            logger.info(f"Auto-teardown completed for submission {submission_id}")
+    except Exception as e:
+        logger.error(f"Auto-teardown failed for submission {submission_id}: {e}")
+    finally:
+        db.close()

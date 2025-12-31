@@ -80,6 +80,7 @@ export default function DistributedProblemDetail() {
   const [saving, setSaving] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [resetting, setResetting] = useState(false)
+  const [lastSavedCode, setLastSavedCode] = useState<string | null>(null)
 
   // Load problem details
   const loadProblem = useCallback(async () => {
@@ -110,10 +111,12 @@ export default function DistributedProblemDetail() {
       const savedCode = await distributedProblemsApi.getSavedCode(parseInt(id), selectedLanguage)
       if (savedCode) {
         setCode(savedCode)
+        setLastSavedCode(savedCode) // Track last saved version
       } else {
         // Fall back to template
         const template = await distributedProblemsApi.getTemplate(parseInt(id), selectedLanguage)
         setCode(template)
+        setLastSavedCode(null) // No saved version exists
       }
       setHasUnsavedChanges(false)
     } catch (err: any) {
@@ -124,6 +127,7 @@ export default function DistributedProblemDetail() {
       } else {
         setCode("// Template not available for this language")
       }
+      setLastSavedCode(null)
       setHasUnsavedChanges(false)
     }
   }, [id, problem, selectedLanguage])
@@ -150,6 +154,7 @@ export default function DistributedProblemDetail() {
     setSaving(true)
     try {
       await distributedProblemsApi.saveCode(parseInt(id), selectedLanguage, code)
+      setLastSavedCode(code) // Track the saved version
       setHasUnsavedChanges(false)
       toast({
         title: "Code saved",
@@ -200,7 +205,7 @@ export default function DistributedProblemDetail() {
       title: "Reset to Template",
       message: `This will replace your current ${languageInfo[selectedLanguage].label} code with the original template. Any unsaved changes will be lost. Are you sure?`,
       type: "warning",
-      confirmLabel: "Reset",
+      confirmLabel: "Reset to Template",
       cancelLabel: "Cancel",
     })
 
@@ -224,6 +229,35 @@ export default function DistributedProblemDetail() {
     } finally {
       setResetting(false)
     }
+  }
+
+  // Reset to last saved version
+  const handleResetToSaved = async () => {
+    if (!lastSavedCode) {
+      toast({
+        title: "No saved version",
+        description: "There is no saved version to reset to. Try 'Reset to Template' instead.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    const confirmed = await confirm({
+      title: "Reset to Last Saved",
+      message: `This will replace your current ${languageInfo[selectedLanguage].label} code with the last saved version. Any unsaved changes will be lost. Are you sure?`,
+      type: "warning",
+      confirmLabel: "Reset to Saved",
+      cancelLabel: "Cancel",
+    })
+
+    if (!confirmed) return
+
+    setCode(lastSavedCode)
+    setHasUnsavedChanges(false)
+    toast({
+      title: "Code reset",
+      description: `Your ${languageInfo[selectedLanguage].label} code has been reset to the last saved version.`,
+    })
   }
 
   if (loading) {
@@ -282,13 +316,26 @@ export default function DistributedProblemDetail() {
           {hasUnsavedChanges && (
             <span className="text-sm text-muted-foreground">Unsaved changes</span>
           )}
+          <Button
+            onClick={handleResetToSaved}
+            variant="outline"
+            disabled={resetting || !lastSavedCode}
+            title={!lastSavedCode ? "No saved version available" : "Reset to last saved version"}
+          >
+            {resetting ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <RotateCcw className="mr-2 h-4 w-4" />
+            )}
+            Reset to Saved
+          </Button>
           <Button onClick={handleResetToTemplate} variant="outline" disabled={resetting}>
             {resetting ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             ) : (
               <RotateCcw className="mr-2 h-4 w-4" />
             )}
-            Reset
+            Reset to Template
           </Button>
           <Button onClick={handleSave} variant="outline" disabled={saving || !hasUnsavedChanges}>
             {saving ? (

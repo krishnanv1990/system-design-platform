@@ -843,6 +843,14 @@ export const distributedSubmissionsApi = {
     const response = await api.get(`/distributed/submissions/${id}/tests`)
     return response.data
   },
+
+  /**
+   * Tear down the deployed cluster for a submission
+   */
+  teardownCluster: async (id: number): Promise<{ message: string }> => {
+    const response = await api.post(`/distributed/submissions/${id}/teardown`)
+    return response.data
+  },
 }
 
 export default api

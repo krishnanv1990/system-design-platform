@@ -17,6 +17,7 @@ import {
   Terminal,
   Play,
   Clock,
+  Trash2,
 } from "lucide-react"
 import { distributedSubmissionsApi } from "@/api/client"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -24,6 +25,8 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { useToast } from "@/hooks/useToast"
+import { useConfirm } from "@/components/ui/confirm-dialog"
 import type { DistributedSubmission, TestResult, SupportedLanguage } from "@/types"
 
 // Language display info
@@ -78,12 +81,15 @@ function ResultsSkeleton() {
 export default function DistributedSubmissionResults() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const { toast } = useToast()
+  const confirm = useConfirm()
 
   const [submission, setSubmission] = useState<DistributedSubmission | null>(null)
   const [buildLogs, setBuildLogs] = useState<string>("")
   const [testResults, setTestResults] = useState<TestResult[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [tearingDown, setTearingDown] = useState(false)
 
   // Load submission details
   const loadSubmission = useCallback(async () => {
@@ -147,6 +153,40 @@ export default function DistributedSubmissionResults() {
     return () => clearInterval(interval)
   }, [submission, loadSubmission])
 
+  // Handle teardown
+  const handleTeardown = async () => {
+    if (!id) return
+
+    const confirmed = await confirm({
+      title: "Tear Down Cluster",
+      message: "This will permanently delete all cluster nodes. The cluster cannot be restored after teardown. Are you sure?",
+      type: "destructive",
+      confirmLabel: "Tear Down",
+      cancelLabel: "Cancel",
+    })
+
+    if (!confirmed) return
+
+    setTearingDown(true)
+    try {
+      await distributedSubmissionsApi.teardownCluster(parseInt(id))
+      toast({
+        title: "Cluster torn down",
+        description: "All cluster nodes have been removed successfully.",
+      })
+      // Reload to show updated status
+      await loadSubmission()
+    } catch (err: any) {
+      toast({
+        title: "Teardown failed",
+        description: err.response?.data?.detail || "Failed to tear down cluster",
+        variant: "destructive",
+      })
+    } finally {
+      setTearingDown(false)
+    }
+  }
+
   if (loading) {
     return <ResultsSkeleton />
   }
@@ -203,10 +243,26 @@ export default function DistributedSubmissionResults() {
             </Badge>
           </div>
         </div>
-        <Button onClick={() => loadSubmission()} variant="outline" disabled={loading}>
-          <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-          Refresh
-        </Button>
+        <div className="flex gap-2">
+          {submission.cluster_node_urls && submission.cluster_node_urls.length > 0 && (
+            <Button
+              onClick={handleTeardown}
+              variant="destructive"
+              disabled={tearingDown}
+            >
+              {tearingDown ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Trash2 className="mr-2 h-4 w-4" />
+              )}
+              Tear Down Cluster
+            </Button>
+          )}
+          <Button onClick={() => loadSubmission()} variant="outline" disabled={loading}>
+            <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+            Refresh
+          </Button>
+        </div>
       </div>
 
       {/* Status cards */}

@@ -15,7 +15,21 @@ vi.mock('@/api/client', () => ({
     get: vi.fn(),
     getBuildLogs: vi.fn(),
     getTestResults: vi.fn(),
+    teardownCluster: vi.fn(),
   },
+}))
+
+// Mock confirm dialog hook
+const mockConfirm = vi.fn()
+vi.mock('@/components/ui/confirm-dialog', () => ({
+  useConfirm: () => mockConfirm,
+  ConfirmProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}))
+
+// Mock toast hook
+const mockToast = vi.fn()
+vi.mock('@/hooks/useToast', () => ({
+  useToast: () => ({ toast: mockToast }),
 }))
 
 const mockSubmission: DistributedSubmission = {
