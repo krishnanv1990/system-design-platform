@@ -835,6 +835,18 @@ else()
     endif()
 endif()
 
+# Link utf8_range (required by protobuf 4.x for UTF-8 validation)
+find_library(UTF8_RANGE_LIB utf8_range PATHS /usr/local/lib /usr/lib)
+find_library(UTF8_VALIDITY_LIB utf8_validity PATHS /usr/local/lib /usr/lib)
+if(UTF8_RANGE_LIB)
+    message(STATUS "Found utf8_range: ${UTF8_RANGE_LIB}")
+    target_link_libraries(server ${UTF8_RANGE_LIB})
+endif()
+if(UTF8_VALIDITY_LIB)
+    message(STATUS "Found utf8_validity: ${UTF8_VALIDITY_LIB}")
+    target_link_libraries(server ${UTF8_VALIDITY_LIB})
+endif()
+
 '''
         # Add AI-detected additional libraries
         if extra_libraries:

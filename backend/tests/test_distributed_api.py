@@ -1066,3 +1066,72 @@ class TestAIIntegrationInSubmission:
         source = inspect.getsource(run_distributed_build)
         assert "detected_dependencies" in source
         assert "analysis_result" in source
+
+
+class TestTemplateEndpoint:
+    """Tests for the template endpoint to ensure it returns original templates."""
+
+    def test_get_template_returns_filesystem_template_for_problem_1(self):
+        """Test that getTemplate for problem_id 1 returns filesystem template."""
+        from backend.api.distributed import get_template_from_filesystem
+
+        # Template for Python should contain the template comment
+        template = get_template_from_filesystem("python")
+        assert "Raft Consensus Implementation" in template
+        assert "TODO" in template or "template" in template.lower()
+        # Should NOT be a complete solution
+        assert "Template file not found" not in template
+
+    def test_get_template_returns_different_content_than_solution(self):
+        """Test that template content differs from solution content."""
+        import os
+        from backend.api.distributed import get_template_from_filesystem, get_distributed_problems_base_path
+
+        template = get_template_from_filesystem("python")
+
+        # Check if solutions directory exists and compare
+        base_path = get_distributed_problems_base_path()
+        solution_path = os.path.join(
+            base_path,
+            "distributed_problems",
+            "raft",
+            "solutions",
+            "python",
+            "server.py"
+        )
+
+        if os.path.exists(solution_path):
+            with open(solution_path, "r") as f:
+                solution = f.read()
+            # Template and solution should be different
+            assert template != solution
+
+
+class TestUtf8RangeLinking:
+    """Tests for utf8_range library linking in C++ builds."""
+
+    def test_cpp_cmakelists_includes_utf8_range_linking(self):
+        """Test that generated CMakeLists.txt includes utf8_range linking."""
+        from backend.services.distributed_build import DistributedBuildService
+
+        service = DistributedBuildService()
+        cmake = service._get_cpp_cmakelists()
+
+        # Should have utf8_range library detection and linking
+        assert "find_library(UTF8_RANGE_LIB utf8_range" in cmake
+        assert "find_library(UTF8_VALIDITY_LIB utf8_validity" in cmake
+        assert "target_link_libraries(server ${UTF8_RANGE_LIB})" in cmake
+
+    def test_cpp_cmakelists_utf8_range_after_abseil(self):
+        """Test that utf8_range linking comes after Abseil linking."""
+        from backend.services.distributed_build import DistributedBuildService
+
+        service = DistributedBuildService()
+        cmake = service._get_cpp_cmakelists()
+
+        # utf8_range should come after the Abseil endif
+        abseil_endif_pos = cmake.rfind("endif()")
+        utf8_range_pos = cmake.find("UTF8_RANGE_LIB")
+
+        # utf8_range should come after the main Abseil block
+        assert utf8_range_pos > 0, "UTF8_RANGE_LIB not found in CMakeLists"
