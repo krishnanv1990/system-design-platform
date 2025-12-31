@@ -64,13 +64,53 @@ class DistributedTestRunner:
         results = []
 
         # Run functional tests
-        results.extend(await self.run_functional_tests())
+        try:
+            results.extend(await self.run_functional_tests())
+        except Exception as e:
+            print(f"Error running functional tests: {e}")
+            results.append(TestResult(
+                test_name="Functional Tests",
+                test_type=TestType.FUNCTIONAL,
+                status=TestStatus.ERROR,
+                duration_ms=0,
+                error_message=f"Failed to run functional tests: {e}",
+            ))
 
         # Run performance tests
-        results.extend(await self.run_performance_tests())
+        try:
+            results.extend(await self.run_performance_tests())
+        except Exception as e:
+            print(f"Error running performance tests: {e}")
+            results.append(TestResult(
+                test_name="Performance Tests",
+                test_type=TestType.PERFORMANCE,
+                status=TestStatus.ERROR,
+                duration_ms=0,
+                error_message=f"Failed to run performance tests: {e}",
+            ))
 
         # Run chaos tests
-        results.extend(await self.run_chaos_tests())
+        try:
+            results.extend(await self.run_chaos_tests())
+        except Exception as e:
+            print(f"Error running chaos tests: {e}")
+            results.append(TestResult(
+                test_name="Chaos Tests",
+                test_type=TestType.CHAOS,
+                status=TestStatus.ERROR,
+                duration_ms=0,
+                error_message=f"Failed to run chaos tests: {e}",
+            ))
+
+        # Ensure we always return at least one result
+        if not results:
+            results.append(TestResult(
+                test_name="Test Execution",
+                test_type=TestType.FUNCTIONAL,
+                status=TestStatus.ERROR,
+                duration_ms=0,
+                error_message="No tests were executed",
+            ))
 
         return results
 

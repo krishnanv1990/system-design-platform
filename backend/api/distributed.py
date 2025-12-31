@@ -355,6 +355,18 @@ async def run_distributed_build(submission_id: int, language: str, source_code: 
                             submission.status = SubmissionStatus.COMPLETED.value
                             submission.build_logs += f"\n\nTest execution error: {test_err}"
 
+                            # Create an error test result so the UI shows something
+                            from backend.models.test_result import TestResult as TestResultModel
+                            error_result = TestResultModel(
+                                submission_id=submission_id,
+                                test_type="functional",
+                                test_name="Test Execution",
+                                status="error",
+                                duration_ms=0,
+                                details={"error": str(test_err)},
+                            )
+                            db.add(error_result)
+
                         db.commit()
 
                         # Schedule auto-teardown after 1 hour (3600 seconds)
