@@ -20,6 +20,7 @@ from enum import Enum
 from typing import Dict, List, Optional
 from google.cloud import storage, run_v2
 from google.cloud.devtools import cloudbuild_v1
+from google.iam.v1 import iam_policy_pb2, policy_pb2
 
 from backend.config import get_settings
 from backend.database import SessionLocal
@@ -865,6 +866,31 @@ install(TARGETS server DESTINATION bin)
 '''
         return cmake
 
+    def _set_public_access(self, client: run_v2.ServicesClient, service_name: str) -> None:
+        """
+        Set IAM policy to allow unauthenticated access to a Cloud Run service.
+
+        Args:
+            client: Cloud Run services client
+            service_name: Full resource name of the service
+        """
+        # Create a policy that allows allUsers to invoke the service
+        policy = policy_pb2.Policy(
+            bindings=[
+                policy_pb2.Binding(
+                    role="roles/run.invoker",
+                    members=["allUsers"],
+                )
+            ]
+        )
+
+        request = iam_policy_pb2.SetIamPolicyRequest(
+            resource=service_name,
+            policy=policy,
+        )
+
+        client.set_iam_policy(request=request)
+
     async def deploy_cluster(
         self,
         submission_id: int,
@@ -918,6 +944,7 @@ install(TARGETS server DESTINATION bin)
             )
 
             parent = f"projects/{self.project_id}/locations/{self.region}"
+            full_service_name = f"{parent}/services/{service_name}"
 
             try:
                 operation = client.create_service(
@@ -926,15 +953,18 @@ install(TARGETS server DESTINATION bin)
                     service_id=service_name,
                 )
                 result = operation.result()
+                # Set IAM policy to allow unauthenticated access
+                self._set_public_access(client, full_service_name)
                 service_urls.append(result.uri)
             except Exception as e:
                 # Service might already exist, try to update
                 try:
-                    name = f"{parent}/services/{service_name}"
                     # Set the name field for update operation
-                    service.name = name
+                    service.name = full_service_name
                     operation = client.update_service(service=service)
                     result = operation.result()
+                    # Set IAM policy to allow unauthenticated access
+                    self._set_public_access(client, full_service_name)
                     service_urls.append(result.uri)
                 except Exception as update_error:
                     raise Exception(f"Failed to deploy {service_name}: {update_error}")
