@@ -24,14 +24,74 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 # Import generated protobuf modules
-# These would be generated from raft.proto
-try:
-    import raft_pb2
-    import raft_pb2_grpc
-except ImportError:
-    # Mock for testing without proto generation
-    raft_pb2 = None
-    raft_pb2_grpc = None
+# Proto stubs are compiled at runtime from raft.proto
+import sys
+import os
+import tempfile
+
+raft_pb2 = None
+raft_pb2_grpc = None
+_proto_compilation_error = None
+
+def _compile_proto_stubs():
+    """Compile raft.proto to Python stubs at runtime."""
+    global raft_pb2, raft_pb2_grpc, _proto_compilation_error
+
+    # Find the proto file
+    proto_paths = [
+        os.path.join(os.path.dirname(__file__), "..", "..", "distributed_problems", "raft", "proto", "raft.proto"),
+        os.path.join(os.path.dirname(__file__), "..", "..", "..", "distributed_problems", "raft", "proto", "raft.proto"),
+        "/app/distributed_problems/raft/proto/raft.proto",
+    ]
+
+    proto_path = None
+    for path in proto_paths:
+        abs_path = os.path.abspath(path)
+        if os.path.exists(abs_path):
+            proto_path = abs_path
+            break
+
+    if not proto_path:
+        _proto_compilation_error = "Proto file raft.proto not found. Searched paths: " + ", ".join(proto_paths)
+        return False
+
+    try:
+        from grpc_tools import protoc
+
+        # Compile to temp directory
+        stubs_dir = os.path.join(tempfile.gettempdir(), "raft_test_stubs")
+        os.makedirs(stubs_dir, exist_ok=True)
+
+        result = protoc.main([
+            'grpc_tools.protoc',
+            f'--proto_path={os.path.dirname(proto_path)}',
+            f'--python_out={stubs_dir}',
+            f'--grpc_python_out={stubs_dir}',
+            proto_path
+        ])
+
+        if result != 0:
+            _proto_compilation_error = f"Proto compilation failed with exit code {result}"
+            return False
+
+        # Add to path and import
+        if stubs_dir not in sys.path:
+            sys.path.insert(0, stubs_dir)
+
+        import importlib
+        raft_pb2 = importlib.import_module("raft_pb2")
+        raft_pb2_grpc = importlib.import_module("raft_pb2_grpc")
+        return True
+
+    except ImportError as e:
+        _proto_compilation_error = f"grpc_tools not installed: {e}. Install with: pip install grpcio-tools"
+        return False
+    except Exception as e:
+        _proto_compilation_error = f"Failed to compile proto stubs: {e}"
+        return False
+
+# Compile protos at module load
+_compile_proto_stubs()
 
 
 @dataclass
@@ -52,14 +112,30 @@ class RaftTestClient:
 
         Args:
             node_addresses: List of "host:port" addresses for each node
+
+        Raises:
+            RuntimeError: If proto modules are not available
         """
+        if raft_pb2 is None or raft_pb2_grpc is None:
+            error_msg = _proto_compilation_error or "Proto modules not compiled"
+            raise RuntimeError(f"Cannot create RaftTestClient: {error_msg}")
+
         self.nodes: List[ClusterNode] = []
         for addr in node_addresses:
             node = ClusterNode(address=addr)
-            node.channel = grpc.insecure_channel(addr)
-            if raft_pb2_grpc:
-                node.raft_stub = raft_pb2_grpc.RaftServiceStub(node.channel)
-                node.kv_stub = raft_pb2_grpc.KeyValueServiceStub(node.channel)
+            # Handle both http:// URLs and host:port formats
+            if addr.startswith("https://"):
+                # For HTTPS (Cloud Run), use secure channel
+                host = addr.replace("https://", "")
+                credentials = grpc.ssl_channel_credentials()
+                node.channel = grpc.secure_channel(f"{host}:443", credentials)
+            elif addr.startswith("http://"):
+                host = addr.replace("http://", "")
+                node.channel = grpc.insecure_channel(host)
+            else:
+                node.channel = grpc.insecure_channel(addr)
+            node.raft_stub = raft_pb2_grpc.RaftServiceStub(node.channel)
+            node.kv_stub = raft_pb2_grpc.KeyValueServiceStub(node.channel)
             self.nodes.append(node)
 
     def close(self):
@@ -77,7 +153,7 @@ class RaftTestClient:
         """
         for node in self.nodes:
             try:
-                request = raft_pb2.GetLeaderRequest() if raft_pb2 else None
+                request = raft_pb2.GetLeaderRequest()
                 response = node.kv_stub.GetLeader(request, timeout=5)
                 if response.is_leader:
                     return (response.leader_id, node.address)
@@ -97,7 +173,7 @@ class RaftTestClient:
         statuses = []
         for node in self.nodes:
             try:
-                request = raft_pb2.GetClusterStatusRequest() if raft_pb2 else None
+                request = raft_pb2.GetClusterStatusRequest()
                 response = node.kv_stub.GetClusterStatus(request, timeout=5)
                 statuses.append({
                     "node_id": response.node_id,
@@ -130,7 +206,7 @@ class RaftTestClient:
         for attempt in range(3):
             for node in self.nodes:
                 try:
-                    request = raft_pb2.PutRequest(key=key, value=value) if raft_pb2 else None
+                    request = raft_pb2.PutRequest(key=key, value=value)
                     response = node.kv_stub.Put(request, timeout=10)
                     if response.success:
                         return True
@@ -154,7 +230,7 @@ class RaftTestClient:
         """
         for node in self.nodes:
             try:
-                request = raft_pb2.GetRequest(key=key) if raft_pb2 else None
+                request = raft_pb2.GetRequest(key=key)
                 response = node.kv_stub.Get(request, timeout=5)
                 if response.found:
                     return response.value
@@ -175,7 +251,7 @@ class RaftTestClient:
         for attempt in range(3):
             for node in self.nodes:
                 try:
-                    request = raft_pb2.DeleteRequest(key=key) if raft_pb2 else None
+                    request = raft_pb2.DeleteRequest(key=key)
                     response = node.kv_stub.Delete(request, timeout=10)
                     if response.success:
                         return True
@@ -227,9 +303,17 @@ class RaftTestClient:
 # ============================================================================
 
 @pytest.fixture(scope="module")
-def cluster_urls(request):
+def check_proto_available():
+    """Check if proto stubs were compiled successfully."""
+    if _proto_compilation_error:
+        pytest.skip(f"gRPC proto compilation failed: {_proto_compilation_error}")
+    if raft_pb2 is None or raft_pb2_grpc is None:
+        pytest.skip("Proto modules not available. Check grpc_tools installation.")
+
+
+@pytest.fixture(scope="module")
+def cluster_urls(request, check_proto_available):
     """Get cluster URLs from command line or environment."""
-    import os
     urls = os.environ.get("RAFT_CLUSTER_URLS", "")
     if not urls:
         urls = getattr(request, "param", "") if hasattr(request, "param") else ""
@@ -241,9 +325,9 @@ def cluster_urls(request):
 @pytest.fixture(scope="module")
 def client(cluster_urls):
     """Create a test client for the cluster."""
-    client = RaftTestClient(cluster_urls)
-    yield client
-    client.close()
+    test_client = RaftTestClient(cluster_urls)
+    yield test_client
+    test_client.close()
 
 
 @pytest.fixture(autouse=True)
@@ -309,7 +393,7 @@ class TestLeaderElection:
 
         for node in client.nodes:
             try:
-                request = raft_pb2.GetLeaderRequest() if raft_pb2 else None
+                request = raft_pb2.GetLeaderRequest()
                 response = node.kv_stub.GetLeader(request, timeout=5)
                 if not response.is_leader:
                     assert response.leader_id == leader[0], \
@@ -340,7 +424,7 @@ class TestLogReplication:
         # Verify all nodes have the value
         for node in client.nodes:
             try:
-                request = raft_pb2.GetRequest(key=key) if raft_pb2 else None
+                request = raft_pb2.GetRequest(key=key)
                 response = node.kv_stub.Get(request, timeout=5)
                 assert response.found, f"Key not found on node {node.address}"
                 assert response.value == value, f"Value mismatch on node {node.address}"
@@ -526,7 +610,7 @@ class TestConsistency:
         values = []
         for node in client.nodes:
             try:
-                request = raft_pb2.GetRequest(key=key) if raft_pb2 else None
+                request = raft_pb2.GetRequest(key=key)
                 response = node.kv_stub.Get(request, timeout=5)
                 if response.found:
                     values.append(response.value)
@@ -632,7 +716,7 @@ class TestSafetyProperties:
         if leader_node:
             for key, value in keys_values:
                 try:
-                    request = raft_pb2.GetRequest(key=key) if raft_pb2 else None
+                    request = raft_pb2.GetRequest(key=key)
                     response = leader_node.kv_stub.Get(request, timeout=5)
                     assert response.found, f"Leader missing key {key}"
                     assert response.value == value, f"Leader has wrong value for {key}"

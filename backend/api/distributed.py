@@ -303,6 +303,9 @@ async def run_distributed_build(submission_id: int, language: str, source_code: 
 
                         # Run tests against the cluster
                         from backend.services.distributed_tests import DistributedTestRunner
+                        from backend.models.test_result import TestResult as TestResultModel, AnalysisStatus, ErrorCategory
+                        from backend.services.error_analyzer import error_analyzer
+
                         test_runner = DistributedTestRunner(cluster_urls, submission_id=submission_id)
 
                         try:
@@ -316,16 +319,23 @@ async def run_distributed_build(submission_id: int, language: str, source_code: 
                             submission.build_logs += f"\n{'=' * 50}\nTEST RESULTS\n{'=' * 50}\n"
                             submission.build_logs += f"Passed: {passed}, Failed: {failed}, Errors: {errors}\n\n"
 
-                            # Import TestResult model
-                            from backend.models.test_result import TestResult as TestResultModel
-
                             for result in test_results:
                                 status_icon = "✓" if result.status.value == "passed" else "✗" if result.status.value == "failed" else "!"
                                 submission.build_logs += f"{status_icon} [{result.test_type.value}] {result.test_name}: {result.status.value} ({result.duration_ms}ms)\n"
                                 if result.error_message:
                                     submission.build_logs += f"   Error: {result.error_message}\n"
                                 if result.details:
-                                    submission.build_logs += f"   Details: {result.details}\n"
+                                    # Truncate details for logs
+                                    details_str = str(result.details)
+                                    if len(details_str) > 200:
+                                        details_str = details_str[:200] + "..."
+                                    submission.build_logs += f"   Details: {details_str}\n"
+
+                                # Build comprehensive details dict including error_message
+                                details_dict = result.details.copy() if result.details else {}
+                                if result.error_message:
+                                    details_dict["error"] = result.error_message
+                                    details_dict["error_message"] = result.error_message
 
                                 # Create TestResult database record
                                 test_result_record = TestResultModel(
@@ -334,9 +344,34 @@ async def run_distributed_build(submission_id: int, language: str, source_code: 
                                     test_name=result.test_name,
                                     status=result.status.value,
                                     duration_ms=result.duration_ms,
-                                    details=result.details if result.details else {},
+                                    details=details_dict,
                                     chaos_scenario=getattr(result, 'chaos_scenario', None),
                                 )
+
+                                # Add error analysis for failed/error tests
+                                if result.status.value in ["failed", "error"]:
+                                    try:
+                                        analysis = await error_analyzer.analyze_failure(
+                                            test_type=result.test_type.value,
+                                            test_name=result.test_name,
+                                            status=result.status.value,
+                                            error_output=result.error_message or str(result.details),
+                                            problem_description="Raft distributed consensus implementation",
+                                            design_text="",
+                                            api_spec=None,
+                                            endpoint_url=cluster_urls[0] if cluster_urls else "",
+                                        )
+                                        test_result_record.error_category = analysis.get("category", ErrorCategory.UNKNOWN.value)
+                                        test_result_record.error_analysis = analysis
+                                        test_result_record.ai_analysis_status = AnalysisStatus.COMPLETED.value
+                                    except Exception as analysis_err:
+                                        logger.warning(f"Error analysis failed for {result.test_name}: {analysis_err}")
+                                        test_result_record.error_category = ErrorCategory.UNKNOWN.value
+                                        test_result_record.ai_analysis_status = AnalysisStatus.FAILED.value
+                                        test_result_record.error_analysis = {"error": str(analysis_err)}
+                                else:
+                                    test_result_record.ai_analysis_status = AnalysisStatus.SKIPPED.value
+
                                 db.add(test_result_record)
 
                             # Determine final status based on test results
