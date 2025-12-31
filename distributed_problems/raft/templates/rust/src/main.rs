@@ -121,7 +121,16 @@ impl RaftNode {
     pub async fn initialize(&self) -> Result<(), Box<dyn std::error::Error>> {
         let mut clients = self.peer_clients.write().await;
         for peer in &self.peers {
-            let addr = format!("http://{}", peer);
+            // Cloud Run URLs require HTTPS
+            let addr = if peer.contains(".run.app") {
+                // Use HTTPS for Cloud Run endpoints
+                println!("Using HTTPS for peer: {}", peer);
+                format!("https://{}", peer)
+            } else {
+                // Use HTTP for local development
+                println!("Using HTTP for peer: {}", peer);
+                format!("http://{}", peer)
+            };
             match RaftServiceClient::connect(addr.clone()).await {
                 Ok(client) => {
                     clients.insert(peer.clone(), client);

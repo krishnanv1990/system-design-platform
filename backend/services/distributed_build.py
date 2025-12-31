@@ -900,6 +900,10 @@ install(TARGETS server DESTINATION bin)
         """
         Deploy a Raft cluster to Cloud Run.
 
+        Uses two-phase deployment:
+        1. Deploy all services with placeholder PEERS to get their URLs
+        2. Update each service with correct PEERS using full Cloud Run URLs
+
         Args:
             submission_id: Submission ID
             image_name: Docker image name
@@ -909,20 +913,19 @@ install(TARGETS server DESTINATION bin)
             List of service URLs
         """
         client = run_v2.ServicesClient()
-        service_urls = []
+        parent = f"projects/{self.project_id}/locations/{self.region}"
 
-        # Deploy each node
+        # Phase 1: Deploy all services to get their URLs
+        service_urls = []
+        service_names = []
+
         for i in range(cluster_size):
             node_id = f"node{i+1}"
             service_name = f"raft-{submission_id}-{node_id}"
+            service_names.append(service_name)
+            full_service_name = f"{parent}/services/{service_name}"
 
-            # Calculate peer addresses
-            peers = []
-            for j in range(cluster_size):
-                if j != i:
-                    peer_name = f"raft-{submission_id}-node{j+1}"
-                    peers.append(f"{peer_name}:50051")
-
+            # Initial deployment with placeholder PEERS (will update in phase 2)
             service = run_v2.Service(
                 template=run_v2.RevisionTemplate(
                     containers=[
@@ -931,7 +934,65 @@ install(TARGETS server DESTINATION bin)
                             ports=[run_v2.ContainerPort(container_port=50051)],
                             env=[
                                 run_v2.EnvVar(name="NODE_ID", value=node_id),
-                                # PORT is set automatically by Cloud Run based on container_port
+                                run_v2.EnvVar(name="PEERS", value="placeholder"),
+                            ],
+                            resources=run_v2.ResourceRequirements(
+                                limits={"cpu": "1", "memory": "512Mi"}
+                            ),
+                        )
+                    ],
+                    scaling=run_v2.RevisionScaling(min_instance_count=1, max_instance_count=1),
+                ),
+            )
+
+            try:
+                operation = client.create_service(
+                    parent=parent,
+                    service=service,
+                    service_id=service_name,
+                )
+                result = operation.result()
+                self._set_public_access(client, full_service_name)
+                service_urls.append(result.uri)
+            except Exception as e:
+                # Service might already exist, try to update
+                try:
+                    service.name = full_service_name
+                    operation = client.update_service(service=service)
+                    result = operation.result()
+                    self._set_public_access(client, full_service_name)
+                    service_urls.append(result.uri)
+                except Exception as update_error:
+                    raise Exception(f"Failed to deploy {service_name}: {update_error}")
+
+        # Phase 2: Update each service with correct PEERS using full Cloud Run URLs
+        for i in range(cluster_size):
+            node_id = f"node{i+1}"
+            service_name = service_names[i]
+            full_service_name = f"{parent}/services/{service_name}"
+
+            # Build PEERS list using full Cloud Run URLs (with :443 for gRPC over HTTPS)
+            peers = []
+            for j in range(cluster_size):
+                if j != i:
+                    # Extract hostname from URL (e.g., https://raft-34-node2-xxx-uc.a.run.app -> hostname:443)
+                    peer_url = service_urls[j]
+                    if peer_url.startswith("https://"):
+                        peer_host = peer_url.replace("https://", "")
+                        peers.append(f"{peer_host}:443")
+                    else:
+                        peers.append(peer_url)
+
+            # Update service with correct PEERS
+            service = run_v2.Service(
+                name=full_service_name,
+                template=run_v2.RevisionTemplate(
+                    containers=[
+                        run_v2.Container(
+                            image=image_name,
+                            ports=[run_v2.ContainerPort(container_port=50051)],
+                            env=[
+                                run_v2.EnvVar(name="NODE_ID", value=node_id),
                                 run_v2.EnvVar(name="PEERS", value=",".join(peers)),
                             ],
                             resources=run_v2.ResourceRequirements(
@@ -943,31 +1004,11 @@ install(TARGETS server DESTINATION bin)
                 ),
             )
 
-            parent = f"projects/{self.project_id}/locations/{self.region}"
-            full_service_name = f"{parent}/services/{service_name}"
-
             try:
-                operation = client.create_service(
-                    parent=parent,
-                    service=service,
-                    service_id=service_name,
-                )
-                result = operation.result()
-                # Set IAM policy to allow unauthenticated access
-                self._set_public_access(client, full_service_name)
-                service_urls.append(result.uri)
-            except Exception as e:
-                # Service might already exist, try to update
-                try:
-                    # Set the name field for update operation
-                    service.name = full_service_name
-                    operation = client.update_service(service=service)
-                    result = operation.result()
-                    # Set IAM policy to allow unauthenticated access
-                    self._set_public_access(client, full_service_name)
-                    service_urls.append(result.uri)
-                except Exception as update_error:
-                    raise Exception(f"Failed to deploy {service_name}: {update_error}")
+                operation = client.update_service(service=service)
+                operation.result()
+            except Exception as update_error:
+                raise Exception(f"Failed to update {service_name} with PEERS: {update_error}")
 
         return service_urls
 

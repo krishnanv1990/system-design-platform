@@ -114,9 +114,21 @@ public class RaftServer {
 
         public void initialize() {
             for (String peer : peers) {
-                ManagedChannel channel = ManagedChannelBuilder.forTarget(peer)
-                        .usePlaintext()
-                        .build();
+                ManagedChannel channel;
+                // Cloud Run URLs require TLS
+                if (peer.contains(".run.app")) {
+                    // Use TLS for Cloud Run endpoints
+                    channel = ManagedChannelBuilder.forTarget(peer)
+                            .useTransportSecurity()
+                            .build();
+                    logger.info("Using TLS for peer: " + peer);
+                } else {
+                    // Use plaintext for local development
+                    channel = ManagedChannelBuilder.forTarget(peer)
+                            .usePlaintext()
+                            .build();
+                    logger.info("Using plaintext for peer: " + peer);
+                }
                 peerStubs.put(peer, RaftServiceGrpc.newBlockingStub(channel));
             }
             logger.info("Node " + nodeId + " initialized with peers: " + peers);

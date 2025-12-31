@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 
 	pb "github.com/sdp/raft"
@@ -123,7 +124,21 @@ func NewRaftNode(nodeID string, port int, peers []string) *RaftNode {
 // Initialize sets up connections to peer nodes
 func (n *RaftNode) Initialize() error {
 	for _, peer := range n.peers {
-		conn, err := grpc.Dial(peer, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		var conn *grpc.ClientConn
+		var err error
+
+		// Cloud Run URLs require TLS credentials
+		if strings.Contains(peer, ".run.app") {
+			// Use TLS for Cloud Run endpoints
+			creds := credentials.NewClientTLSFromCert(nil, "")
+			conn, err = grpc.Dial(peer, grpc.WithTransportCredentials(creds))
+			log.Printf("Using TLS for peer: %s", peer)
+		} else {
+			// Use insecure credentials for local development
+			conn, err = grpc.Dial(peer, grpc.WithTransportCredentials(insecure.NewCredentials()))
+			log.Printf("Using insecure channel for peer: %s", peer)
+		}
+
 		if err != nil {
 			log.Printf("Warning: Failed to connect to peer %s: %v", peer, err)
 			continue

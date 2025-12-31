@@ -98,7 +98,20 @@ public:
 
     void Initialize() {
         for (const auto& peer : peers_) {
-            auto channel = grpc::CreateChannel(peer, grpc::InsecureChannelCredentials());
+            std::shared_ptr<grpc::Channel> channel;
+            // Cloud Run URLs with :443 require SSL credentials
+            if (peer.find(".run.app:443") != std::string::npos ||
+                peer.find(".run.app") != std::string::npos) {
+                // Use SSL credentials for Cloud Run endpoints
+                grpc::SslCredentialsOptions ssl_opts;
+                auto creds = grpc::SslCredentials(ssl_opts);
+                channel = grpc::CreateChannel(peer, creds);
+                std::cout << "Using SSL for peer: " << peer << std::endl;
+            } else {
+                // Use insecure credentials for local development
+                channel = grpc::CreateChannel(peer, grpc::InsecureChannelCredentials());
+                std::cout << "Using insecure channel for peer: " << peer << std::endl;
+            }
             peer_stubs_[peer] = RaftService::NewStub(channel);
         }
         timer_thread_ = std::thread(&RaftNode::ElectionTimerLoop, this);

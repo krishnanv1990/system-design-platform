@@ -100,7 +100,17 @@ class RaftNode:
     async def initialize(self):
         """Initialize connections to peer nodes."""
         for peer in self.peers:
-            channel = aio.insecure_channel(peer)
+            # Cloud Run URLs require SSL credentials
+            if ".run.app" in peer:
+                # Use SSL for Cloud Run endpoints
+                import ssl
+                ssl_creds = grpc.ssl_channel_credentials()
+                channel = aio.secure_channel(peer, ssl_creds)
+                logger.info(f"Using SSL for peer: {peer}")
+            else:
+                # Use insecure channel for local development
+                channel = aio.insecure_channel(peer)
+                logger.info(f"Using insecure channel for peer: {peer}")
             self.peer_stubs[peer] = raft_pb2_grpc.RaftServiceStub(channel)
         logger.info(f"Node {self.node_id} initialized with peers: {self.peers}")
 
