@@ -30,6 +30,12 @@ vi.mock('@/hooks/useToast', () => ({
   }),
 }))
 
+// Mock the confirm dialog
+const mockConfirm = vi.fn()
+vi.mock('@/components/ui/confirm-dialog', () => ({
+  useConfirm: () => mockConfirm,
+}))
+
 // Mock CodeEditor
 vi.mock('@/components/CodeEditor', () => ({
   default: ({ value, onChange }: { value: string; onChange: (v: string) => void }) => (
@@ -280,6 +286,140 @@ describe('DistributedProblemDetail', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Back to Problems')).toBeInTheDocument()
+    })
+  })
+
+  describe('Reset to Template', () => {
+    it('shows reset button', async () => {
+      vi.mocked(distributedProblemsApi.get).mockResolvedValue(mockProblem)
+
+      renderWithRouter()
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /Reset/i })).toBeInTheDocument()
+      })
+    })
+
+    it('shows confirmation dialog when reset is clicked', async () => {
+      vi.mocked(distributedProblemsApi.get).mockResolvedValue(mockProblem)
+      mockConfirm.mockResolvedValue(false) // User cancels
+      const user = userEvent.setup()
+
+      renderWithRouter()
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /Reset/i })).toBeInTheDocument()
+      })
+
+      const resetButton = screen.getByRole('button', { name: /Reset/i })
+      await user.click(resetButton)
+
+      // Confirm dialog should have been called
+      expect(mockConfirm).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: 'Reset to Template',
+          type: 'warning',
+          confirmLabel: 'Reset',
+        })
+      )
+    })
+
+    it('does not reset code when user cancels confirmation', async () => {
+      vi.mocked(distributedProblemsApi.get).mockResolvedValue(mockProblem)
+      mockConfirm.mockResolvedValue(false) // User cancels
+      const user = userEvent.setup()
+
+      renderWithRouter()
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /Reset/i })).toBeInTheDocument()
+      })
+
+      // Clear any calls from initial load
+      vi.mocked(distributedProblemsApi.getTemplate).mockClear()
+
+      const resetButton = screen.getByRole('button', { name: /Reset/i })
+      await user.click(resetButton)
+
+      // getTemplate should NOT have been called after clicking reset (user cancelled)
+      expect(distributedProblemsApi.getTemplate).not.toHaveBeenCalled()
+    })
+
+    it('resets code to template when user confirms', async () => {
+      vi.mocked(distributedProblemsApi.get).mockResolvedValue(mockProblem)
+      vi.mocked(distributedProblemsApi.getTemplate).mockResolvedValue('# Original Python template')
+      mockConfirm.mockResolvedValue(true) // User confirms
+      const user = userEvent.setup()
+
+      renderWithRouter()
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /Reset/i })).toBeInTheDocument()
+      })
+
+      const resetButton = screen.getByRole('button', { name: /Reset/i })
+      await user.click(resetButton)
+
+      // getTemplate should have been called with the current language
+      await waitFor(() => {
+        expect(distributedProblemsApi.getTemplate).toHaveBeenCalledWith(1, 'python')
+      })
+    })
+
+    it('resets code for the selected language', async () => {
+      vi.mocked(distributedProblemsApi.get).mockResolvedValue(mockProblem)
+      vi.mocked(distributedProblemsApi.getTemplate).mockResolvedValue('// Go template code')
+      mockConfirm.mockResolvedValue(true) // User confirms
+      const user = userEvent.setup()
+
+      renderWithRouter()
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /Go/i })).toBeInTheDocument()
+      })
+
+      // Switch to Go
+      const goButton = screen.getByRole('button', { name: /Go/i })
+      await user.click(goButton)
+
+      // Wait for language to switch
+      await waitFor(() => {
+        expect(goButton).toHaveClass('bg-primary')
+      })
+
+      // Reset the mock to clear previous calls
+      vi.mocked(distributedProblemsApi.getTemplate).mockClear()
+      vi.mocked(distributedProblemsApi.getTemplate).mockResolvedValue('// Go template code')
+
+      // Click reset
+      const resetButton = screen.getByRole('button', { name: /Reset/i })
+      await user.click(resetButton)
+
+      // Should call getTemplate with 'go' language
+      await waitFor(() => {
+        expect(distributedProblemsApi.getTemplate).toHaveBeenCalledWith(1, 'go')
+      })
+    })
+
+    it('shows unsaved changes after reset', async () => {
+      vi.mocked(distributedProblemsApi.get).mockResolvedValue(mockProblem)
+      vi.mocked(distributedProblemsApi.getTemplate).mockResolvedValue('# Fresh template')
+      mockConfirm.mockResolvedValue(true) // User confirms
+      const user = userEvent.setup()
+
+      renderWithRouter()
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /Reset/i })).toBeInTheDocument()
+      })
+
+      const resetButton = screen.getByRole('button', { name: /Reset/i })
+      await user.click(resetButton)
+
+      // Should show unsaved changes indicator
+      await waitFor(() => {
+        expect(screen.getByText('Unsaved changes')).toBeInTheDocument()
+      })
     })
   })
 })

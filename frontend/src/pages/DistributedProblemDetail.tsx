@@ -19,6 +19,7 @@ import {
   CheckCircle,
   Code,
   BookOpen,
+  RotateCcw,
 } from "lucide-react"
 import { distributedProblemsApi, distributedSubmissionsApi } from "@/api/client"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -27,6 +28,7 @@ import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useToast } from "@/hooks/useToast"
+import { useConfirm } from "@/components/ui/confirm-dialog"
 import CodeEditor from "@/components/CodeEditor"
 import type { DistributedProblem, SupportedLanguage } from "@/types"
 
@@ -67,6 +69,7 @@ export default function DistributedProblemDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { toast } = useToast()
+  const confirm = useConfirm()
 
   const [problem, setProblem] = useState<DistributedProblem | null>(null)
   const [loading, setLoading] = useState(true)
@@ -76,6 +79,7 @@ export default function DistributedProblemDetail() {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [saving, setSaving] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [resetting, setResetting] = useState(false)
 
   // Load problem details
   const loadProblem = useCallback(async () => {
@@ -188,6 +192,40 @@ export default function DistributedProblemDetail() {
     }
   }
 
+  // Reset to template
+  const handleResetToTemplate = async () => {
+    if (!id) return
+
+    const confirmed = await confirm({
+      title: "Reset to Template",
+      message: `This will replace your current ${languageInfo[selectedLanguage].label} code with the original template. Any unsaved changes will be lost. Are you sure?`,
+      type: "warning",
+      confirmLabel: "Reset",
+      cancelLabel: "Cancel",
+    })
+
+    if (!confirmed) return
+
+    setResetting(true)
+    try {
+      const template = await distributedProblemsApi.getTemplate(parseInt(id), selectedLanguage)
+      setCode(template)
+      setHasUnsavedChanges(true)
+      toast({
+        title: "Code reset",
+        description: `Your ${languageInfo[selectedLanguage].label} code has been reset to the template.`,
+      })
+    } catch (err: any) {
+      toast({
+        title: "Reset failed",
+        description: err.response?.data?.detail || "Failed to reset code",
+        variant: "destructive",
+      })
+    } finally {
+      setResetting(false)
+    }
+  }
+
   if (loading) {
     return <DetailSkeleton />
   }
@@ -244,6 +282,14 @@ export default function DistributedProblemDetail() {
           {hasUnsavedChanges && (
             <span className="text-sm text-muted-foreground">Unsaved changes</span>
           )}
+          <Button onClick={handleResetToTemplate} variant="outline" disabled={resetting}>
+            {resetting ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <RotateCcw className="mr-2 h-4 w-4" />
+            )}
+            Reset
+          </Button>
           <Button onClick={handleSave} variant="outline" disabled={saving || !hasUnsavedChanges}>
             {saving ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
