@@ -150,7 +150,7 @@ describe('DistributedProblemList', () => {
 
     await waitFor(() => {
       expect(screen.queryByText('Implement Raft Consensus')).not.toBeInTheDocument()
-      expect(screen.getByText('Implement Paxos')).toBeInTheDocument()
+      expect(screen.getByText('Implement Paxos Consensus')).toBeInTheDocument()
     })
   })
 
