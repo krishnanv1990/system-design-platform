@@ -303,7 +303,7 @@ async def run_distributed_build(submission_id: int, language: str, source_code: 
 
                         # Run tests against the cluster
                         from backend.services.distributed_tests import DistributedTestRunner
-                        test_runner = DistributedTestRunner(cluster_urls)
+                        test_runner = DistributedTestRunner(cluster_urls, submission_id=submission_id)
 
                         try:
                             test_results = await test_runner.run_all_tests()
