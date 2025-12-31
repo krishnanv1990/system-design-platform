@@ -160,7 +160,7 @@ export default function DistributedSubmissionResults() {
     const confirmed = await confirm({
       title: "Tear Down Cluster",
       message: "This will permanently delete all cluster nodes. The cluster cannot be restored after teardown. Are you sure?",
-      type: "destructive",
+      type: "danger",
       confirmLabel: "Tear Down",
       cancelLabel: "Cancel",
     })
