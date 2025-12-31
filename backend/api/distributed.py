@@ -298,12 +298,58 @@ async def run_distributed_build(submission_id: int, language: str, source_code: 
                         submission.cluster_node_urls = cluster_urls
                         submission.status = SubmissionStatus.TESTING.value
                         submission.build_logs += f"Cluster deployed successfully!\nNodes: {cluster_urls}\n"
+                        submission.build_logs += "\nRunning tests against cluster...\n"
                         db.commit()
 
-                        # TODO: Run tests against the cluster
-                        # For now, mark as completed
-                        submission.status = SubmissionStatus.COMPLETED.value
-                        submission.build_logs += "\nSubmission completed successfully!"
+                        # Run tests against the cluster
+                        from backend.services.distributed_tests import DistributedTestRunner
+                        test_runner = DistributedTestRunner(cluster_urls)
+
+                        try:
+                            test_results = await test_runner.run_all_tests()
+
+                            # Log test results
+                            passed = sum(1 for r in test_results if r.status.value == "passed")
+                            failed = sum(1 for r in test_results if r.status.value == "failed")
+                            errors = sum(1 for r in test_results if r.status.value == "error")
+
+                            submission.build_logs += f"\n{'=' * 50}\nTEST RESULTS\n{'=' * 50}\n"
+                            submission.build_logs += f"Passed: {passed}, Failed: {failed}, Errors: {errors}\n\n"
+
+                            for result in test_results:
+                                status_icon = "✓" if result.status.value == "passed" else "✗" if result.status.value == "failed" else "!"
+                                submission.build_logs += f"{status_icon} [{result.test_type.value}] {result.test_name}: {result.status.value} ({result.duration_ms}ms)\n"
+                                if result.error_message:
+                                    submission.build_logs += f"   Error: {result.error_message}\n"
+                                if result.details:
+                                    submission.build_logs += f"   Details: {result.details}\n"
+
+                            # Store test results in submission
+                            submission.test_results = [
+                                {
+                                    "test_name": r.test_name,
+                                    "test_type": r.test_type.value,
+                                    "status": r.status.value,
+                                    "duration_ms": r.duration_ms,
+                                    "details": r.details,
+                                    "error_message": r.error_message,
+                                }
+                                for r in test_results
+                            ]
+
+                            # Determine final status based on test results
+                            if failed == 0 and errors == 0:
+                                submission.status = SubmissionStatus.COMPLETED.value
+                                submission.build_logs += "\n✓ All tests passed! Submission completed successfully."
+                            else:
+                                submission.status = SubmissionStatus.COMPLETED.value  # Still completed, but with failures
+                                submission.build_logs += f"\n✗ Tests completed with {failed} failures and {errors} errors."
+
+                        except Exception as test_err:
+                            logger.error(f"Test execution failed: {test_err}")
+                            submission.status = SubmissionStatus.COMPLETED.value
+                            submission.build_logs += f"\n\nTest execution error: {test_err}"
+
                         db.commit()
 
                     except Exception as deploy_err:
