@@ -926,6 +926,8 @@ install(TARGETS server DESTINATION bin)
                 # Service might already exist, try to update
                 try:
                     name = f"{parent}/services/{service_name}"
+                    # Set the name field for update operation
+                    service.name = name
                     operation = client.update_service(service=service)
                     result = operation.result()
                     service_urls.append(result.uri)
