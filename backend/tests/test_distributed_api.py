@@ -1135,3 +1135,73 @@ class TestUtf8RangeLinking:
 
         # utf8_range should come after the main Abseil block
         assert utf8_range_pos > 0, "UTF8_RANGE_LIB not found in CMakeLists"
+
+
+class TestCppTemplateContainsTodos:
+    """Tests for C++ template file containing TODOs for students to implement."""
+
+    def test_cpp_template_has_todo_comments(self):
+        """Test that the C++ template file contains TODO comments."""
+        from backend.api.distributed import get_template_from_filesystem
+
+        template = get_template_from_filesystem("cpp")
+
+        # Should contain TODO comments for implementation guidance
+        assert "TODO" in template, "C++ template should contain TODO comments"
+
+    def test_cpp_template_is_not_complete_implementation(self):
+        """Test that the C++ template is not a complete implementation."""
+        from backend.api.distributed import get_template_from_filesystem
+
+        template = get_template_from_filesystem("cpp")
+
+        # Should NOT say "A complete implementation"
+        assert "A complete implementation" not in template, \
+            "C++ template should not be a complete implementation"
+        # Should say it's a template
+        assert "Template" in template, "C++ template should identify as a template"
+
+    def test_cpp_template_mentions_raft_algorithm_steps(self):
+        """Test that C++ template mentions the Raft algorithm steps to implement."""
+        from backend.api.distributed import get_template_from_filesystem
+
+        template = get_template_from_filesystem("cpp")
+
+        # Should mention the core Raft concepts as TODOs
+        assert "Leader election" in template or "leader election" in template
+        assert "Log replication" in template or "log replication" in template
+
+
+class TestCloudRunEnvVars:
+    """Tests for Cloud Run environment variable configuration."""
+
+    def test_cloud_run_uses_grpc_port_not_port(self):
+        """Test that Cloud Run deployment uses GRPC_PORT instead of reserved PORT."""
+        from backend.services.distributed_build import DistributedBuildService
+        import inspect
+
+        service = DistributedBuildService()
+
+        # Get the source code of the deploy_cluster method
+        source = inspect.getsource(service.deploy_cluster)
+
+        # Should use GRPC_PORT, not PORT
+        assert 'name="GRPC_PORT"' in source, \
+            "Cloud Run deployment should use GRPC_PORT env var"
+        # PORT is a reserved env var in Cloud Run
+        assert 'name="PORT"' not in source or "reserved" in source.lower(), \
+            "Cloud Run deployment should not use reserved PORT env var"
+
+    def test_cloud_run_env_vars_include_node_id_and_peers(self):
+        """Test that Cloud Run deployment includes NODE_ID and PEERS env vars."""
+        from backend.services.distributed_build import DistributedBuildService
+        import inspect
+
+        service = DistributedBuildService()
+        source = inspect.getsource(service.deploy_cluster)
+
+        # Should include NODE_ID and PEERS env vars
+        assert 'name="NODE_ID"' in source, \
+            "Cloud Run deployment should include NODE_ID env var"
+        assert 'name="PEERS"' in source, \
+            "Cloud Run deployment should include PEERS env var"

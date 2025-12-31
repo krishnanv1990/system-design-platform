@@ -900,7 +900,8 @@ install(TARGETS server DESTINATION bin)
                             ports=[run_v2.ContainerPort(container_port=50051)],
                             env=[
                                 run_v2.EnvVar(name="NODE_ID", value=node_id),
-                                run_v2.EnvVar(name="PORT", value="50051"),
+                                # PORT is reserved by Cloud Run, use GRPC_PORT instead
+                                run_v2.EnvVar(name="GRPC_PORT", value="50051"),
                                 run_v2.EnvVar(name="PEERS", value=",".join(peers)),
                             ],
                             resources=run_v2.ResourceRequirements(

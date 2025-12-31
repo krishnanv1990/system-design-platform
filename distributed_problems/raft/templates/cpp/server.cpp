@@ -1,11 +1,10 @@
 /**
- * Raft Consensus Implementation - C++ Server
+ * Raft Consensus Implementation - C++ Template
  *
- * A complete implementation of the Raft consensus algorithm supporting:
- * - Leader election with randomized timeouts
- * - Log replication with consistency guarantees
- * - Heartbeat mechanism for leader authority
- * - Key-value store as the state machine
+ * This template provides the basic structure for implementing the Raft
+ * consensus algorithm. You need to implement the TODO sections.
+ *
+ * For the full Raft specification, see: https://raft.github.io/raft.pdf
  *
  * Usage:
  *     ./server --node-id node1 --port 50051 --peers node2:50052,node3:50053
@@ -68,6 +67,14 @@ struct RaftStateStore {
     std::map<std::string, uint64_t> match_index;
 };
 
+/**
+ * Raft consensus node implementation.
+ *
+ * TODO: Implement the core Raft algorithm:
+ * 1. Leader election
+ * 2. Log replication
+ * 3. Safety (election restriction, commitment rules)
+ */
 class RaftNode final : public RaftService::Service, public KeyValueService::Service {
 public:
     RaftNode(const std::string& node_id, int port, const std::vector<std::string>& peers)
@@ -103,10 +110,16 @@ public:
     uint64_t GetLastLogIndex() const { return state_.log.back().index; }
     uint64_t GetLastLogTerm() const { return state_.log.back().term; }
 
+    /**
+     * Reset the election timeout with a random duration.
+     *
+     * TODO: Implement election timer reset
+     * - Set a new deadline using a random timeout between
+     *   election_timeout_min_ and election_timeout_max_
+     */
     void ResetElectionTimer() {
         std::unique_lock<std::mutex> lock(timer_mutex_);
-        auto timeout = std::chrono::milliseconds(election_timeout_min_ + (rand() % (election_timeout_max_ - election_timeout_min_)));
-        election_deadline_ = std::chrono::steady_clock::now() + timeout;
+        // TODO: Calculate random timeout and set election_deadline_
     }
 
     // --- Core Raft Logic Loops ---
@@ -123,61 +136,47 @@ public:
         }
     }
 
+    /**
+     * Start a new leader election.
+     *
+     * TODO: Implement the election process:
+     * 1. Increment current_term
+     * 2. Change state to CANDIDATE
+     * 3. Vote for self
+     * 4. Reset election timer
+     * 5. Send RequestVote RPCs to all peers in parallel
+     * 6. If votes received from majority, become leader
+     * 7. If AppendEntries received from new leader, become follower
+     * 8. If election timeout elapses, start new election
+     */
     void StartElection() {
-        node_state_ = NodeState::CANDIDATE;
-        state_.current_term++;
-        state_.voted_for = node_id_;
-        ResetElectionTimer();
-
-        uint64_t term = state_.current_term;
-        uint64_t last_idx = GetLastLogIndex();
-        uint64_t last_term = GetLastLogTerm();
-
-        std::cout << "Node " << node_id_ << " starting election for term " << term << std::endl;
-
-        auto votes_received = std::make_shared<std::atomic<int>>(1);
-        int majority = static_cast<int>((peers_.size() + 1) / 2 + 1);
-
-        for (const auto& peer : peers_) {
-            std::thread([this, peer, term, last_idx, last_term, votes_received, majority]() {
-                RequestVoteRequest request;
-                request.set_term(term);
-                request.set_candidate_id(node_id_);
-                request.set_last_log_index(last_idx);
-                request.set_last_log_term(last_term);
-
-                RequestVoteResponse response;
-                ClientContext context;
-                context.set_deadline(std::chrono::system_clock::now() + std::chrono::milliseconds(100));
-
-                if (peer_stubs_[peer]->RequestVote(&context, request, &response).ok()) {
-                    std::unique_lock<std::shared_mutex> lock(mutex_);
-                    if (response.term() > state_.current_term) {
-                        StepDown(response.term());
-                    } else if (node_state_ == NodeState::CANDIDATE && response.vote_granted() && term == state_.current_term) {
-                        if (++(*votes_received) >= majority) BecomeLeader();
-                    }
-                }
-            }).detach();
-        }
+        // TODO: Implement election logic
+        std::cout << "Node " << node_id_ << " starting election for term " << state_.current_term + 1 << std::endl;
     }
 
+    /**
+     * Transition to leader state.
+     *
+     * TODO: Implement leader initialization:
+     * - Set node_state_ to LEADER
+     * - Initialize next_index for all peers to last log index + 1
+     * - Initialize match_index for all peers to 0
+     */
     void BecomeLeader() {
-        if (node_state_ != NodeState::CANDIDATE) return;
-        node_state_ = NodeState::LEADER;
-        leader_id_ = node_id_;
-        std::cout << "Node " << node_id_ << " became leader for term " << state_.current_term << std::endl;
-        for (const auto& peer : peers_) {
-            state_.next_index[peer] = GetLastLogIndex() + 1;
-            state_.match_index[peer] = 0;
-        }
+        // TODO: Implement leader transition
     }
 
+    /**
+     * Step down to follower state.
+     *
+     * TODO: Implement step down:
+     * - Update current_term to new_term
+     * - Clear voted_for
+     * - Set node_state_ to FOLLOWER
+     * - Reset election timer
+     */
     void StepDown(uint64_t new_term) {
-        state_.current_term = new_term;
-        state_.voted_for = "";
-        node_state_ = NodeState::FOLLOWER;
-        ResetElectionTimer();
+        // TODO: Implement step down logic
     }
 
     void HeartbeatLoop() {
@@ -188,187 +187,114 @@ public:
         }
     }
 
+    /**
+     * Send AppendEntries RPCs to all peers.
+     *
+     * TODO: Implement log replication:
+     * - For each peer, send AppendEntries with appropriate entries
+     * - Handle responses to update next_index and match_index
+     * - Update commit_index when entries are replicated to majority
+     */
     void SendAppendEntriesToAll() {
-        for (const auto& peer : peers_) {
-            uint64_t next = state_.next_index[peer];
-            uint64_t prev_idx = next - 1;
-            uint64_t prev_term = state_.log[prev_idx].term;
-
-            auto request = std::make_shared<AppendEntriesRequest>();
-            request->set_term(state_.current_term);
-            request->set_leader_id(node_id_);
-            request->set_prev_log_index(prev_idx);
-            request->set_prev_log_term(prev_term);
-            request->set_leader_commit(state_.commit_index);
-
-            for (size_t i = next; i < state_.log.size(); ++i) {
-                auto* entry = request->add_entries();
-                entry->set_index(state_.log[i].index);
-                entry->set_term(state_.log[i].term);
-                entry->set_command_type(state_.log[i].command_type);
-                entry->set_command(state_.log[i].command.data(), state_.log[i].command.size());
-            }
-
-            std::thread([this, peer, request]() {
-                AppendEntriesResponse response;
-                ClientContext context;
-                context.set_deadline(std::chrono::system_clock::now() + std::chrono::milliseconds(100));
-
-                if (peer_stubs_[peer]->AppendEntries(&context, *request, &response).ok()) {
-                    std::unique_lock<std::shared_mutex> lock(mutex_);
-                    if (response.term() > state_.current_term) {
-                        StepDown(response.term());
-                    } else if (node_state_ == NodeState::LEADER && request->term() == state_.current_term) {
-                        if (response.success()) {
-                            state_.next_index[peer] = request->prev_log_index() + static_cast<uint64_t>(request->entries_size()) + 1;
-                            state_.match_index[peer] = state_.next_index[peer] - 1;
-                            UpdateCommitIndex();
-                        } else {
-                            state_.next_index[peer] = std::max(static_cast<uint64_t>(1), state_.next_index[peer] - 1);
-                        }
-                    }
-                }
-            }).detach();
-        }
+        // TODO: Implement sending AppendEntries to all peers
     }
 
+    /**
+     * Update commit index based on match_index values.
+     *
+     * TODO: Implement commit index update:
+     * - Find N such that N > commitIndex, a majority of match_index[i] >= N,
+     *   and log[N].term == currentTerm
+     * - Set commitIndex = N
+     * - Apply committed entries to state machine
+     */
     void UpdateCommitIndex() {
-        for (uint64_t n = state_.commit_index + 1; n < state_.log.size(); ++n) {
-            if (state_.log[n].term != state_.current_term) continue;
-            size_t count = 1;
-            for (const auto& peer : peers_) if (state_.match_index[peer] >= n) count++;
-            if (count >= (peers_.size() + 1) / 2 + 1) {
-                state_.commit_index = n;
-                ApplyToStateMachine();
-            }
-        }
+        // TODO: Implement commit index update logic
     }
 
+    /**
+     * Apply committed entries to the state machine.
+     *
+     * TODO: Implement state machine application:
+     * - Apply all entries from last_applied + 1 to commit_index
+     * - For "put" commands: parse "key:value" and store in kv_store_
+     * - For "delete" commands: remove key from kv_store_
+     */
     void ApplyToStateMachine() {
-        while (state_.last_applied < state_.commit_index) {
-            state_.last_applied++;
-            auto& entry = state_.log[state_.last_applied];
-            std::string cmd(entry.command.begin(), entry.command.end());
-            if (entry.command_type == "put") {
-                size_t sep = cmd.find(':');
-                if (sep != std::string::npos) kv_store_[cmd.substr(0, sep)] = cmd.substr(sep + 1);
-            } else if (entry.command_type == "delete") {
-                kv_store_.erase(cmd);
-            }
-        }
-        cv_apply_.notify_all();
+        // TODO: Implement state machine application
     }
 
     // --- RaftService RPC Implementations ---
+
+    /**
+     * Handle RequestVote RPC from a candidate.
+     *
+     * TODO: Implement vote handling per Raft specification:
+     * 1. Reply false if term < currentTerm
+     * 2. If votedFor is null or candidateId, and candidate's log is at
+     *    least as up-to-date as receiver's log, grant vote
+     */
     Status RequestVote(ServerContext* context, const RequestVoteRequest* request, RequestVoteResponse* response) override {
         (void)context;  // Suppress unused parameter warning
         std::unique_lock<std::shared_mutex> lock(mutex_);
-        if (request->term() > state_.current_term) StepDown(request->term());
 
-        bool log_ok = (request->last_log_term() > GetLastLogTerm()) ||
-                      (request->last_log_term() == GetLastLogTerm() && request->last_log_index() >= GetLastLogIndex());
-
-        if (request->term() == state_.current_term && log_ok && (state_.voted_for.empty() || state_.voted_for == request->candidate_id())) {
-            state_.voted_for = request->candidate_id();
-            response->set_vote_granted(true);
-            ResetElectionTimer();
-        } else {
-            response->set_vote_granted(false);
-        }
+        // TODO: Implement RequestVote logic
         response->set_term(state_.current_term);
+        response->set_vote_granted(false);
+
         return Status::OK;
     }
 
+    /**
+     * Handle AppendEntries RPC from leader.
+     *
+     * TODO: Implement log replication per Raft specification:
+     * 1. Reply false if term < currentTerm
+     * 2. Reply false if log doesn't contain an entry at prevLogIndex
+     *    whose term matches prevLogTerm
+     * 3. If an existing entry conflicts with a new one, delete the
+     *    existing entry and all that follow it
+     * 4. Append any new entries not already in the log
+     * 5. If leaderCommit > commitIndex, set commitIndex =
+     *    min(leaderCommit, index of last new entry)
+     */
     Status AppendEntries(ServerContext* context, const AppendEntriesRequest* request, AppendEntriesResponse* response) override {
         (void)context;  // Suppress unused parameter warning
         std::unique_lock<std::shared_mutex> lock(mutex_);
-        if (request->term() > state_.current_term) StepDown(request->term());
 
+        // TODO: Implement AppendEntries logic
         response->set_term(state_.current_term);
-        if (request->term() < state_.current_term) {
-            response->set_success(false);
-            return Status::OK;
-        }
-
-        leader_id_ = request->leader_id();
-        ResetElectionTimer();
-
-        if (request->prev_log_index() >= state_.log.size() || state_.log[request->prev_log_index()].term != request->prev_log_term()) {
-            response->set_success(false);
-            response->set_match_index(GetLastLogIndex());
-            return Status::OK;
-        }
-
-        size_t log_ptr = request->prev_log_index() + 1;
-        for (int i = 0; i < request->entries_size(); ++i, ++log_ptr) {
-            if (log_ptr < state_.log.size() && state_.log[log_ptr].term != static_cast<uint64_t>(request->entries(i).term())) {
-                state_.log.erase(state_.log.begin() + static_cast<long>(log_ptr), state_.log.end());
-            }
-            if (log_ptr >= state_.log.size()) {
-                RaftLogEntry entry;
-                entry.index = request->entries(i).index();
-                entry.term = request->entries(i).term();
-                entry.command_type = request->entries(i).command_type();
-                entry.command.assign(request->entries(i).command().begin(), request->entries(i).command().end());
-                state_.log.push_back(entry);
-            }
-        }
-
-        if (request->leader_commit() > state_.commit_index) {
-            state_.commit_index = std::min(request->leader_commit(), GetLastLogIndex());
-            ApplyToStateMachine();
-        }
-
-        response->set_success(true);
+        response->set_success(false);
         response->set_match_index(GetLastLogIndex());
+
         return Status::OK;
     }
 
+    /**
+     * Handle InstallSnapshot RPC from leader.
+     *
+     * TODO: Implement snapshot installation:
+     * 1. Reply immediately if term < currentTerm
+     * 2. Create new snapshot file if first chunk
+     * 3. Write data into snapshot file at given offset
+     * 4. Reply and wait for more chunks if done is false
+     * 5. Save snapshot file, discard any existing snapshot
+     * 6. If existing log entry has same index and term as last entry
+     *    in snapshot, discard entries before it
+     * 7. Discard entire log and reset state machine with snapshot
+     */
     Status InstallSnapshot(ServerContext* context, const InstallSnapshotRequest* request, InstallSnapshotResponse* response) override {
         (void)context;  // Suppress unused parameter warning
         std::unique_lock<std::shared_mutex> lock(mutex_);
 
-        if (request->term() > state_.current_term) {
-            StepDown(request->term());
-        }
-
+        // TODO: Implement InstallSnapshot logic
         response->set_term(state_.current_term);
-
-        if (request->term() < state_.current_term) {
-            return Status::OK;
-        }
-
-        leader_id_ = request->leader_id();
-        ResetElectionTimer();
-
-        // For simplicity, we'll implement basic snapshot installation
-        // In a production system, this would handle chunked transfers
-
-        if (request->done()) {
-            // Apply snapshot to state machine
-            // This is a simplified version - production would deserialize the snapshot data
-            state_.commit_index = request->last_included_index();
-            state_.last_applied = request->last_included_index();
-
-            // Trim log to only include entries after snapshot
-            if (request->last_included_index() < state_.log.size() &&
-                state_.log[request->last_included_index()].term == request->last_included_term()) {
-                // Keep entries after snapshot
-                state_.log.erase(state_.log.begin(), state_.log.begin() + static_cast<long>(request->last_included_index()));
-            } else {
-                // Discard entire log and start fresh
-                state_.log.clear();
-                RaftLogEntry dummy;
-                dummy.index = request->last_included_index();
-                dummy.term = request->last_included_term();
-                state_.log.push_back(dummy);
-            }
-        }
 
         return Status::OK;
     }
 
     // --- KeyValueService RPC Implementations ---
+
     Status Get(ServerContext* context, const GetRequest* request, GetResponse* response) override {
         (void)context;  // Suppress unused parameter warning
         std::shared_lock<std::shared_mutex> lock(mutex_);
@@ -382,9 +308,20 @@ public:
         return Status::OK;
     }
 
+    /**
+     * Handle Put RPC - stores key-value pair.
+     *
+     * TODO: Implement consensus-based put:
+     * 1. If not leader, return leader_hint
+     * 2. Append entry to local log
+     * 3. Replicate to followers via AppendEntries
+     * 4. Once committed (majority replicated), apply to state machine
+     * 5. Return success to client
+     */
     Status Put(ServerContext* context, const PutRequest* request, PutResponse* response) override {
         (void)context;  // Suppress unused parameter warning
         std::unique_lock<std::shared_mutex> lock(mutex_);
+
         if (node_state_ != NodeState::LEADER) {
             response->set_success(false);
             response->set_error("Not the leader");
@@ -392,24 +329,22 @@ public:
             return Status::OK;
         }
 
-        RaftLogEntry entry;
-        entry.index = GetLastLogIndex() + 1;
-        entry.term = state_.current_term;
-        entry.command_type = "put";
-        std::string cmd = request->key() + ":" + request->value();
-        entry.command.assign(cmd.begin(), cmd.end());
-        state_.log.push_back(entry);
+        // TODO: Implement consensus-based put
+        response->set_success(false);
+        response->set_error("Not implemented");
 
-        uint64_t wait_idx = entry.index;
-        cv_apply_.wait(lock, [this, wait_idx] { return state_.last_applied >= wait_idx || node_state_ != NodeState::LEADER; });
-
-        response->set_success(state_.last_applied >= wait_idx);
         return Status::OK;
     }
 
+    /**
+     * Handle Delete RPC - removes key.
+     *
+     * TODO: Implement consensus-based delete (similar to put)
+     */
     Status Delete(ServerContext* context, const DeleteRequest* request, DeleteResponse* response) override {
         (void)context;  // Suppress unused parameter warning
         std::unique_lock<std::shared_mutex> lock(mutex_);
+
         if (node_state_ != NodeState::LEADER) {
             response->set_success(false);
             response->set_error("Not the leader");
@@ -417,17 +352,10 @@ public:
             return Status::OK;
         }
 
-        RaftLogEntry entry;
-        entry.index = GetLastLogIndex() + 1;
-        entry.term = state_.current_term;
-        entry.command_type = "delete";
-        entry.command.assign(request->key().begin(), request->key().end());
-        state_.log.push_back(entry);
+        // TODO: Implement consensus-based delete
+        response->set_success(false);
+        response->set_error("Not implemented");
 
-        uint64_t wait_idx = entry.index;
-        cv_apply_.wait(lock, [this, wait_idx] { return state_.last_applied >= wait_idx || node_state_ != NodeState::LEADER; });
-
-        response->set_success(state_.last_applied >= wait_idx);
         return Status::OK;
     }
 
