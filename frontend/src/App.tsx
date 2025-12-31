@@ -18,6 +18,7 @@ import NotFound from './pages/NotFound'
 import DistributedProblemList from './pages/DistributedProblemList'
 import DistributedProblemDetail from './pages/DistributedProblemDetail'
 import DistributedSubmissionResults from './pages/DistributedSubmissionResults'
+import DistributedSubmissionHistory from './pages/DistributedSubmissionHistory'
 
 /**
  * Protected route wrapper - redirects to login if not authenticated
@@ -118,6 +119,14 @@ function AppRoutes() {
           element={
             <ProtectedRoute>
               <DistributedSubmissionResults />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="distributed/history"
+          element={
+            <ProtectedRoute>
+              <DistributedSubmissionHistory />
             </ProtectedRoute>
           }
         />

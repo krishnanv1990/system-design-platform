@@ -20,6 +20,7 @@ import {
   Code,
   BookOpen,
   RotateCcw,
+  History,
 } from "lucide-react"
 import { distributedProblemsApi, distributedSubmissionsApi } from "@/api/client"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -289,15 +290,24 @@ export default function DistributedProblemDetail() {
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => navigate("/distributed")}
-            className="mb-2"
-          >
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to Problems
-          </Button>
+          <div className="flex items-center gap-2 mb-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => navigate("/distributed")}
+            >
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Back to Problems
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => navigate(`/distributed/history?problem_id=${id}`)}
+            >
+              <History className="mr-2 h-4 w-4" />
+              My Submissions
+            </Button>
+          </div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <Server className="h-6 w-6 text-primary" />
             {problem.title}

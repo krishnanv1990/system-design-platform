@@ -302,3 +302,296 @@ async def get_cleanup_candidates(
         "total_candidates": len(cleanup_candidates),
         "candidates": cleanup_candidates,
     }
+
+
+class DistributedSubmissionAsset(BaseModel):
+    """Asset info for a distributed submission."""
+    submission_id: int
+    problem_id: int
+    language: str
+    status: str
+    created_at: datetime
+    cluster_node_urls: List[str]
+    build_artifact_url: Optional[str] = None
+    console_links: dict = {}
+
+
+class UserGCPResources(BaseModel):
+    """Summary of a user's GCP resources."""
+    user_id: int
+    user_email: str
+    active_cloud_run_services: int
+    total_cluster_nodes: int
+    distributed_submissions: List[DistributedSubmissionAsset]
+
+
+def _get_distributed_submission_asset(submission: Submission, project_id: str, region: str) -> DistributedSubmissionAsset:
+    """Build asset info for a distributed submission."""
+    cluster_urls = submission.cluster_node_urls or []
+
+    console_links = {}
+    if cluster_urls:
+        # Extract service names from Cloud Run URLs
+        service_names = []
+        for url in cluster_urls:
+            # URL format: https://service-name-xxx.region.run.app
+            if "run.app" in url:
+                parts = url.replace("https://", "").split(".")
+                if parts:
+                    service_name = parts[0]
+                    # Remove the random suffix to get base name
+                    service_names.append(service_name)
+
+        console_links = {
+            "cloud_run_services": f"https://console.cloud.google.com/run?project={project_id}",
+            "cloud_build_history": f"https://console.cloud.google.com/cloud-build/builds?project={project_id}",
+            "artifact_registry": f"https://console.cloud.google.com/artifacts/docker/{project_id}/{region}/sdp-repo?project={project_id}",
+        }
+
+    return DistributedSubmissionAsset(
+        submission_id=submission.id,
+        problem_id=submission.problem_id,
+        language=submission.language or "unknown",
+        status=submission.status,
+        created_at=submission.created_at,
+        cluster_node_urls=cluster_urls,
+        build_artifact_url=submission.build_artifact_url,
+        console_links=console_links,
+    )
+
+
+@router.get("/user/gcp-resources", response_model=UserGCPResources)
+async def get_user_gcp_resources(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Get the current user's GCP resources.
+    Shows active Cloud Run services and cluster deployments.
+    """
+    project_id = settings.gcp_project_id
+    region = settings.gcp_region or "us-central1"
+
+    # Get all distributed submissions with active clusters
+    submissions = db.query(Submission).filter(
+        Submission.user_id == current_user.id,
+        Submission.submission_type == "distributed_consensus",
+    ).order_by(Submission.created_at.desc()).all()
+
+    distributed_assets = []
+    total_nodes = 0
+    active_services = 0
+
+    for submission in submissions:
+        asset = _get_distributed_submission_asset(submission, project_id, region)
+        distributed_assets.append(asset)
+
+        if submission.cluster_node_urls:
+            total_nodes += len(submission.cluster_node_urls)
+            active_services += len(submission.cluster_node_urls)
+
+    return UserGCPResources(
+        user_id=current_user.id,
+        user_email=current_user.email,
+        active_cloud_run_services=active_services,
+        total_cluster_nodes=total_nodes,
+        distributed_submissions=distributed_assets,
+    )
+
+
+class AdminGCPResources(BaseModel):
+    """Admin view of all GCP resources."""
+    total_users: int
+    total_active_services: int
+    total_cluster_nodes: int
+    resources_by_user: List[UserGCPResources]
+
+
+@router.get("/admin/gcp-resources", response_model=AdminGCPResources)
+async def get_admin_gcp_resources(
+    db: Session = Depends(get_db),
+    admin_user: User = Depends(require_admin),
+):
+    """
+    Admin endpoint: Get all GCP resources across all users.
+    Shows active Cloud Run services and cluster deployments.
+    """
+    project_id = settings.gcp_project_id
+    region = settings.gcp_region or "us-central1"
+
+    # Get all distributed submissions with active clusters
+    submissions = db.query(Submission).filter(
+        Submission.submission_type == "distributed_consensus",
+    ).order_by(Submission.created_at.desc()).all()
+
+    # Group by user
+    users_data: dict = {}
+    for submission in submissions:
+        user_id = submission.user_id
+        if user_id not in users_data:
+            user = submission.user
+            users_data[user_id] = {
+                "user_id": user_id,
+                "user_email": user.email if user else "unknown",
+                "distributed_submissions": [],
+                "active_services": 0,
+                "total_nodes": 0,
+            }
+
+        asset = _get_distributed_submission_asset(submission, project_id, region)
+        users_data[user_id]["distributed_submissions"].append(asset)
+
+        if submission.cluster_node_urls:
+            users_data[user_id]["total_nodes"] += len(submission.cluster_node_urls)
+            users_data[user_id]["active_services"] += len(submission.cluster_node_urls)
+
+    # Build response
+    resources_by_user = []
+    total_services = 0
+    total_nodes = 0
+
+    for data in users_data.values():
+        resources_by_user.append(UserGCPResources(
+            user_id=data["user_id"],
+            user_email=data["user_email"],
+            active_cloud_run_services=data["active_services"],
+            total_cluster_nodes=data["total_nodes"],
+            distributed_submissions=data["distributed_submissions"],
+        ))
+        total_services += data["active_services"]
+        total_nodes += data["total_nodes"]
+
+    return AdminGCPResources(
+        total_users=len(users_data),
+        total_active_services=total_services,
+        total_cluster_nodes=total_nodes,
+        resources_by_user=resources_by_user,
+    )
+
+
+class StorageInfo(BaseModel):
+    """Storage information for container images."""
+    total_size_bytes: int
+    total_size_formatted: str
+    images: List[dict]
+    artifact_registry_url: str
+
+
+def _format_bytes(size_bytes: int) -> str:
+    """Format bytes to human readable string."""
+    if size_bytes < 1024:
+        return f"{size_bytes} B"
+    elif size_bytes < 1024 * 1024:
+        return f"{size_bytes / 1024:.2f} KB"
+    elif size_bytes < 1024 * 1024 * 1024:
+        return f"{size_bytes / (1024 * 1024):.2f} MB"
+    else:
+        return f"{size_bytes / (1024 * 1024 * 1024):.2f} GB"
+
+
+@router.get("/storage", response_model=StorageInfo)
+async def get_storage_info(
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Get storage footprint for container images in Artifact Registry.
+    Shows total size and individual image sizes.
+    """
+    from google.cloud import artifactregistry_v1
+
+    project_id = settings.gcp_project_id
+    region = settings.gcp_region or "us-central1"
+
+    images = []
+    total_size = 0
+
+    try:
+        client = artifactregistry_v1.ArtifactRegistryClient()
+
+        # List all docker images in the repository
+        parent = f"projects/{project_id}/locations/{region}/repositories/sdp-repo"
+
+        # List docker images
+        request = artifactregistry_v1.ListDockerImagesRequest(parent=parent)
+
+        for image in client.list_docker_images(request=request):
+            size = image.image_size_bytes or 0
+            total_size += size
+
+            # Extract image name from URI
+            # Format: us-central1-docker.pkg.dev/project/repo/image@sha256:...
+            name = image.uri.split("/")[-1].split("@")[0] if "/" in image.uri else image.uri
+
+            images.append({
+                "name": name,
+                "uri": image.uri,
+                "size_bytes": size,
+                "size_formatted": _format_bytes(size),
+                "upload_time": image.upload_time.isoformat() if image.upload_time else None,
+                "media_type": image.media_type,
+            })
+
+    except Exception as e:
+        # Return empty if Artifact Registry is not accessible
+        print(f"Error fetching storage info: {e}")
+
+    artifact_registry_url = f"https://console.cloud.google.com/artifacts/docker/{project_id}/{region}/sdp-repo?project={project_id}"
+
+    return StorageInfo(
+        total_size_bytes=total_size,
+        total_size_formatted=_format_bytes(total_size),
+        images=images,
+        artifact_registry_url=artifact_registry_url,
+    )
+
+
+@router.get("/admin/storage", response_model=StorageInfo)
+async def get_admin_storage_info(
+    admin_user: User = Depends(require_admin),
+):
+    """
+    Admin endpoint: Get storage footprint for all container images.
+    """
+    from google.cloud import artifactregistry_v1
+
+    project_id = settings.gcp_project_id
+    region = settings.gcp_region or "us-central1"
+
+    images = []
+    total_size = 0
+
+    try:
+        client = artifactregistry_v1.ArtifactRegistryClient()
+
+        # List all docker images in the repository
+        parent = f"projects/{project_id}/locations/{region}/repositories/sdp-repo"
+
+        request = artifactregistry_v1.ListDockerImagesRequest(parent=parent)
+
+        for image in client.list_docker_images(request=request):
+            size = image.image_size_bytes or 0
+            total_size += size
+
+            name = image.uri.split("/")[-1].split("@")[0] if "/" in image.uri else image.uri
+
+            images.append({
+                "name": name,
+                "uri": image.uri,
+                "size_bytes": size,
+                "size_formatted": _format_bytes(size),
+                "upload_time": image.upload_time.isoformat() if image.upload_time else None,
+                "media_type": image.media_type,
+                "tags": list(image.tags) if image.tags else [],
+            })
+
+    except Exception as e:
+        print(f"Error fetching admin storage info: {e}")
+
+    artifact_registry_url = f"https://console.cloud.google.com/artifacts/docker/{project_id}/{region}/sdp-repo?project={project_id}"
+
+    return StorageInfo(
+        total_size_bytes=total_size,
+        total_size_formatted=_format_bytes(total_size),
+        images=images,
+        artifact_registry_url=artifact_registry_url,
+    )

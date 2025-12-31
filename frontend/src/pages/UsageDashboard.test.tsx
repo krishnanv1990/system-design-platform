@@ -2,13 +2,17 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { BrowserRouter } from 'react-router-dom'
 import UsageDashboard from './UsageDashboard'
-import { userApi } from '@/api/client'
+import { userApi, assetsApi } from '@/api/client'
 
 // Mock the API
 vi.mock('@/api/client', () => ({
   userApi: {
     getUsage: vi.fn(),
     getActivity: vi.fn(),
+  },
+  assetsApi: {
+    getUserGCPResources: vi.fn(),
+    getStorage: vi.fn(),
   },
 }))
 
@@ -52,14 +56,34 @@ const mockActivityData = {
   ],
 }
 
+const mockGCPResources = {
+  user_id: 1,
+  user_email: 'test@example.com',
+  active_cloud_run_services: 0,
+  total_cluster_nodes: 0,
+  distributed_submissions: [],
+}
+
+const mockStorage = {
+  total_size_bytes: 0,
+  total_size_formatted: '0 B',
+  images: [],
+  artifact_registry_url: 'https://console.cloud.google.com/artifacts',
+}
+
 describe('UsageDashboard', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    // Default mocks for assets API (always resolve with empty data)
+    vi.mocked(assetsApi.getUserGCPResources).mockResolvedValue(mockGCPResources)
+    vi.mocked(assetsApi.getStorage).mockResolvedValue(mockStorage)
   })
 
   it('renders loading state initially', () => {
     vi.mocked(userApi.getUsage).mockReturnValue(new Promise(() => {}))
     vi.mocked(userApi.getActivity).mockReturnValue(new Promise(() => {}))
+    vi.mocked(assetsApi.getUserGCPResources).mockReturnValue(new Promise(() => {}))
+    vi.mocked(assetsApi.getStorage).mockReturnValue(new Promise(() => {}))
 
     render(
       <BrowserRouter>

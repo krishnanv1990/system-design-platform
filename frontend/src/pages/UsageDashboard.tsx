@@ -26,7 +26,7 @@ import {
   Server,
   Rocket,
 } from "lucide-react"
-import { userApi, UsageCostResponse, AuditLogResponse } from "@/api/client"
+import { userApi, assetsApi, UsageCostResponse, AuditLogResponse, UserGCPResources, StorageInfo } from "@/api/client"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -107,6 +107,8 @@ function formatAction(action: string): string {
 export default function UsageDashboard() {
   const [usage, setUsage] = useState<UsageCostResponse | null>(null)
   const [activity, setActivity] = useState<AuditLogResponse | null>(null)
+  const [gcpResources, setGcpResources] = useState<UserGCPResources | null>(null)
+  const [storage, setStorage] = useState<StorageInfo | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
@@ -114,12 +116,16 @@ export default function UsageDashboard() {
 
   const loadData = async () => {
     try {
-      const [usageData, activityData] = await Promise.all([
+      const [usageData, activityData, gcpData, storageData] = await Promise.all([
         userApi.getUsage(days),
         userApi.getActivity(Math.min(days, 90)),
+        assetsApi.getUserGCPResources().catch(() => null),
+        assetsApi.getStorage().catch(() => null),
       ])
       setUsage(usageData)
       setActivity(activityData)
+      setGcpResources(gcpData)
+      setStorage(storageData)
       setError(null)
     } catch (err: any) {
       setError(err.response?.data?.detail || "Failed to load usage data")
@@ -379,11 +385,115 @@ export default function UsageDashboard() {
         </TabsContent>
 
         <TabsContent value="deployments" className="space-y-4">
+          {/* Active Cloud Run Services */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Server className="h-5 w-5" />
+                Active Cloud Run Services
+              </CardTitle>
+              <CardDescription>
+                {gcpResources ? (
+                  `${gcpResources.active_cloud_run_services} service(s) running across ${gcpResources.total_cluster_nodes} nodes`
+                ) : (
+                  "Loading..."
+                )}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {!gcpResources || gcpResources.distributed_submissions.length === 0 ? (
+                <p className="text-muted-foreground text-center py-8">
+                  No active Cloud Run services. Submit a distributed consensus problem to deploy.
+                </p>
+              ) : (
+                <div className="space-y-4">
+                  {gcpResources.distributed_submissions.map((submission) => {
+                    const hasActiveNodes = submission.cluster_node_urls.length > 0
+                    const statusColor = hasActiveNodes
+                      ? "text-green-500"
+                      : submission.status.includes("fail")
+                      ? "text-red-500"
+                      : "text-muted-foreground"
+
+                    return (
+                      <div
+                        key={submission.submission_id}
+                        className="p-4 border rounded-lg space-y-3"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className={`p-2 rounded-lg ${
+                              hasActiveNodes ? "bg-green-500/10" : "bg-muted"
+                            }`}>
+                              <Server className={`h-5 w-5 ${statusColor}`} />
+                            </div>
+                            <div>
+                              <p className="font-medium">
+                                Submission #{submission.submission_id}
+                              </p>
+                              <p className="text-sm text-muted-foreground">
+                                {submission.language.toUpperCase()} · Problem #{submission.problem_id}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <Badge variant={hasActiveNodes ? "default" : "secondary"}>
+                              {submission.status}
+                            </Badge>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {formatDate(submission.created_at)}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Cloud Run nodes */}
+                        {hasActiveNodes && (
+                          <div className="pl-11 space-y-2">
+                            <p className="text-sm font-medium text-muted-foreground">
+                              Cloud Run Services ({submission.cluster_node_urls.length} nodes):
+                            </p>
+                            <div className="space-y-1">
+                              {submission.cluster_node_urls.map((url, idx) => (
+                                <div key={idx} className="flex items-center gap-2 text-sm">
+                                  <Cloud className="h-4 w-4 text-blue-500" />
+                                  <code className="text-xs bg-muted px-2 py-1 rounded">
+                                    {url}
+                                  </code>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Console links */}
+                        {Object.keys(submission.console_links).length > 0 && (
+                          <div className="pl-11 flex flex-wrap gap-2">
+                            {Object.entries(submission.console_links).map(([name, url]) => (
+                              <a
+                                key={name}
+                                href={url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-xs text-blue-500 hover:underline"
+                              >
+                                {name.replace(/_/g, " ")}
+                              </a>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           {/* GCP Cost Breakdown */}
           <Card>
             <CardHeader>
-              <CardTitle>GCP Resource Usage</CardTitle>
-              <CardDescription>Cloud Run deployments and infrastructure costs</CardDescription>
+              <CardTitle>GCP Cost Summary</CardTitle>
+              <CardDescription>Infrastructure costs by category</CardDescription>
             </CardHeader>
             <CardContent>
               {(() => {
@@ -393,33 +503,31 @@ export default function UsageDashboard() {
                 if (gcpCategories.length === 0) {
                   return (
                     <p className="text-muted-foreground text-center py-8">
-                      No GCP usage data for this period. Deploy a submission to see costs.
+                      No GCP cost data for this period
                     </p>
                   )
                 }
                 return (
-                  <div className="space-y-4">
+                  <div className="space-y-3">
                     {gcpCategories.map((category) => {
                       const Icon = categoryIcons[category.category] || Cloud
                       return (
                         <div
                           key={category.category}
-                          className="flex items-center justify-between p-4 bg-muted/50 rounded-lg"
+                          className="flex items-center justify-between p-3 bg-muted/50 rounded-lg"
                         >
                           <div className="flex items-center gap-3">
-                            <div className="p-2 bg-blue-500/10 rounded-lg">
-                              <Icon className="h-5 w-5 text-blue-500" />
-                            </div>
+                            <Icon className="h-5 w-5 text-blue-500" />
                             <div>
-                              <p className="font-medium">
+                              <p className="font-medium text-sm">
                                 {formatCategory(category.category)}
                               </p>
-                              <p className="text-sm text-muted-foreground">
+                              <p className="text-xs text-muted-foreground">
                                 {formatNumber(category.total_quantity)} {category.unit}
                               </p>
                             </div>
                           </div>
-                          <Badge variant="secondary" className="text-base">
+                          <Badge variant="secondary">
                             {formatCost(category.total_cost_usd)}
                           </Badge>
                         </div>
@@ -431,69 +539,60 @@ export default function UsageDashboard() {
             </CardContent>
           </Card>
 
-          {/* Recent Deployments */}
+          {/* Container Image Storage */}
           <Card>
             <CardHeader>
-              <CardTitle>Recent Deployments</CardTitle>
-              <CardDescription>Your deployed services and test runs</CardDescription>
+              <CardTitle className="flex items-center gap-2">
+                <Database className="h-5 w-5" />
+                Container Image Storage
+              </CardTitle>
+              <CardDescription>
+                {storage ? (
+                  <>Total storage: {storage.total_size_formatted}</>
+                ) : (
+                  "Loading..."
+                )}
+              </CardDescription>
             </CardHeader>
             <CardContent>
-              {(() => {
-                const deploymentItems = (activity?.items || []).filter(
-                  (item) => item.action.includes("deploy") || item.action === "run_tests"
-                )
-                if (deploymentItems.length === 0) {
-                  return (
-                    <p className="text-muted-foreground text-center py-8">
-                      No deployments in this period
-                    </p>
-                  )
-                }
-                return (
-                  <div className="space-y-3">
-                    {deploymentItems.slice(0, 10).map((item) => {
-                      const Icon = actionIcons[item.action] || Cloud
-                      const isSuccess = item.action === "deploy_complete"
-                      const isFailed = item.action === "deploy_failed"
-                      const details = (item.details || {}) as Record<string, unknown>
-                      return (
-                        <div
-                          key={item.id}
-                          className="flex items-center justify-between p-3 border rounded-lg"
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className={`p-2 rounded-lg ${
-                              isSuccess ? "bg-green-500/10" :
-                              isFailed ? "bg-red-500/10" : "bg-blue-500/10"
-                            }`}>
-                              <Icon className={`h-5 w-5 ${
-                                isSuccess ? "text-green-500" :
-                                isFailed ? "text-red-500" : "text-blue-500"
-                              }`} />
-                            </div>
-                            <div>
-                              <p className="text-sm font-medium">
-                                {formatAction(item.action)}
-                              </p>
-                              <p className="text-xs text-muted-foreground">
-                                {(details.service_name as string) || (details.endpoint_url as string) || `Submission #${item.resource_id}`}
-                              </p>
-                            </div>
-                          </div>
-                          <div className="text-right">
-                            <Badge variant={isSuccess ? "default" : isFailed ? "destructive" : "secondary"}>
-                              {isSuccess ? "Success" : isFailed ? "Failed" : "Running"}
-                            </Badge>
-                            <p className="text-xs text-muted-foreground mt-1">
-                              {formatDate(item.created_at)}
-                            </p>
-                          </div>
+              {!storage || storage.images.length === 0 ? (
+                <p className="text-muted-foreground text-center py-8">
+                  No container images in storage
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {storage.images.slice(0, 10).map((image, idx) => (
+                    <div
+                      key={idx}
+                      className="flex items-center justify-between p-3 bg-muted/50 rounded-lg"
+                    >
+                      <div className="flex items-center gap-3">
+                        <Database className="h-4 w-4 text-purple-500" />
+                        <div>
+                          <p className="font-medium text-sm">{image.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {image.upload_time ? formatDate(image.upload_time) : "Unknown date"}
+                          </p>
                         </div>
-                      )
-                    })}
-                  </div>
-                )
-              })()}
+                      </div>
+                      <Badge variant="secondary">{image.size_formatted}</Badge>
+                    </div>
+                  ))}
+                  {storage.images.length > 10 && (
+                    <p className="text-xs text-muted-foreground text-center">
+                      +{storage.images.length - 10} more images
+                    </p>
+                  )}
+                  <a
+                    href={storage.artifact_registry_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm text-blue-500 hover:underline block text-center"
+                  >
+                    View in Artifact Registry
+                  </a>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

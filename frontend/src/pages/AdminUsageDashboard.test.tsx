@@ -2,13 +2,17 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { BrowserRouter } from 'react-router-dom'
 import AdminUsageDashboard from './AdminUsageDashboard'
-import { adminApi } from '@/api/client'
+import { adminApi, assetsApi } from '@/api/client'
 
 // Mock the API
 vi.mock('@/api/client', () => ({
   adminApi: {
     getUsage: vi.fn(),
     getActivity: vi.fn(),
+  },
+  assetsApi: {
+    getAdminGCPResources: vi.fn(),
+    getAdminStorage: vi.fn(),
   },
 }))
 
@@ -71,14 +75,33 @@ const mockAdminActivityData = {
   ],
 }
 
+const mockAdminGCPResources = {
+  total_users: 0,
+  total_active_services: 0,
+  total_cluster_nodes: 0,
+  resources_by_user: [],
+}
+
+const mockStorage = {
+  total_size_bytes: 0,
+  total_size_formatted: '0 B',
+  images: [],
+  artifact_registry_url: 'https://console.cloud.google.com/artifacts',
+}
+
 describe('AdminUsageDashboard', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    // Default mocks for assets API
+    vi.mocked(assetsApi.getAdminGCPResources).mockResolvedValue(mockAdminGCPResources)
+    vi.mocked(assetsApi.getAdminStorage).mockResolvedValue(mockStorage)
   })
 
   it('renders loading state initially', () => {
     vi.mocked(adminApi.getUsage).mockReturnValue(new Promise(() => {}))
     vi.mocked(adminApi.getActivity).mockReturnValue(new Promise(() => {}))
+    vi.mocked(assetsApi.getAdminGCPResources).mockReturnValue(new Promise(() => {}))
+    vi.mocked(assetsApi.getAdminStorage).mockReturnValue(new Promise(() => {}))
 
     render(
       <BrowserRouter>

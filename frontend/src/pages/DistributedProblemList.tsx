@@ -7,7 +7,7 @@
 
 import { useState, useEffect } from "react"
 import { Link } from "react-router-dom"
-import { Search, AlertCircle, RefreshCw, Server, Code } from "lucide-react"
+import { Search, AlertCircle, RefreshCw, Server, Code, History } from "lucide-react"
 import { distributedProblemsApi } from "@/api/client"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -89,14 +89,22 @@ export default function DistributedProblemList() {
 
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <Server className="h-6 w-6 text-primary" />
-          Distributed Consensus Problems
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Implement distributed consensus algorithms like Raft and Paxos in your preferred language
-        </p>
+      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold flex items-center gap-2">
+            <Server className="h-6 w-6 text-primary" />
+            Distributed Consensus Problems
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Implement distributed consensus algorithms like Raft and Paxos in your preferred language
+          </p>
+        </div>
+        <Link to="/distributed/history">
+          <Button variant="outline" size="sm">
+            <History className="mr-2 h-4 w-4" />
+            View Submissions
+          </Button>
+        </Link>
       </div>
 
       {/* Search */}

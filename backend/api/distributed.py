@@ -316,6 +316,9 @@ async def run_distributed_build(submission_id: int, language: str, source_code: 
                             submission.build_logs += f"\n{'=' * 50}\nTEST RESULTS\n{'=' * 50}\n"
                             submission.build_logs += f"Passed: {passed}, Failed: {failed}, Errors: {errors}\n\n"
 
+                            # Import TestResult model
+                            from backend.models.test_result import TestResult as TestResultModel
+
                             for result in test_results:
                                 status_icon = "✓" if result.status.value == "passed" else "✗" if result.status.value == "failed" else "!"
                                 submission.build_logs += f"{status_icon} [{result.test_type.value}] {result.test_name}: {result.status.value} ({result.duration_ms}ms)\n"
@@ -324,18 +327,17 @@ async def run_distributed_build(submission_id: int, language: str, source_code: 
                                 if result.details:
                                     submission.build_logs += f"   Details: {result.details}\n"
 
-                            # Store test results in submission
-                            submission.test_results = [
-                                {
-                                    "test_name": r.test_name,
-                                    "test_type": r.test_type.value,
-                                    "status": r.status.value,
-                                    "duration_ms": r.duration_ms,
-                                    "details": r.details,
-                                    "error_message": r.error_message,
-                                }
-                                for r in test_results
-                            ]
+                                # Create TestResult database record
+                                test_result_record = TestResultModel(
+                                    submission_id=submission_id,
+                                    test_type=result.test_type.value,
+                                    test_name=result.test_name,
+                                    status=result.status.value,
+                                    duration_ms=result.duration_ms,
+                                    details=result.details if result.details else {},
+                                    chaos_scenario=getattr(result, 'chaos_scenario', None),
+                                )
+                                db.add(test_result_record)
 
                             # Determine final status based on test results
                             if failed == 0 and errors == 0:

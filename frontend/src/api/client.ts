@@ -285,6 +285,41 @@ export const testsApi = {
 /**
  * GCP Assets API
  */
+/**
+ * Distributed submission GCP asset
+ */
+export interface DistributedSubmissionAsset {
+  submission_id: number
+  problem_id: number
+  language: string
+  status: string
+  created_at: string
+  cluster_node_urls: string[]
+  build_artifact_url: string | null
+  console_links: Record<string, string>
+}
+
+/**
+ * User's GCP resources
+ */
+export interface UserGCPResources {
+  user_id: number
+  user_email: string
+  active_cloud_run_services: number
+  total_cluster_nodes: number
+  distributed_submissions: DistributedSubmissionAsset[]
+}
+
+/**
+ * Admin view of all GCP resources
+ */
+export interface AdminGCPResources {
+  total_users: number
+  total_active_services: number
+  total_cluster_nodes: number
+  resources_by_user: UserGCPResources[]
+}
+
 export const assetsApi = {
   getSubmissionAssets: async (submissionId: number): Promise<any> => {
     const response = await api.get(`/assets/submission/${submissionId}`)
@@ -307,6 +342,58 @@ export const assetsApi = {
     })
     return response.data
   },
+
+  /**
+   * Get current user's GCP resources (Cloud Run services, clusters)
+   */
+  getUserGCPResources: async (): Promise<UserGCPResources> => {
+    const response = await api.get('/assets/user/gcp-resources')
+    return response.data
+  },
+
+  /**
+   * Get all GCP resources across all users (admin only)
+   */
+  getAdminGCPResources: async (): Promise<AdminGCPResources> => {
+    const response = await api.get('/assets/admin/gcp-resources')
+    return response.data
+  },
+
+  /**
+   * Get storage footprint for container images
+   */
+  getStorage: async (): Promise<StorageInfo> => {
+    const response = await api.get('/assets/storage')
+    return response.data
+  },
+
+  /**
+   * Get storage footprint for all container images (admin only)
+   */
+  getAdminStorage: async (): Promise<StorageInfo> => {
+    const response = await api.get('/assets/admin/storage')
+    return response.data
+  },
+}
+
+/**
+ * Container image storage info
+ */
+export interface ContainerImage {
+  name: string
+  uri: string
+  size_bytes: number
+  size_formatted: string
+  upload_time: string | null
+  media_type: string
+  tags?: string[]
+}
+
+export interface StorageInfo {
+  total_size_bytes: number
+  total_size_formatted: string
+  images: ContainerImage[]
+  artifact_registry_url: string
 }
 
 /**

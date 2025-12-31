@@ -20,8 +20,10 @@ import {
   AlertTriangle,
   TrendingUp,
   BarChart3,
+  Server,
+  Cloud,
 } from "lucide-react"
-import { adminApi, AdminUsageResponse, AdminActivityResponse } from "@/api/client"
+import { adminApi, assetsApi, AdminUsageResponse, AdminActivityResponse, AdminGCPResources, StorageInfo } from "@/api/client"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -81,6 +83,8 @@ function formatAction(action: string): string {
 export default function AdminUsageDashboard() {
   const [usage, setUsage] = useState<AdminUsageResponse | null>(null)
   const [activity, setActivity] = useState<AdminActivityResponse | null>(null)
+  const [gcpResources, setGcpResources] = useState<AdminGCPResources | null>(null)
+  const [storage, setStorage] = useState<StorageInfo | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
@@ -88,12 +92,16 @@ export default function AdminUsageDashboard() {
 
   const loadData = async () => {
     try {
-      const [usageData, activityData] = await Promise.all([
+      const [usageData, activityData, gcpData, storageData] = await Promise.all([
         adminApi.getUsage(days),
         adminApi.getActivity(Math.min(days, 90)),
+        assetsApi.getAdminGCPResources().catch(() => null),
+        assetsApi.getAdminStorage().catch(() => null),
       ])
       setUsage(usageData)
       setActivity(activityData)
+      setGcpResources(gcpData)
+      setStorage(storageData)
       setError(null)
     } catch (err: any) {
       if (err.response?.status === 403) {
@@ -240,6 +248,10 @@ export default function AdminUsageDashboard() {
             <TrendingUp className="h-4 w-4 mr-2" />
             Overview
           </TabsTrigger>
+          <TabsTrigger value="infrastructure">
+            <Server className="h-4 w-4 mr-2" />
+            Infrastructure
+          </TabsTrigger>
           <TabsTrigger value="users">
             <Users className="h-4 w-4 mr-2" />
             By User
@@ -328,6 +340,178 @@ export default function AdminUsageDashboard() {
                       </div>
                     )
                   })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="infrastructure" className="space-y-4">
+          {/* GCP Infrastructure Summary */}
+          <div className="grid gap-4 md:grid-cols-3">
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-2">
+                  <Users className="h-4 w-4 text-blue-600" />
+                  <p className="text-sm text-muted-foreground">Users with Deployments</p>
+                </div>
+                <p className="text-2xl font-bold mt-1 text-blue-600">
+                  {gcpResources?.total_users || 0}
+                </p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-2">
+                  <Server className="h-4 w-4 text-green-600" />
+                  <p className="text-sm text-muted-foreground">Active Services</p>
+                </div>
+                <p className="text-2xl font-bold mt-1 text-green-600">
+                  {gcpResources?.total_active_services || 0}
+                </p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-2">
+                  <Cloud className="h-4 w-4 text-purple-600" />
+                  <p className="text-sm text-muted-foreground">Total Cluster Nodes</p>
+                </div>
+                <p className="text-2xl font-bold mt-1 text-purple-600">
+                  {gcpResources?.total_cluster_nodes || 0}
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Resources by User */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Cloud Run Services by User</CardTitle>
+              <CardDescription>Active distributed consensus deployments</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {!gcpResources || gcpResources.resources_by_user.length === 0 ? (
+                <p className="text-muted-foreground text-center py-8">
+                  No active GCP resources
+                </p>
+              ) : (
+                <div className="space-y-6">
+                  {gcpResources.resources_by_user.map((userRes) => (
+                    <div key={userRes.user_id} className="border rounded-lg p-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-blue-500/10 rounded-lg">
+                            <Users className="h-5 w-5 text-blue-500" />
+                          </div>
+                          <div>
+                            <p className="font-medium">{userRes.user_email}</p>
+                            <p className="text-sm text-muted-foreground">
+                              {userRes.active_cloud_run_services} service(s), {userRes.total_cluster_nodes} node(s)
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* User's submissions */}
+                      <div className="pl-11 space-y-2">
+                        {userRes.distributed_submissions.map((sub) => {
+                          const hasNodes = sub.cluster_node_urls.length > 0
+                          return (
+                            <div
+                              key={sub.submission_id}
+                              className="p-3 bg-muted/50 rounded-lg"
+                            >
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <Server className={`h-4 w-4 ${hasNodes ? "text-green-500" : "text-muted-foreground"}`} />
+                                  <span className="text-sm font-medium">
+                                    Submission #{sub.submission_id}
+                                  </span>
+                                  <Badge variant="outline" className="text-xs">
+                                    {sub.language}
+                                  </Badge>
+                                </div>
+                                <Badge variant={hasNodes ? "default" : "secondary"}>
+                                  {sub.status}
+                                </Badge>
+                              </div>
+                              {hasNodes && (
+                                <div className="mt-2 space-y-1">
+                                  {sub.cluster_node_urls.map((url, idx) => (
+                                    <div key={idx} className="flex items-center gap-2 text-xs text-muted-foreground">
+                                      <Cloud className="h-3 w-3" />
+                                      <code className="bg-background px-1 rounded">{url}</code>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Container Image Storage */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Database className="h-5 w-5" />
+                Container Image Storage
+              </CardTitle>
+              <CardDescription>
+                {storage ? (
+                  <>Total storage: {storage.total_size_formatted} ({storage.images.length} images)</>
+                ) : (
+                  "Loading..."
+                )}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {!storage || storage.images.length === 0 ? (
+                <p className="text-muted-foreground text-center py-8">
+                  No container images in storage
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {storage.images.slice(0, 20).map((image, idx) => (
+                    <div
+                      key={idx}
+                      className="flex items-center justify-between p-3 bg-muted/50 rounded-lg"
+                    >
+                      <div className="flex items-center gap-3">
+                        <Database className="h-4 w-4 text-purple-500" />
+                        <div>
+                          <p className="font-medium text-sm">{image.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {image.upload_time ? formatDate(image.upload_time) : "Unknown date"}
+                            {image.tags && image.tags.length > 0 && (
+                              <span> · Tags: {image.tags.join(", ")}</span>
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                      <Badge variant="secondary">{image.size_formatted}</Badge>
+                    </div>
+                  ))}
+                  {storage.images.length > 20 && (
+                    <p className="text-xs text-muted-foreground text-center">
+                      +{storage.images.length - 20} more images
+                    </p>
+                  )}
+                  <a
+                    href={storage.artifact_registry_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm text-blue-500 hover:underline block text-center"
+                  >
+                    View in Artifact Registry
+                  </a>
                 </div>
               )}
             </CardContent>
