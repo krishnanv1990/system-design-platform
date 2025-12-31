@@ -1,0 +1,357 @@
+// Chandy-Lamport Snapshot Algorithm gRPC Service Definition
+// Based on "Distributed Snapshots: Determining Global States of Distributed Systems"
+// by K. Mani Chandy and Leslie Lamport (1985)
+//
+// This proto defines the RPC interface for implementing the Chandy-Lamport
+// algorithm for capturing consistent global snapshots in distributed systems.
+
+syntax = "proto3";
+
+package chandy_lamport;
+
+option go_package = "github.com/sdp/snapshot";
+option java_package = "com.sdp.snapshot";
+option java_multiple_files = true;
+
+// ============================================================================
+// Snapshot Service (core Chandy-Lamport algorithm)
+// ============================================================================
+
+// SnapshotService defines the RPCs for distributed snapshot algorithm
+service SnapshotService {
+    // InitiateSnapshot starts a new snapshot from this process
+    // This is called on the initiator process
+    rpc InitiateSnapshot(InitiateSnapshotRequest) returns (InitiateSnapshotResponse);
+
+    // ReceiveMarker handles incoming marker messages
+    // When a process receives a marker on a channel for the first time,
+    // it records its local state and starts recording messages on other channels
+    rpc ReceiveMarker(MarkerMessage) returns (MarkerResponse);
+
+    // SendMessage sends an application message between processes
+    // Messages in transit must be captured for the snapshot
+    rpc SendMessage(ApplicationMessage) returns (SendMessageResponse);
+
+    // GetSnapshot retrieves the recorded snapshot for a given snapshot ID
+    rpc GetSnapshot(GetSnapshotRequest) returns (GetSnapshotResponse);
+
+    // GetGlobalSnapshot collects and returns the complete global snapshot
+    // Should be called on the initiator after all processes have completed recording
+    rpc GetGlobalSnapshot(GetGlobalSnapshotRequest) returns (GetGlobalSnapshotResponse);
+}
+
+// ============================================================================
+// Application Service (simulates a bank transfer system for testing)
+// ============================================================================
+
+// BankService simulates a distributed banking system for testing snapshots
+service BankService {
+    // GetBalance returns the current balance of an account
+    rpc GetBalance(GetBalanceRequest) returns (GetBalanceResponse);
+
+    // Transfer moves money between accounts (may cross processes)
+    rpc Transfer(TransferRequest) returns (TransferResponse);
+
+    // Deposit adds money to an account
+    rpc Deposit(DepositRequest) returns (DepositResponse);
+
+    // Withdraw removes money from an account
+    rpc Withdraw(WithdrawRequest) returns (WithdrawResponse);
+}
+
+// ============================================================================
+// Client-facing Key-Value Store Service (for testing)
+// ============================================================================
+
+// KeyValueService provides a key-value store interface
+service KeyValueService {
+    // Get retrieves a value
+    rpc Get(GetRequest) returns (GetResponse);
+
+    // Put stores a value
+    rpc Put(PutRequest) returns (PutResponse);
+
+    // Delete removes a key
+    rpc Delete(DeleteRequest) returns (DeleteResponse);
+
+    // GetLeader returns the snapshot initiator information
+    rpc GetLeader(GetLeaderRequest) returns (GetLeaderResponse);
+
+    // GetClusterStatus returns cluster health
+    rpc GetClusterStatus(GetClusterStatusRequest) returns (GetClusterStatusResponse);
+}
+
+// ============================================================================
+// Snapshot Message Types
+// ============================================================================
+
+// ProcessState represents the local state of a process at snapshot time
+message ProcessState {
+    string process_id = 1;
+
+    // Local state (serialized application state)
+    bytes state_data = 2;
+
+    // Logical timestamp when state was recorded
+    uint64 logical_clock = 3;
+
+    // For banking simulation: account balances
+    map<string, int64> account_balances = 4;
+
+    // Key-value state
+    map<string, string> kv_state = 5;
+}
+
+// ChannelState represents messages in transit on a channel
+message ChannelState {
+    string from_process = 1;
+    string to_process = 2;
+
+    // Messages recorded on this channel (in order)
+    repeated ApplicationMessage messages = 3;
+}
+
+// MarkerMessage is sent to initiate/propagate snapshot recording
+message MarkerMessage {
+    // Unique identifier for this snapshot
+    string snapshot_id = 1;
+
+    // Process that sent this marker
+    string sender_id = 2;
+
+    // Logical timestamp of the marker
+    uint64 logical_clock = 3;
+
+    // The initiator of this snapshot
+    string initiator_id = 4;
+}
+
+// MarkerResponse acknowledges receipt of a marker
+message MarkerResponse {
+    bool success = 1;
+
+    // True if this was the first marker received for this snapshot
+    bool first_marker = 2;
+
+    // Process ID that received the marker
+    string process_id = 3;
+}
+
+// ApplicationMessage represents a message in the distributed system
+message ApplicationMessage {
+    // Unique message ID
+    string message_id = 1;
+
+    // Sender and receiver
+    string from_process = 2;
+    string to_process = 3;
+
+    // Message content
+    bytes payload = 4;
+
+    // Message type (for routing/handling)
+    string message_type = 5;
+
+    // Logical clock of sender when message was sent
+    uint64 sender_clock = 6;
+}
+
+message SendMessageResponse {
+    bool success = 1;
+    string error = 2;
+}
+
+// ============================================================================
+// Snapshot Request/Response Types
+// ============================================================================
+
+message InitiateSnapshotRequest {
+    // Optional custom snapshot ID (generated if not provided)
+    string snapshot_id = 1;
+}
+
+message InitiateSnapshotResponse {
+    bool success = 1;
+    string snapshot_id = 2;
+    string error = 3;
+
+    // Logical clock when snapshot was initiated
+    uint64 initiated_at = 4;
+}
+
+message GetSnapshotRequest {
+    string snapshot_id = 1;
+}
+
+message GetSnapshotResponse {
+    bool found = 1;
+    string snapshot_id = 2;
+
+    // Local process state at snapshot time
+    ProcessState local_state = 3;
+
+    // Channel states (messages recorded on incoming channels)
+    repeated ChannelState channel_states = 4;
+
+    // Status
+    bool recording_complete = 5;
+    string error = 6;
+}
+
+message GetGlobalSnapshotRequest {
+    string snapshot_id = 1;
+}
+
+message GetGlobalSnapshotResponse {
+    bool success = 1;
+    string snapshot_id = 2;
+
+    // All process states
+    repeated ProcessState process_states = 3;
+
+    // All channel states
+    repeated ChannelState channel_states = 4;
+
+    // Snapshot metadata
+    uint64 initiated_at = 5;
+    uint64 completed_at = 6;
+    string initiator_id = 7;
+
+    // True if all processes have completed recording
+    bool is_complete = 8;
+    string error = 9;
+
+    // For verification: total value across all processes
+    int64 total_value = 10;
+}
+
+// ============================================================================
+// Banking Simulation Message Types
+// ============================================================================
+
+message GetBalanceRequest {
+    string account_id = 1;
+}
+
+message GetBalanceResponse {
+    int64 balance = 1;
+    bool found = 2;
+    string error = 3;
+}
+
+message TransferRequest {
+    string from_account = 1;
+    string to_account = 2;
+    int64 amount = 3;
+
+    // If to_account is on another process
+    string to_process = 4;
+}
+
+message TransferResponse {
+    bool success = 1;
+    string error = 2;
+
+    // New balances after transfer
+    int64 from_balance = 3;
+    int64 to_balance = 4;
+}
+
+message DepositRequest {
+    string account_id = 1;
+    int64 amount = 2;
+}
+
+message DepositResponse {
+    bool success = 1;
+    int64 new_balance = 2;
+    string error = 3;
+}
+
+message WithdrawRequest {
+    string account_id = 1;
+    int64 amount = 2;
+}
+
+message WithdrawResponse {
+    bool success = 1;
+    int64 new_balance = 2;
+    string error = 3;
+}
+
+// ============================================================================
+// Key-Value Store Message Types
+// ============================================================================
+
+message GetRequest {
+    string key = 1;
+}
+
+message GetResponse {
+    string value = 1;
+    bool found = 2;
+    string error = 3;
+}
+
+message PutRequest {
+    string key = 1;
+    string value = 2;
+}
+
+message PutResponse {
+    bool success = 1;
+    string error = 2;
+    string leader_hint = 3;
+}
+
+message DeleteRequest {
+    string key = 1;
+}
+
+message DeleteResponse {
+    bool success = 1;
+    string error = 2;
+    string leader_hint = 3;
+}
+
+message GetLeaderRequest {}
+
+message GetLeaderResponse {
+    string initiator_id = 1;
+    string initiator_address = 2;
+    bool is_initiator = 3;
+}
+
+message GetClusterStatusRequest {}
+
+message GetClusterStatusResponse {
+    string node_id = 1;
+    uint64 logical_clock = 2;
+
+    // Current snapshot state
+    bool is_recording = 3;
+    string current_snapshot_id = 4;
+
+    // Channel recording status
+    repeated ChannelRecordingStatus channel_recording = 5;
+
+    // Completed snapshots
+    uint64 snapshots_initiated = 6;
+    uint64 snapshots_participated = 7;
+
+    // Cluster members
+    repeated ClusterMember members = 8;
+}
+
+message ChannelRecordingStatus {
+    string from_process = 1;
+    bool is_recording = 2;
+    uint64 messages_recorded = 3;
+}
+
+message ClusterMember {
+    string node_id = 1;
+    string address = 2;
+    bool is_healthy = 3;
+    uint64 last_seen_clock = 4;
+}

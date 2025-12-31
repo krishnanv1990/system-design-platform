@@ -1,0 +1,308 @@
+// Two-Phase Commit (2PC) Protocol gRPC Service Definition
+// Classic distributed transaction protocol for atomic commits
+//
+// This proto defines the RPC interface for implementing 2PC.
+// Candidates must implement both coordinator and participant roles.
+
+syntax = "proto3";
+
+package two_phase_commit;
+
+option go_package = "github.com/sdp/tpc";
+option java_package = "com.sdp.tpc";
+option java_multiple_files = true;
+
+// ============================================================================
+// Coordinator Service (runs on the coordinator node)
+// ============================================================================
+
+// CoordinatorService handles client transaction requests
+service CoordinatorService {
+    // BeginTransaction starts a new distributed transaction
+    rpc BeginTransaction(BeginTransactionRequest) returns (BeginTransactionResponse);
+
+    // CommitTransaction attempts to commit a transaction
+    rpc CommitTransaction(CommitTransactionRequest) returns (CommitTransactionResponse);
+
+    // AbortTransaction aborts an in-progress transaction
+    rpc AbortTransaction(AbortTransactionRequest) returns (AbortTransactionResponse);
+
+    // GetTransactionStatus returns the status of a transaction
+    rpc GetTransactionStatus(GetTransactionStatusRequest) returns (GetTransactionStatusResponse);
+
+    // ExecuteOperation executes an operation within a transaction
+    rpc ExecuteOperation(ExecuteOperationRequest) returns (ExecuteOperationResponse);
+}
+
+// ============================================================================
+// Participant Service (runs on participant nodes)
+// ============================================================================
+
+// ParticipantService handles 2PC protocol messages from coordinator
+service ParticipantService {
+    // Prepare is Phase 1 - coordinator asks participant to prepare to commit
+    rpc Prepare(PrepareRequest) returns (PrepareResponse);
+
+    // Commit is Phase 2 (commit case) - coordinator tells participant to commit
+    rpc Commit(CommitRequest) returns (CommitResponse);
+
+    // Abort is Phase 2 (abort case) - coordinator tells participant to abort
+    rpc Abort(AbortRequest) returns (AbortResponse);
+
+    // GetStatus returns participant's view of a transaction
+    rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
+
+    // ExecuteLocal executes an operation on this participant
+    rpc ExecuteLocal(ExecuteLocalRequest) returns (ExecuteLocalResponse);
+}
+
+// ============================================================================
+// Client-facing Key-Value Store Service (for testing)
+// ============================================================================
+
+// KeyValueService provides a transactional key-value store interface
+service KeyValueService {
+    // Get retrieves a value (can be within a transaction)
+    rpc Get(GetRequest) returns (GetResponse);
+
+    // Put stores a value (must be within a transaction)
+    rpc Put(PutRequest) returns (PutResponse);
+
+    // Delete removes a key (must be within a transaction)
+    rpc Delete(DeleteRequest) returns (DeleteResponse);
+
+    // GetLeader returns the coordinator information
+    rpc GetLeader(GetLeaderRequest) returns (GetLeaderResponse);
+
+    // GetClusterStatus returns cluster health
+    rpc GetClusterStatus(GetClusterStatusRequest) returns (GetClusterStatusResponse);
+}
+
+// ============================================================================
+// Transaction Types
+// ============================================================================
+
+enum TransactionState {
+    TRANSACTION_STATE_UNKNOWN = 0;
+    TRANSACTION_STATE_ACTIVE = 1;
+    TRANSACTION_STATE_PREPARING = 2;
+    TRANSACTION_STATE_PREPARED = 3;
+    TRANSACTION_STATE_COMMITTING = 4;
+    TRANSACTION_STATE_COMMITTED = 5;
+    TRANSACTION_STATE_ABORTING = 6;
+    TRANSACTION_STATE_ABORTED = 7;
+}
+
+enum OperationType {
+    OPERATION_TYPE_UNKNOWN = 0;
+    OPERATION_TYPE_READ = 1;
+    OPERATION_TYPE_WRITE = 2;
+    OPERATION_TYPE_DELETE = 3;
+}
+
+// Operation represents a single operation in a transaction
+message Operation {
+    OperationType type = 1;
+    string key = 2;
+    string value = 3;  // For write operations
+    string participant_id = 4;  // Target participant
+}
+
+// ============================================================================
+// Coordinator Message Types
+// ============================================================================
+
+message BeginTransactionRequest {
+    // Optional client-provided transaction ID
+    string client_id = 1;
+
+    // Participants involved in this transaction
+    repeated string participant_ids = 2;
+
+    // Timeout in milliseconds
+    uint64 timeout_ms = 3;
+}
+
+message BeginTransactionResponse {
+    bool success = 1;
+    string transaction_id = 2;
+    string error = 3;
+}
+
+message CommitTransactionRequest {
+    string transaction_id = 1;
+}
+
+message CommitTransactionResponse {
+    bool success = 1;
+    TransactionState final_state = 2;
+    string error = 3;
+
+    // Per-participant results
+    map<string, bool> participant_results = 4;
+}
+
+message AbortTransactionRequest {
+    string transaction_id = 1;
+    string reason = 2;
+}
+
+message AbortTransactionResponse {
+    bool success = 1;
+    string error = 2;
+}
+
+message GetTransactionStatusRequest {
+    string transaction_id = 1;
+}
+
+message GetTransactionStatusResponse {
+    bool found = 1;
+    string transaction_id = 2;
+    TransactionState state = 3;
+    repeated string participants = 4;
+    map<string, TransactionState> participant_states = 5;
+    uint64 created_at = 6;
+    uint64 updated_at = 7;
+}
+
+message ExecuteOperationRequest {
+    string transaction_id = 1;
+    Operation operation = 2;
+}
+
+message ExecuteOperationResponse {
+    bool success = 1;
+    string value = 2;  // For read operations
+    string error = 3;
+}
+
+// ============================================================================
+// Participant Message Types
+// ============================================================================
+
+message PrepareRequest {
+    string transaction_id = 1;
+
+    // All operations for this participant in this transaction
+    repeated Operation operations = 2;
+}
+
+message PrepareResponse {
+    bool vote = 1;  // true = VOTE_COMMIT, false = VOTE_ABORT
+    string error = 2;
+
+    // Participant's prepared state (for recovery)
+    bytes prepared_state = 3;
+}
+
+message CommitRequest {
+    string transaction_id = 1;
+}
+
+message CommitResponse {
+    bool success = 1;
+    string error = 2;
+}
+
+message AbortRequest {
+    string transaction_id = 1;
+}
+
+message AbortResponse {
+    bool success = 1;
+    string error = 2;
+}
+
+message GetStatusRequest {
+    string transaction_id = 1;
+}
+
+message GetStatusResponse {
+    bool found = 1;
+    TransactionState state = 2;
+}
+
+message ExecuteLocalRequest {
+    string transaction_id = 1;
+    Operation operation = 2;
+}
+
+message ExecuteLocalResponse {
+    bool success = 1;
+    string value = 2;  // For read operations
+    string error = 3;
+}
+
+// ============================================================================
+// Key-Value Store Message Types
+// ============================================================================
+
+message GetRequest {
+    string key = 1;
+    string transaction_id = 2;  // Optional - for transactional reads
+}
+
+message GetResponse {
+    string value = 1;
+    bool found = 2;
+    string error = 3;
+}
+
+message PutRequest {
+    string key = 1;
+    string value = 2;
+    string transaction_id = 3;  // Required for writes
+}
+
+message PutResponse {
+    bool success = 1;
+    string error = 2;
+    string coordinator_hint = 3;
+}
+
+message DeleteRequest {
+    string key = 1;
+    string transaction_id = 2;  // Required for deletes
+}
+
+message DeleteResponse {
+    bool success = 1;
+    string error = 2;
+    string coordinator_hint = 3;
+}
+
+message GetLeaderRequest {}
+
+message GetLeaderResponse {
+    string coordinator_id = 1;
+    string coordinator_address = 2;
+    bool is_coordinator = 3;
+}
+
+message GetClusterStatusRequest {}
+
+message GetClusterStatusResponse {
+    string node_id = 1;
+    string role = 2;  // "coordinator" or "participant"
+
+    // Coordinator-specific
+    uint64 active_transactions = 3;
+    uint64 committed_transactions = 4;
+    uint64 aborted_transactions = 5;
+
+    // Participant-specific
+    uint64 prepared_transactions = 6;
+    uint64 pending_operations = 7;
+
+    // Cluster members
+    repeated ClusterMember members = 8;
+}
+
+message ClusterMember {
+    string node_id = 1;
+    string address = 2;
+    string role = 3;
+    bool is_healthy = 4;
+    uint64 last_heartbeat = 5;
+}

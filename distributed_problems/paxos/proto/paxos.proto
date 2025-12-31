@@ -1,0 +1,231 @@
+// Paxos Consensus Algorithm gRPC Service Definition
+// Based on "Paxos Made Simple" by Leslie Lamport
+//
+// This proto defines the RPC interface for implementing Multi-Paxos consensus.
+// Candidates must implement both the proposer and acceptor roles.
+
+syntax = "proto3";
+
+package paxos;
+
+option go_package = "github.com/sdp/paxos";
+option java_package = "com.sdp.paxos";
+option java_multiple_files = true;
+
+// ============================================================================
+// Core Paxos RPCs (Required for consensus)
+// ============================================================================
+
+// PaxosService defines the core Paxos consensus RPCs
+service PaxosService {
+    // Prepare is Phase 1a of Paxos - proposer sends to acceptors
+    // Proposer asks acceptors to promise not to accept proposals
+    // with a lower proposal number.
+    rpc Prepare(PrepareRequest) returns (PrepareResponse);
+
+    // Accept is Phase 2a of Paxos - proposer sends to acceptors
+    // If proposer received promises from a majority, it sends
+    // an accept request with a value.
+    rpc Accept(AcceptRequest) returns (AcceptResponse);
+
+    // Learn is called when a value has been chosen
+    // Acceptors notify learners when they accept a value.
+    rpc Learn(LearnRequest) returns (LearnResponse);
+
+    // Heartbeat for leader election in Multi-Paxos
+    rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+}
+
+// ============================================================================
+// Client-facing Key-Value Store Service
+// ============================================================================
+
+// KeyValueService provides a simple key-value store interface for clients.
+// The Paxos cluster should reach consensus on these operations.
+service KeyValueService {
+    // Get retrieves a value for the given key
+    rpc Get(GetRequest) returns (GetResponse);
+
+    // Put stores a key-value pair (requires consensus)
+    rpc Put(PutRequest) returns (PutResponse);
+
+    // Delete removes a key (requires consensus)
+    rpc Delete(DeleteRequest) returns (DeleteResponse);
+
+    // GetLeader returns the current leader information
+    rpc GetLeader(GetLeaderRequest) returns (GetLeaderResponse);
+
+    // GetClusterStatus returns the cluster health status
+    rpc GetClusterStatus(GetClusterStatusRequest) returns (GetClusterStatusResponse);
+}
+
+// ============================================================================
+// Paxos Core Message Types
+// ============================================================================
+
+// ProposalNumber uniquely identifies a proposal
+// Uses (round, proposer_id) for total ordering
+message ProposalNumber {
+    // Round number (monotonically increasing)
+    uint64 round = 1;
+
+    // Proposer ID for tie-breaking
+    string proposer_id = 2;
+}
+
+// PrepareRequest is Phase 1a - proposer to acceptors
+message PrepareRequest {
+    // Proposal number for this prepare
+    ProposalNumber proposal_number = 1;
+
+    // Slot/instance number for Multi-Paxos
+    uint64 slot = 2;
+}
+
+// PrepareResponse is Phase 1b - acceptor to proposer
+message PrepareResponse {
+    // True if acceptor promises not to accept lower proposals
+    bool promised = 1;
+
+    // Highest proposal number already accepted (if any)
+    ProposalNumber accepted_proposal = 2;
+
+    // Value of the highest accepted proposal (if any)
+    bytes accepted_value = 3;
+
+    // Current highest promised proposal number
+    ProposalNumber highest_promised = 4;
+}
+
+// AcceptRequest is Phase 2a - proposer to acceptors
+message AcceptRequest {
+    // Proposal number for this accept
+    ProposalNumber proposal_number = 1;
+
+    // Slot/instance number for Multi-Paxos
+    uint64 slot = 2;
+
+    // Value to be accepted
+    bytes value = 3;
+
+    // Type of command
+    string command_type = 4;
+}
+
+// AcceptResponse is Phase 2b - acceptor to proposer
+message AcceptResponse {
+    // True if acceptor accepted the value
+    bool accepted = 1;
+
+    // Current highest promised proposal (for rejection info)
+    ProposalNumber highest_promised = 2;
+}
+
+// LearnRequest notifies learners of an accepted value
+message LearnRequest {
+    // Slot/instance number
+    uint64 slot = 1;
+
+    // The chosen value
+    bytes value = 2;
+
+    // Proposal that was chosen
+    ProposalNumber proposal_number = 3;
+
+    // Type of command
+    string command_type = 4;
+}
+
+// LearnResponse acknowledges learning
+message LearnResponse {
+    bool success = 1;
+}
+
+// HeartbeatRequest for leader election
+message HeartbeatRequest {
+    // Current leader's proposal number
+    ProposalNumber leader_proposal = 1;
+
+    // Leader's ID
+    string leader_id = 2;
+
+    // Current slot being processed
+    uint64 current_slot = 3;
+}
+
+// HeartbeatResponse for leader election
+message HeartbeatResponse {
+    // True if acceptor acknowledges this leader
+    bool acknowledged = 1;
+
+    // Acceptor's highest seen proposal
+    ProposalNumber highest_seen = 2;
+}
+
+// ============================================================================
+// Key-Value Store Message Types
+// ============================================================================
+
+message GetRequest {
+    string key = 1;
+}
+
+message GetResponse {
+    string value = 1;
+    bool found = 2;
+    string error = 3;
+}
+
+message PutRequest {
+    string key = 1;
+    string value = 2;
+}
+
+message PutResponse {
+    bool success = 1;
+    string error = 2;
+    string leader_hint = 3;
+}
+
+message DeleteRequest {
+    string key = 1;
+}
+
+message DeleteResponse {
+    bool success = 1;
+    string error = 2;
+    string leader_hint = 3;
+}
+
+message GetLeaderRequest {}
+
+message GetLeaderResponse {
+    string leader_id = 1;
+    string leader_address = 2;
+    bool is_leader = 3;
+}
+
+message GetClusterStatusRequest {}
+
+message GetClusterStatusResponse {
+    // Current node's state
+    string node_id = 1;
+    string role = 2;  // "proposer", "acceptor", "learner", "leader"
+    uint64 current_slot = 3;
+    uint64 highest_promised_round = 4;
+    uint64 highest_accepted_round = 5;
+
+    // Multi-Paxos state
+    uint64 first_unchosen_slot = 6;
+    uint64 last_executed_slot = 7;
+
+    // Cluster members
+    repeated ClusterMember members = 8;
+}
+
+message ClusterMember {
+    string node_id = 1;
+    string address = 2;
+    string role = 3;
+    uint64 last_seen_slot = 4;
+}

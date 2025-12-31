@@ -1068,6 +1068,138 @@ class TestAIIntegrationInSubmission:
         assert "analysis_result" in source
 
 
+class TestMultipleProblemTypes:
+    """Tests for supporting multiple distributed problem types (Raft, Paxos, 2PC, Chandy-Lamport)."""
+
+    def test_problem_type_config_has_all_types(self):
+        """Test that PROBLEM_TYPE_CONFIG contains all problem types."""
+        from backend.api.distributed import PROBLEM_TYPE_CONFIG
+
+        expected_types = ["raft", "paxos", "two_phase_commit", "chandy_lamport"]
+        for prob_type in expected_types:
+            assert prob_type in PROBLEM_TYPE_CONFIG
+            assert "directory" in PROBLEM_TYPE_CONFIG[prob_type]
+            assert "proto_file" in PROBLEM_TYPE_CONFIG[prob_type]
+            assert "java_class" in PROBLEM_TYPE_CONFIG[prob_type]
+
+    def test_default_problem_ids_map_to_types(self):
+        """Test that DEFAULT_PROBLEM_IDS maps problem IDs to types."""
+        from backend.api.distributed import DEFAULT_PROBLEM_IDS
+
+        assert DEFAULT_PROBLEM_IDS[1] == "raft"
+        assert DEFAULT_PROBLEM_IDS[2] == "paxos"
+        assert DEFAULT_PROBLEM_IDS[3] == "two_phase_commit"
+        assert DEFAULT_PROBLEM_IDS[4] == "chandy_lamport"
+
+    def test_get_problem_type_from_id(self):
+        """Test getting problem type from ID."""
+        from backend.api.distributed import get_problem_type_from_id
+
+        assert get_problem_type_from_id(1) == "raft"
+        assert get_problem_type_from_id(2) == "paxos"
+        assert get_problem_type_from_id(3) == "two_phase_commit"
+        assert get_problem_type_from_id(4) == "chandy_lamport"
+        assert get_problem_type_from_id(999) == "raft"  # Default
+
+    def test_get_proto_from_filesystem_paxos(self):
+        """Test loading Paxos proto file."""
+        from backend.api.distributed import get_proto_from_filesystem
+
+        proto = get_proto_from_filesystem("paxos")
+        assert "service" in proto or "message" in proto
+        assert "Proto file not found" not in proto
+
+    def test_get_proto_from_filesystem_2pc(self):
+        """Test loading 2PC proto file."""
+        from backend.api.distributed import get_proto_from_filesystem
+
+        proto = get_proto_from_filesystem("two_phase_commit")
+        assert "service" in proto or "message" in proto
+        assert "Proto file not found" not in proto
+
+    def test_get_proto_from_filesystem_chandy_lamport(self):
+        """Test loading Chandy-Lamport proto file."""
+        from backend.api.distributed import get_proto_from_filesystem
+
+        proto = get_proto_from_filesystem("chandy_lamport")
+        assert "service" in proto or "message" in proto
+        assert "Proto file not found" not in proto
+
+    def test_get_template_paxos_python(self):
+        """Test loading Paxos Python template."""
+        from backend.api.distributed import get_template_from_filesystem
+
+        template = get_template_from_filesystem("python", "paxos")
+        assert "def " in template or "class " in template
+        assert "Template file not found" not in template
+
+    def test_get_template_2pc_python(self):
+        """Test loading 2PC Python template."""
+        from backend.api.distributed import get_template_from_filesystem
+
+        template = get_template_from_filesystem("python", "two_phase_commit")
+        assert "def " in template or "class " in template
+        assert "Template file not found" not in template
+
+    def test_get_template_chandy_lamport_python(self):
+        """Test loading Chandy-Lamport Python template."""
+        from backend.api.distributed import get_template_from_filesystem
+
+        template = get_template_from_filesystem("python", "chandy_lamport")
+        assert "def " in template or "class " in template
+        assert "Template file not found" not in template
+
+    def test_get_template_chandy_lamport_java(self):
+        """Test loading Chandy-Lamport Java template."""
+        from backend.api.distributed import get_template_from_filesystem
+
+        template = get_template_from_filesystem("java", "chandy_lamport")
+        assert "class" in template
+        assert "Template file not found" not in template
+
+    def test_get_template_chandy_lamport_cpp(self):
+        """Test loading Chandy-Lamport C++ template."""
+        from backend.api.distributed import get_template_from_filesystem
+
+        template = get_template_from_filesystem("cpp", "chandy_lamport")
+        assert "class" in template or "#include" in template
+        assert "Template file not found" not in template
+
+    def test_get_template_chandy_lamport_rust(self):
+        """Test loading Chandy-Lamport Rust template."""
+        from backend.api.distributed import get_template_from_filesystem
+
+        template = get_template_from_filesystem("rust", "chandy_lamport")
+        assert "fn " in template or "pub " in template
+        assert "Template file not found" not in template
+
+    def test_get_default_problem_returns_correct_data(self):
+        """Test _get_default_problem returns correct data for each type."""
+        from backend.api.distributed import _get_default_problem
+
+        # Test Raft
+        raft = _get_default_problem(1, "raft")
+        assert raft["id"] == 1
+        assert "Raft" in raft["title"]
+        assert raft["grpc_proto"] is not None
+        assert len(raft["language_templates"]) == 5
+
+        # Test Paxos
+        paxos = _get_default_problem(2, "paxos")
+        assert paxos["id"] == 2
+        assert "Paxos" in paxos["title"]
+
+        # Test 2PC
+        tpc = _get_default_problem(3, "two_phase_commit")
+        assert tpc["id"] == 3
+        assert "Two-Phase" in tpc["title"] or "2PC" in tpc["title"]
+
+        # Test Chandy-Lamport
+        cl = _get_default_problem(4, "chandy_lamport")
+        assert cl["id"] == 4
+        assert "Chandy-Lamport" in cl["title"] or "Snapshot" in cl["title"]
+
+
 class TestTemplateEndpoint:
     """Tests for the template endpoint to ensure it returns original templates."""
 

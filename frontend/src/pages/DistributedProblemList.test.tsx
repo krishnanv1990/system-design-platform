@@ -31,13 +31,35 @@ const mockProblems: DistributedProblemListItem[] = [
   },
   {
     id: 2,
-    title: 'Implement Paxos',
+    title: 'Implement Paxos Consensus',
     description: 'Implement the Paxos consensus algorithm',
     difficulty: 'hard',
     problem_type: 'distributed_consensus',
-    supported_languages: ['python', 'go'],
-    cluster_size: 5,
+    supported_languages: ['python', 'go', 'java', 'cpp', 'rust'],
+    cluster_size: 3,
     tags: ['distributed-systems', 'consensus', 'paxos'],
+    created_at: '2025-01-01T00:00:00Z',
+  },
+  {
+    id: 3,
+    title: 'Implement Two-Phase Commit',
+    description: 'Implement the Two-Phase Commit protocol',
+    difficulty: 'medium',
+    problem_type: 'distributed_consensus',
+    supported_languages: ['python', 'go', 'java', 'cpp', 'rust'],
+    cluster_size: 3,
+    tags: ['distributed-systems', 'transactions', '2pc'],
+    created_at: '2025-01-01T00:00:00Z',
+  },
+  {
+    id: 4,
+    title: 'Implement Chandy-Lamport Snapshot',
+    description: 'Implement the Chandy-Lamport snapshot algorithm',
+    difficulty: 'medium',
+    problem_type: 'distributed_consensus',
+    supported_languages: ['python', 'go', 'java', 'cpp', 'rust'],
+    cluster_size: 3,
+    tags: ['distributed-systems', 'snapshots', 'chandy-lamport'],
     created_at: '2025-01-01T00:00:00Z',
   },
 ]
@@ -72,7 +94,9 @@ describe('DistributedProblemList', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Implement Raft Consensus')).toBeInTheDocument()
-      expect(screen.getByText('Implement Paxos')).toBeInTheDocument()
+      expect(screen.getByText('Implement Paxos Consensus')).toBeInTheDocument()
+      expect(screen.getByText('Implement Two-Phase Commit')).toBeInTheDocument()
+      expect(screen.getByText('Implement Chandy-Lamport Snapshot')).toBeInTheDocument()
     })
   })
 
@@ -86,8 +110,9 @@ describe('DistributedProblemList', () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByText('3 node cluster')).toBeInTheDocument()
-      expect(screen.getByText('5 node cluster')).toBeInTheDocument()
+      // All 4 problems have 3 node clusters
+      const clusterBadges = screen.getAllByText('3 node cluster')
+      expect(clusterBadges.length).toBe(4)
     })
   })
 
@@ -170,7 +195,9 @@ describe('DistributedProblemList', () => {
 
     await waitFor(() => {
       const hardBadges = screen.getAllByText('hard')
-      expect(hardBadges.length).toBe(2)
+      const mediumBadges = screen.getAllByText('medium')
+      expect(hardBadges.length).toBe(2)  // Raft and Paxos are hard
+      expect(mediumBadges.length).toBe(2)  // 2PC and Chandy-Lamport are medium
     })
   })
 
@@ -184,9 +211,11 @@ describe('DistributedProblemList', () => {
     )
 
     await waitFor(() => {
-      expect(screen.getAllByText('distributed-systems').length).toBe(2)
+      expect(screen.getAllByText('distributed-systems').length).toBe(4)  // All 4 problems
       expect(screen.getAllByText('raft').length).toBe(1)
       expect(screen.getAllByText('paxos').length).toBe(1)
+      expect(screen.getAllByText('2pc').length).toBe(1)
+      expect(screen.getAllByText('chandy-lamport').length).toBe(1)
     })
   })
 })

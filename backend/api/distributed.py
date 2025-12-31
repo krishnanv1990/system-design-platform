@@ -490,6 +490,46 @@ async def run_distributed_build(submission_id: int, language: str, source_code: 
 
 
 # ============================================================================
+# Problem Type Configuration
+# ============================================================================
+
+PROBLEM_TYPE_CONFIG = {
+    "raft": {
+        "directory": "raft",
+        "proto_file": "raft.proto",
+        "java_class": "RaftServer",
+        "test_runner": "backend.services.distributed_tests.DistributedTestRunner",
+    },
+    "paxos": {
+        "directory": "paxos",
+        "proto_file": "paxos.proto",
+        "java_class": "PaxosServer",
+        "test_runner": "backend.services.distributed_tests_paxos.PaxosTestRunner",
+    },
+    "two_phase_commit": {
+        "directory": "two_phase_commit",
+        "proto_file": "two_phase_commit.proto",
+        "java_class": "TwoPhaseCommitServer",
+        "test_runner": "backend.services.distributed_tests_2pc.TwoPhaseCommitTestRunner",
+    },
+    "chandy_lamport": {
+        "directory": "chandy_lamport",
+        "proto_file": "chandy_lamport.proto",
+        "java_class": "ChandyLamportServer",
+        "test_runner": "backend.services.distributed_tests_chandy_lamport.ChandyLamportTestRunner",
+    },
+}
+
+# Default problem IDs for filesystem-based problems
+DEFAULT_PROBLEM_IDS = {
+    1: "raft",
+    2: "paxos",
+    3: "two_phase_commit",
+    4: "chandy_lamport",
+}
+
+
+# ============================================================================
 # Helper Functions
 # ============================================================================
 
@@ -524,13 +564,16 @@ def get_distributed_problems_base_path() -> str:
     return file_based_path
 
 
-def get_template_from_filesystem(language: str) -> str:
+def get_template_from_filesystem(language: str, problem_type: str = "raft") -> str:
     """Load template from the distributed_problems directory."""
-    # Map language to directory/file
+    config = PROBLEM_TYPE_CONFIG.get(problem_type, PROBLEM_TYPE_CONFIG["raft"])
+
+    # Map language to directory/file - use problem-specific Java class name
+    java_class = config["java_class"]
     file_map = {
         "python": "python/server.py",
         "go": "go/server.go",
-        "java": "java/RaftServer.java",
+        "java": f"java/{java_class}.java",
         "cpp": "cpp/server.cpp",
         "rust": "rust/src/main.rs",
     }
@@ -543,7 +586,7 @@ def get_template_from_filesystem(language: str) -> str:
     template_path = os.path.join(
         base_path,
         "distributed_problems",
-        "raft",
+        config["directory"],
         "templates",
         file_map[language]
     )
@@ -559,10 +602,13 @@ def get_template_from_filesystem(language: str) -> str:
         return f"// Template file permission denied: {template_path}"
 
 
-def get_proto_from_filesystem() -> str:
-    """Load the Raft proto file from filesystem."""
+def get_proto_from_filesystem(problem_type: str = "raft") -> str:
+    """Load the proto file from filesystem for the given problem type."""
+    config = PROBLEM_TYPE_CONFIG.get(problem_type, PROBLEM_TYPE_CONFIG["raft"])
     base_path = get_distributed_problems_base_path()
-    proto_path = os.path.join(base_path, "distributed_problems", "raft", "proto", "raft.proto")
+    proto_path = os.path.join(
+        base_path, "distributed_problems", config["directory"], "proto", config["proto_file"]
+    )
 
     try:
         with open(proto_path, "r") as f:
@@ -573,6 +619,11 @@ def get_proto_from_filesystem() -> str:
         return f"// Proto file not found: {proto_path} ({debug_info})"
     except PermissionError:
         return f"// Proto file permission denied: {proto_path}"
+
+
+def get_problem_type_from_id(problem_id: int) -> str:
+    """Get problem type from problem ID."""
+    return DEFAULT_PROBLEM_IDS.get(problem_id, "raft")
 
 
 # ============================================================================
@@ -594,19 +645,54 @@ async def list_distributed_problems(
         Problem.problem_type == ProblemType.DISTRIBUTED_CONSENSUS.value
     ).all()
 
-    # If no problems in DB, return a default Raft problem
+    # If no problems in DB, return default problems
     if not problems:
-        return [{
-            "id": 1,
-            "title": "Implement Raft Consensus",
-            "description": "Implement the Raft consensus algorithm. Your implementation should handle leader election, log replication, and safety properties as defined in the Raft paper.",
-            "difficulty": "hard",
-            "problem_type": "distributed_consensus",
-            "supported_languages": ["python", "go", "java", "cpp", "rust"],
-            "cluster_size": 3,
-            "tags": ["distributed-systems", "consensus", "raft"],
-            "created_at": "2025-01-01T00:00:00Z",
-        }]
+        return [
+            {
+                "id": 1,
+                "title": "Implement Raft Consensus",
+                "description": "Implement the Raft consensus algorithm. Your implementation should handle leader election, log replication, and safety properties as defined in the Raft paper.",
+                "difficulty": "hard",
+                "problem_type": "distributed_consensus",
+                "supported_languages": ["python", "go", "java", "cpp", "rust"],
+                "cluster_size": 3,
+                "tags": ["distributed-systems", "consensus", "raft"],
+                "created_at": "2025-01-01T00:00:00Z",
+            },
+            {
+                "id": 2,
+                "title": "Implement Paxos Consensus",
+                "description": "Implement the Multi-Paxos consensus algorithm. Your implementation should handle proposer, acceptor, and learner roles as defined in 'Paxos Made Simple'.",
+                "difficulty": "hard",
+                "problem_type": "distributed_consensus",
+                "supported_languages": ["python", "go", "java", "cpp", "rust"],
+                "cluster_size": 3,
+                "tags": ["distributed-systems", "consensus", "paxos"],
+                "created_at": "2025-01-01T00:00:00Z",
+            },
+            {
+                "id": 3,
+                "title": "Implement Two-Phase Commit",
+                "description": "Implement the Two-Phase Commit (2PC) protocol for distributed transactions. Your implementation should handle coordinator and participant roles.",
+                "difficulty": "medium",
+                "problem_type": "distributed_consensus",
+                "supported_languages": ["python", "go", "java", "cpp", "rust"],
+                "cluster_size": 3,
+                "tags": ["distributed-systems", "transactions", "2pc"],
+                "created_at": "2025-01-01T00:00:00Z",
+            },
+            {
+                "id": 4,
+                "title": "Implement Chandy-Lamport Snapshot",
+                "description": "Implement the Chandy-Lamport algorithm for capturing consistent global snapshots in distributed systems.",
+                "difficulty": "medium",
+                "problem_type": "distributed_consensus",
+                "supported_languages": ["python", "go", "java", "cpp", "rust"],
+                "cluster_size": 3,
+                "tags": ["distributed-systems", "snapshots", "chandy-lamport"],
+                "created_at": "2025-01-01T00:00:00Z",
+            },
+        ]
 
     return [
         {
@@ -639,50 +725,10 @@ async def get_distributed_problem(
     Returns:
         Full problem details with gRPC proto and language templates
     """
-    # For the default Raft problem (id=1), return from filesystem
-    if problem_id == 1:
-        proto = get_proto_from_filesystem()
-        test_scenarios = [
-            {"name": "Leader Election", "description": "Verify that a leader is elected when the cluster starts", "test_type": "functional"},
-            {"name": "Leader Failure", "description": "Verify that a new leader is elected when the current leader fails", "test_type": "functional"},
-            {"name": "Log Replication", "description": "Verify that log entries are replicated to all followers", "test_type": "functional"},
-            {"name": "Consistency", "description": "Verify that all nodes have consistent logs after operations", "test_type": "functional"},
-            {"name": "Network Partition", "description": "Verify correct behavior during network partitions", "test_type": "chaos"},
-            {"name": "Node Restart", "description": "Verify that nodes rejoin the cluster correctly after restart", "test_type": "chaos"},
-            {"name": "High Throughput", "description": "Test cluster performance under high write load", "test_type": "performance"},
-            {"name": "Latency", "description": "Measure request latency under normal conditions", "test_type": "performance"},
-        ]
-
-        templates = {}
-        for lang in ["python", "go", "java", "cpp", "rust"]:
-            templates[lang] = {
-                "language": lang,
-                "template": get_template_from_filesystem(lang),
-                "build_command": get_build_command(lang),
-                "run_command": get_run_command(lang),
-            }
-
-        return {
-            "id": 1,
-            "title": "Implement Raft Consensus",
-            "description": "Implement the Raft consensus algorithm. Your implementation should handle leader election, log replication, and safety properties as defined in the Raft paper.\n\nKey features to implement:\n1. Leader Election - Use randomized timeouts to elect a leader\n2. Log Replication - Replicate commands from leader to followers\n3. Safety - Ensure only nodes with complete logs can become leader\n4. Heartbeats - Maintain leadership with periodic AppendEntries RPCs\n\nRefer to the gRPC proto file for the required service interfaces.",
-            "difficulty": "hard",
-            "problem_type": "distributed_consensus",
-            "grpc_proto": proto,
-            "supported_languages": ["python", "go", "java", "cpp", "rust"],
-            "cluster_size": 3,
-            "language_templates": templates,
-            "test_scenarios": test_scenarios,
-            "hints": [
-                "Start by implementing the election timeout - when it fires, transition to candidate state",
-                "Use randomized timeouts to prevent split votes",
-                "The leader sends empty AppendEntries as heartbeats to maintain authority",
-                "Remember to reset the election timer when receiving valid AppendEntries",
-                "Log matching: if two entries have the same index and term, they are identical",
-            ],
-            "tags": ["distributed-systems", "consensus", "raft"],
-            "created_at": "2025-01-01T00:00:00Z",
-        }
+    # Default problems (1-4) are loaded from filesystem
+    if problem_id in DEFAULT_PROBLEM_IDS:
+        problem_type = DEFAULT_PROBLEM_IDS[problem_id]
+        return _get_default_problem(problem_id, problem_type)
 
     # Check database for other problems
     problem = db.query(Problem).filter(
@@ -737,6 +783,138 @@ def get_run_command(language: str) -> str:
     return commands.get(language, "echo 'Unknown language'")
 
 
+def _get_default_problem(problem_id: int, problem_type: str) -> dict:
+    """Get a default problem configuration from filesystem."""
+    proto = get_proto_from_filesystem(problem_type)
+
+    templates = {}
+    for lang in ["python", "go", "java", "cpp", "rust"]:
+        templates[lang] = {
+            "language": lang,
+            "template": get_template_from_filesystem(lang, problem_type),
+            "build_command": get_build_command(lang),
+            "run_command": get_run_command(lang),
+        }
+
+    # Problem-specific configurations
+    problems_config = {
+        "raft": {
+            "id": 1,
+            "title": "Implement Raft Consensus",
+            "description": "Implement the Raft consensus algorithm. Your implementation should handle leader election, log replication, and safety properties as defined in the Raft paper.\n\nKey features to implement:\n1. Leader Election - Use randomized timeouts to elect a leader\n2. Log Replication - Replicate commands from leader to followers\n3. Safety - Ensure only nodes with complete logs can become leader\n4. Heartbeats - Maintain leadership with periodic AppendEntries RPCs\n\nRefer to the gRPC proto file for the required service interfaces.",
+            "difficulty": "hard",
+            "test_scenarios": [
+                {"name": "Leader Election", "description": "Verify that a leader is elected when the cluster starts", "test_type": "functional"},
+                {"name": "Leader Failure", "description": "Verify that a new leader is elected when the current leader fails", "test_type": "functional"},
+                {"name": "Log Replication", "description": "Verify that log entries are replicated to all followers", "test_type": "functional"},
+                {"name": "Consistency", "description": "Verify that all nodes have consistent logs after operations", "test_type": "functional"},
+                {"name": "Network Partition", "description": "Verify correct behavior during network partitions", "test_type": "chaos"},
+                {"name": "Node Restart", "description": "Verify that nodes rejoin the cluster correctly after restart", "test_type": "chaos"},
+                {"name": "High Throughput", "description": "Test cluster performance under high write load", "test_type": "performance"},
+                {"name": "Latency", "description": "Measure request latency under normal conditions", "test_type": "performance"},
+            ],
+            "hints": [
+                "Start by implementing the election timeout - when it fires, transition to candidate state",
+                "Use randomized timeouts to prevent split votes",
+                "The leader sends empty AppendEntries as heartbeats to maintain authority",
+                "Remember to reset the election timer when receiving valid AppendEntries",
+                "Log matching: if two entries have the same index and term, they are identical",
+            ],
+            "tags": ["distributed-systems", "consensus", "raft"],
+        },
+        "paxos": {
+            "id": 2,
+            "title": "Implement Paxos Consensus",
+            "description": "Implement the Multi-Paxos consensus algorithm as described in 'Paxos Made Simple' by Leslie Lamport.\n\nKey features to implement:\n1. Phase 1 (Prepare) - Proposer sends prepare requests to acceptors\n2. Phase 2 (Accept) - If majority promises, proposer sends accept requests\n3. Learning - Learners discover chosen values\n4. Multi-Paxos - Leader election to skip Phase 1 for consecutive slots\n\nRefer to the gRPC proto file for the required service interfaces.",
+            "difficulty": "hard",
+            "test_scenarios": [
+                {"name": "Leader Election", "description": "Verify Multi-Paxos leader election works correctly", "test_type": "functional"},
+                {"name": "Basic Consensus", "description": "Verify that a single value can be agreed upon", "test_type": "functional"},
+                {"name": "Slot Ordering", "description": "Verify that values are committed in slot order", "test_type": "functional"},
+                {"name": "Value Agreement", "description": "Verify all nodes agree on the same values", "test_type": "functional"},
+                {"name": "Proposer Failure", "description": "Verify recovery from proposer failure", "test_type": "chaos"},
+                {"name": "Acceptor Failure", "description": "Verify recovery from acceptor failure", "test_type": "chaos"},
+                {"name": "Throughput", "description": "Test consensus throughput under load", "test_type": "performance"},
+                {"name": "Latency", "description": "Measure consensus latency", "test_type": "performance"},
+            ],
+            "hints": [
+                "Proposal numbers must be unique and totally ordered",
+                "Use (round, proposer_id) pairs for total ordering",
+                "An acceptor can promise to ignore lower-numbered proposals",
+                "The proposer must use the highest-numbered accepted value",
+                "Multi-Paxos allows skipping Phase 1 when the leader is stable",
+            ],
+            "tags": ["distributed-systems", "consensus", "paxos"],
+        },
+        "two_phase_commit": {
+            "id": 3,
+            "title": "Implement Two-Phase Commit",
+            "description": "Implement the Two-Phase Commit (2PC) protocol for distributed transactions.\n\nKey features to implement:\n1. Begin Transaction - Coordinator starts a new transaction\n2. Phase 1 (Prepare) - Coordinator asks participants to vote\n3. Phase 2 (Commit/Abort) - Based on votes, commit or abort\n4. Participant Recovery - Handle participant failures gracefully\n\nRefer to the gRPC proto file for the required service interfaces.",
+            "difficulty": "medium",
+            "test_scenarios": [
+                {"name": "Coordinator Detection", "description": "Verify coordinator is correctly identified", "test_type": "functional"},
+                {"name": "Transaction Commit", "description": "Verify successful transaction commit", "test_type": "functional"},
+                {"name": "Transaction Abort", "description": "Verify transaction abort on participant vote no", "test_type": "functional"},
+                {"name": "Atomicity", "description": "Verify transactions are atomic across participants", "test_type": "functional"},
+                {"name": "Coordinator Failure", "description": "Test behavior when coordinator fails", "test_type": "chaos"},
+                {"name": "Participant Failure", "description": "Test behavior when participant fails", "test_type": "chaos"},
+                {"name": "Transaction Throughput", "description": "Measure transaction throughput", "test_type": "performance"},
+                {"name": "Transaction Latency", "description": "Measure transaction latency", "test_type": "performance"},
+            ],
+            "hints": [
+                "The coordinator must log its decision before sending Phase 2 messages",
+                "Participants must write their vote to stable storage before responding",
+                "If any participant votes ABORT, the transaction must abort",
+                "A prepared participant must wait for the coordinator's decision",
+                "Consider implementing timeouts for blocking scenarios",
+            ],
+            "tags": ["distributed-systems", "transactions", "2pc"],
+        },
+        "chandy_lamport": {
+            "id": 4,
+            "title": "Implement Chandy-Lamport Snapshot",
+            "description": "Implement the Chandy-Lamport algorithm for capturing consistent global snapshots in distributed systems.\n\nKey features to implement:\n1. Snapshot Initiation - Any process can initiate a snapshot\n2. Marker Propagation - Send markers on all outgoing channels\n3. State Recording - Record local state and channel state\n4. Global Snapshot Assembly - Combine local snapshots into global view\n\nRefer to the gRPC proto file for the required service interfaces.",
+            "difficulty": "medium",
+            "test_scenarios": [
+                {"name": "Cluster Connectivity", "description": "Verify all nodes can communicate", "test_type": "functional"},
+                {"name": "Snapshot Initiation", "description": "Verify snapshot can be initiated from any node", "test_type": "functional"},
+                {"name": "Marker Propagation", "description": "Verify markers reach all nodes", "test_type": "functional"},
+                {"name": "State Consistency", "description": "Verify snapshot captures consistent state", "test_type": "functional"},
+                {"name": "Channel Recording", "description": "Verify in-transit messages are recorded", "test_type": "functional"},
+                {"name": "Node Failure", "description": "Test behavior during node failure", "test_type": "chaos"},
+                {"name": "Snapshot Latency", "description": "Measure snapshot completion time", "test_type": "performance"},
+                {"name": "Concurrent Operations", "description": "Test snapshot during concurrent operations", "test_type": "performance"},
+            ],
+            "hints": [
+                "On first marker receipt, immediately record local state",
+                "Start recording messages on channels where marker hasn't arrived",
+                "Stop recording a channel when its marker arrives",
+                "The global snapshot is the union of all local snapshots",
+                "Use Lamport clocks to help reason about ordering",
+            ],
+            "tags": ["distributed-systems", "snapshots", "chandy-lamport"],
+        },
+    }
+
+    config = problems_config.get(problem_type, problems_config["raft"])
+
+    return {
+        "id": config["id"],
+        "title": config["title"],
+        "description": config["description"],
+        "difficulty": config["difficulty"],
+        "problem_type": "distributed_consensus",
+        "grpc_proto": proto,
+        "supported_languages": ["python", "go", "java", "cpp", "rust"],
+        "cluster_size": 3,
+        "language_templates": templates,
+        "test_scenarios": config["test_scenarios"],
+        "hints": config["hints"],
+        "tags": config["tags"],
+        "created_at": "2025-01-01T00:00:00Z",
+    }
+
+
 @router.get("/problems/{problem_id}/template/{language}", response_model=TemplateResponse)
 async def get_language_template(
     problem_id: int,
@@ -760,9 +938,10 @@ async def get_language_template(
             detail=f"Unsupported language: {language}"
         )
 
-    # For the default Raft problem, load from filesystem
-    if problem_id == 1:
-        template = get_template_from_filesystem(language)
+    # For default problems (1-4), load from filesystem
+    if problem_id in DEFAULT_PROBLEM_IDS:
+        problem_type = DEFAULT_PROBLEM_IDS[problem_id]
+        template = get_template_from_filesystem(language, problem_type)
         return {"template": template}
 
     # Check database for other problems
