@@ -68,6 +68,16 @@ else()
     endif()
 endif()
 
+# Find utf8_range (required by protobuf 4.x)
+find_library(UTF8_RANGE_LIB utf8_range PATHS /usr/local/lib /usr/lib)
+find_library(UTF8_VALIDITY_LIB utf8_validity PATHS /usr/local/lib /usr/lib)
+if(UTF8_RANGE_LIB)
+    message(STATUS "Found utf8_range: ${UTF8_RANGE_LIB}")
+endif()
+if(UTF8_VALIDITY_LIB)
+    message(STATUS "Found utf8_validity: ${UTF8_VALIDITY_LIB}")
+endif()
+
 # Find the gRPC C++ plugin
 find_program(GRPC_CPP_PLUGIN grpc_cpp_plugin)
 
@@ -108,6 +118,14 @@ target_link_libraries(server
     protobuf::libprotobuf
     Threads::Threads
 )
+
+# Link utf8_range libraries (required for protobuf 4.x)
+if(UTF8_RANGE_LIB)
+    target_link_libraries(server ${UTF8_RANGE_LIB})
+endif()
+if(UTF8_VALIDITY_LIB)
+    target_link_libraries(server ${UTF8_VALIDITY_LIB})
+endif()
 
 # Link Abseil libraries if found (required for newer protobuf)
 if(absl_FOUND)
@@ -158,6 +176,12 @@ if(BUILD_TESTS)
         protobuf::libprotobuf
         Threads::Threads
     )
+    if(UTF8_RANGE_LIB)
+        target_link_libraries(raft_lib ${UTF8_RANGE_LIB})
+    endif()
+    if(UTF8_VALIDITY_LIB)
+        target_link_libraries(raft_lib ${UTF8_VALIDITY_LIB})
+    endif()
     if(absl_FOUND)
         target_link_libraries(raft_lib
             absl::base
@@ -188,6 +212,12 @@ if(BUILD_TESTS)
         protobuf::libprotobuf
         Threads::Threads
     )
+    if(UTF8_RANGE_LIB)
+        target_link_libraries(raft_unit_tests ${UTF8_RANGE_LIB})
+    endif()
+    if(UTF8_VALIDITY_LIB)
+        target_link_libraries(raft_unit_tests ${UTF8_VALIDITY_LIB})
+    endif()
     if(absl_FOUND)
         target_link_libraries(raft_unit_tests
             absl::base
@@ -218,6 +248,12 @@ if(BUILD_TESTS)
         protobuf::libprotobuf
         Threads::Threads
     )
+    if(UTF8_RANGE_LIB)
+        target_link_libraries(raft_integration_tests ${UTF8_RANGE_LIB})
+    endif()
+    if(UTF8_VALIDITY_LIB)
+        target_link_libraries(raft_integration_tests ${UTF8_VALIDITY_LIB})
+    endif()
     if(absl_FOUND)
         target_link_libraries(raft_integration_tests
             absl::base
