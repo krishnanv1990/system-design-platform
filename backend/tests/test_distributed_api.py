@@ -766,3 +766,303 @@ class TestBuildLogsFetching:
 
         assert hasattr(SubmissionStatus, "DEPLOY_FAILED")
         assert SubmissionStatus.DEPLOY_FAILED.value == "deploy_failed"
+
+
+class TestAICodeAnalysis:
+    """Tests for AI-powered code analysis and build file modification."""
+
+    def test_ai_service_has_analyze_distributed_code_method(self):
+        """Test AIService has the analyze_distributed_code method."""
+        from backend.services.ai_service import AIService
+
+        service = AIService()
+        assert hasattr(service, "analyze_distributed_code")
+        assert callable(service.analyze_distributed_code)
+
+    @pytest.mark.asyncio
+    async def test_analyze_distributed_code_returns_valid_structure(self):
+        """Test analyze_distributed_code returns expected structure."""
+        from backend.services.ai_service import AIService
+
+        service = AIService()
+        result = await service.analyze_distributed_code(
+            source_code="print('hello')",
+            language="python",
+            proto_spec="syntax = 'proto3';",
+            problem_type="raft",
+        )
+
+        # Should return expected keys
+        assert "is_valid" in result
+        assert "errors" in result
+        assert "warnings" in result
+        assert "build_modifications" in result
+
+    @pytest.mark.asyncio
+    async def test_analyze_distributed_code_demo_mode(self):
+        """Test analyze_distributed_code in demo mode returns mock response."""
+        from backend.services.ai_service import AIService
+
+        service = AIService()
+        # In demo mode (no API key), should return mock response
+        if service.demo_mode:
+            result = await service.analyze_distributed_code(
+                source_code="fn main() {}",
+                language="rust",
+                proto_spec="syntax = 'proto3';",
+                problem_type="raft",
+            )
+
+            assert result["is_valid"] is True
+            assert "Demo mode" in str(result.get("warnings", []))
+
+    def test_get_default_build_modifications_python(self):
+        """Test default build modifications for Python."""
+        from backend.services.ai_service import AIService
+
+        service = AIService()
+        mods = service._get_default_build_modifications("python")
+
+        assert "additional_dependencies" in mods
+        assert isinstance(mods["additional_dependencies"], list)
+
+    def test_get_default_build_modifications_cpp(self):
+        """Test default build modifications for C++."""
+        from backend.services.ai_service import AIService
+
+        service = AIService()
+        mods = service._get_default_build_modifications("cpp")
+
+        assert "cmake_packages" in mods
+        assert "cmake_libraries" in mods
+        assert isinstance(mods["cmake_packages"], list)
+        assert isinstance(mods["cmake_libraries"], list)
+
+    def test_get_default_build_modifications_rust(self):
+        """Test default build modifications for Rust."""
+        from backend.services.ai_service import AIService
+
+        service = AIService()
+        mods = service._get_default_build_modifications("rust")
+
+        assert "additional_dependencies" in mods
+
+
+class TestBuildModifications:
+    """Tests for build file modifications based on AI analysis."""
+
+    def test_build_files_python_with_extra_dependencies(self):
+        """Test Python build files include extra dependencies."""
+        from backend.services.distributed_build import DistributedBuildService
+
+        service = DistributedBuildService()
+        mods = {"additional_dependencies": ["numpy>=1.0.0", "pandas>=2.0.0"]}
+        files = service._get_build_files("python", mods)
+
+        assert "requirements.txt" in files
+        assert "numpy>=1.0.0" in files["requirements.txt"]
+        assert "pandas>=2.0.0" in files["requirements.txt"]
+        # Should also have base dependencies
+        assert "grpcio" in files["requirements.txt"]
+
+    def test_build_files_go_with_extra_dependencies(self):
+        """Test Go build files include extra dependencies."""
+        from backend.services.distributed_build import DistributedBuildService
+
+        service = DistributedBuildService()
+        mods = {"additional_dependencies": ["github.com/google/uuid v1.4.0"]}
+        files = service._get_build_files("go", mods)
+
+        assert "go.mod" in files
+        assert "github.com/google/uuid" in files["go.mod"]
+        # Should have base dependencies
+        assert "google.golang.org/grpc" in files["go.mod"]
+
+    def test_build_files_rust_generated(self):
+        """Test Rust build files are generated."""
+        from backend.services.distributed_build import DistributedBuildService
+
+        service = DistributedBuildService()
+        files = service._get_build_files("rust", {})
+
+        assert "Cargo.toml" in files
+        assert "build.rs" in files
+        assert "tokio" in files["Cargo.toml"]
+        assert "tonic" in files["Cargo.toml"]
+        assert "tonic_build" in files["build.rs"]
+
+    def test_build_files_java_generated(self):
+        """Test Java build files are generated."""
+        from backend.services.distributed_build import DistributedBuildService
+
+        service = DistributedBuildService()
+        files = service._get_build_files("java", {})
+
+        assert "build.gradle" in files
+        assert "io.grpc" in files["build.gradle"]
+        assert "protobuf" in files["build.gradle"]
+
+    def test_build_files_java_with_extra_dependencies(self):
+        """Test Java build files include extra dependencies."""
+        from backend.services.distributed_build import DistributedBuildService
+
+        service = DistributedBuildService()
+        mods = {"additional_dependencies": ["org.slf4j:slf4j-api:2.0.0"]}
+        files = service._get_build_files("java", mods)
+
+        assert "build.gradle" in files
+        assert "org.slf4j:slf4j-api:2.0.0" in files["build.gradle"]
+
+    def test_cpp_cmakelists_with_extra_packages(self):
+        """Test CMakeLists.txt includes extra packages from AI analysis."""
+        from backend.services.distributed_build import DistributedBuildService
+
+        service = DistributedBuildService()
+        cmake = service._get_cpp_cmakelists(
+            cmake_packages=["Boost"],
+            cmake_libraries=[]
+        )
+
+        assert "find_package(Boost QUIET)" in cmake
+        assert "AI-detected additional packages" in cmake
+
+    def test_cpp_cmakelists_with_extra_libraries(self):
+        """Test CMakeLists.txt includes extra libraries from AI analysis."""
+        from backend.services.distributed_build import DistributedBuildService
+
+        service = DistributedBuildService()
+        cmake = service._get_cpp_cmakelists(
+            cmake_packages=[],
+            cmake_libraries=["boost_system", "boost_thread"]
+        )
+
+        assert "boost_system" in cmake
+        assert "boost_thread" in cmake
+        assert "AI-detected additional libraries" in cmake
+
+    def test_start_build_accepts_build_modifications(self):
+        """Test start_build method accepts build_modifications parameter."""
+        from backend.services.distributed_build import DistributedBuildService
+        import inspect
+
+        service = DistributedBuildService()
+        sig = inspect.signature(service.start_build)
+        params = list(sig.parameters.keys())
+
+        assert "build_modifications" in params
+
+    def test_create_source_archive_accepts_build_modifications(self):
+        """Test _create_source_archive accepts build_modifications parameter."""
+        from backend.services.distributed_build import DistributedBuildService
+        import inspect
+
+        service = DistributedBuildService()
+        sig = inspect.signature(service._create_source_archive)
+        params = list(sig.parameters.keys())
+
+        assert "build_modifications" in params
+
+
+class TestAIIntegrationInSubmission:
+    """Tests for AI integration in the submission flow."""
+
+    def test_run_distributed_build_imports_ai_service(self):
+        """Test run_distributed_build has access to AIService."""
+        from backend.api.distributed import AIService
+
+        assert AIService is not None
+
+    @pytest.mark.asyncio
+    async def test_run_distributed_build_calls_ai_analysis(self):
+        """Test that run_distributed_build calls AI analysis."""
+        from backend.api.distributed import run_distributed_build
+        from unittest.mock import AsyncMock, patch, MagicMock
+
+        # Mock the database session and submission
+        mock_submission = MagicMock()
+        mock_submission.id = 1
+        mock_submission.status = "building"
+        mock_submission.build_logs = ""
+
+        mock_db = MagicMock()
+        mock_db.query.return_value.filter.return_value.first.return_value = mock_submission
+
+        with patch('backend.api.distributed.SessionLocal', return_value=mock_db):
+            with patch('backend.api.distributed.DistributedBuildService') as mock_build_class:
+                with patch('backend.api.distributed.AIService') as mock_ai_class:
+                    # Setup AI service mock
+                    mock_ai = MagicMock()
+                    mock_ai.analyze_distributed_code = AsyncMock(return_value={
+                        "is_valid": True,
+                        "errors": [],
+                        "warnings": ["Test warning"],
+                        "detected_dependencies": ["test_dep"],
+                        "build_modifications": {"additional_dependencies": []},
+                    })
+                    mock_ai_class.return_value = mock_ai
+
+                    # Setup build service mock
+                    mock_build = MagicMock()
+                    mock_build.start_build = AsyncMock(side_effect=Exception("Test error"))
+                    mock_build_class.return_value = mock_build
+
+                    # Run the build
+                    await run_distributed_build(1, "python", "print('hello')")
+
+                    # Verify AI analysis was called
+                    mock_ai.analyze_distributed_code.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_run_distributed_build_passes_modifications_to_build(self):
+        """Test that run_distributed_build passes AI modifications to build service."""
+        from backend.api.distributed import run_distributed_build
+        from unittest.mock import AsyncMock, patch, MagicMock
+
+        mock_submission = MagicMock()
+        mock_submission.id = 1
+        mock_submission.status = "building"
+        mock_submission.build_logs = ""
+
+        mock_db = MagicMock()
+        mock_db.query.return_value.filter.return_value.first.return_value = mock_submission
+
+        build_mods = {"additional_dependencies": ["test_package"]}
+
+        with patch('backend.api.distributed.SessionLocal', return_value=mock_db):
+            with patch('backend.api.distributed.DistributedBuildService') as mock_build_class:
+                with patch('backend.api.distributed.AIService') as mock_ai_class:
+                    # Setup AI service mock
+                    mock_ai = MagicMock()
+                    mock_ai.analyze_distributed_code = AsyncMock(return_value={
+                        "is_valid": True,
+                        "errors": [],
+                        "warnings": [],
+                        "build_modifications": build_mods,
+                    })
+                    mock_ai_class.return_value = mock_ai
+
+                    # Setup build service mock
+                    mock_build = MagicMock()
+                    mock_build.start_build = AsyncMock(side_effect=Exception("Test error"))
+                    mock_build_class.return_value = mock_build
+
+                    # Run the build
+                    await run_distributed_build(1, "python", "print('hello')")
+
+                    # Verify build was called with modifications
+                    mock_build.start_build.assert_called_once()
+                    call_args = mock_build.start_build.call_args
+                    # Check that build_modifications was passed
+                    assert call_args[0][3] == build_mods or call_args.kwargs.get("build_modifications") == build_mods
+
+    def test_build_logs_include_analysis_info(self):
+        """Test that build logs include AI analysis information."""
+        # This tests that the build flow captures analysis results in logs
+        # The implementation adds detected_dependencies and warnings to logs
+        from backend.api.distributed import run_distributed_build
+        import inspect
+
+        # Verify the function exists and has proper implementation
+        source = inspect.getsource(run_distributed_build)
+        assert "detected_dependencies" in source
+        assert "analysis_result" in source

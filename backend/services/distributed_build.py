@@ -312,7 +312,13 @@ class DistributedBuildService:
             "timeout": "900s",
         }
 
-    async def start_build(self, submission_id: int, language: str, source_code: str) -> str:
+    async def start_build(
+        self,
+        submission_id: int,
+        language: str,
+        source_code: str,
+        build_modifications: Optional[Dict] = None,
+    ) -> str:
         """
         Start a Cloud Build job for a submission.
 
@@ -320,6 +326,7 @@ class DistributedBuildService:
             submission_id: Submission ID
             language: Programming language
             source_code: User's source code
+            build_modifications: Optional AI-generated build file modifications
 
         Returns:
             Build ID
@@ -328,8 +335,10 @@ class DistributedBuildService:
         bucket_name = f"{self.project_id}-distributed-builds"
         source_path = f"submissions/{submission_id}/source.tar.gz"
 
-        # Create source archive
-        source_archive = self._create_source_archive(language, source_code, submission_id)
+        # Create source archive with optional build modifications
+        source_archive = self._create_source_archive(
+            language, source_code, submission_id, build_modifications
+        )
 
         # Upload to GCS
         client = storage.Client(project=self.project_id)
@@ -370,7 +379,13 @@ class DistributedBuildService:
         # Return the build ID
         return operation.metadata.build.id
 
-    def _create_source_archive(self, language: str, source_code: str, submission_id: int) -> bytes:
+    def _create_source_archive(
+        self,
+        language: str,
+        source_code: str,
+        submission_id: int,
+        build_modifications: Optional[Dict] = None,
+    ) -> bytes:
         """
         Create a tarball with the source code and proto file.
 
@@ -378,6 +393,7 @@ class DistributedBuildService:
             language: Programming language
             source_code: User's source code
             submission_id: Submission ID
+            build_modifications: Optional AI-generated build file modifications
 
         Returns:
             Tar.gz bytes
@@ -414,8 +430,8 @@ class DistributedBuildService:
             dockerfile_info.size = len(dockerfile_data)
             tar.addfile(dockerfile_info, io.BytesIO(dockerfile_data))
 
-            # Add build files (requirements.txt, go.mod, etc.)
-            build_files = self._get_build_files(language)
+            # Add build files (requirements.txt, go.mod, etc.) with AI modifications
+            build_files = self._get_build_files(language, build_modifications)
             for filename, content in build_files.items():
                 file_info = tarfile.TarInfo(name=filename)
                 file_data = content.encode("utf-8")
@@ -522,41 +538,188 @@ EXPOSE 50051
 CMD ["./server"]
 """
 
-    def _get_build_files(self, language: str) -> Dict[str, str]:
-        """Get additional build files for a language."""
+    def _get_build_files(
+        self, language: str, build_modifications: Optional[Dict] = None
+    ) -> Dict[str, str]:
+        """
+        Get additional build files for a language.
+
+        Args:
+            language: Programming language
+            build_modifications: Optional AI-generated modifications containing:
+                - additional_dependencies: list of packages to add
+                - cmake_packages: C++ find_package additions
+                - cmake_libraries: C++ target_link_libraries additions
+
+        Returns:
+            Dict of filename -> content
+        """
+        mods = build_modifications or {}
+        additional_deps = mods.get("additional_dependencies", [])
+
         if language == "python":
+            base_deps = ["grpcio>=1.59.0", "grpcio-tools>=1.59.0", "protobuf>=4.25.0"]
+            # Add any AI-detected additional dependencies
+            all_deps = base_deps + [d for d in additional_deps if d not in base_deps]
             return {
-                "requirements.txt": "grpcio>=1.59.0\ngrpcio-tools>=1.59.0\nprotobuf>=4.25.0\n"
+                "requirements.txt": "\n".join(all_deps) + "\n"
             }
         elif language == "go":
-            return {
-                "go.mod": """module github.com/sdp/raft
+            base_mod = """module github.com/sdp/raft
 
 go 1.21
 
 require (
     google.golang.org/grpc v1.59.0
     google.golang.org/protobuf v1.31.0
-)
-""",
+"""
+            # Add AI-detected Go dependencies
+            for dep in additional_deps:
+                if dep and "require" not in dep:
+                    base_mod += f"    {dep}\n"
+            base_mod += ")\n"
+            return {
+                "go.mod": base_mod,
                 "go.sum": "",
             }
         elif language == "cpp":
+            cmake_packages = mods.get("cmake_packages", [])
+            cmake_libraries = mods.get("cmake_libraries", [])
             return {
-                "CMakeLists.txt": self._get_cpp_cmakelists()
+                "CMakeLists.txt": self._get_cpp_cmakelists(cmake_packages, cmake_libraries)
+            }
+        elif language == "rust":
+            # Base Cargo.toml dependencies
+            cargo_toml = """[package]
+name = "raft-server"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1.34", features = ["full"] }
+tonic = "0.10"
+prost = "0.12"
+rand = "0.8"
+clap = { version = "4.4", features = ["derive"] }
+"""
+            # Add AI-detected Rust dependencies
+            for dep in additional_deps:
+                if dep and "=" not in cargo_toml.split(dep.split("=")[0] if "=" in dep else dep)[0]:
+                    cargo_toml += f"{dep}\n"
+            cargo_toml += """
+[build-dependencies]
+tonic-build = "0.10"
+"""
+            return {
+                "Cargo.toml": cargo_toml,
+                "build.rs": """fn main() -> Result<(), Box<dyn std::error::Error>> {
+    tonic_build::configure()
+        .build_server(true)
+        .build_client(true)
+        .compile(&["raft.proto"], &["."])?;
+    Ok(())
+}
+""",
+            }
+        elif language == "java":
+            # Base build.gradle
+            build_gradle = """plugins {
+    id 'java'
+    id 'application'
+    id 'com.google.protobuf' version '0.9.4'
+}
+
+repositories {
+    mavenCentral()
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+dependencies {
+    implementation 'io.grpc:grpc-netty-shaded:1.59.0'
+    implementation 'io.grpc:grpc-protobuf:1.59.0'
+    implementation 'io.grpc:grpc-stub:1.59.0'
+    implementation 'io.grpc:grpc-services:1.59.0'
+    implementation 'com.google.protobuf:protobuf-java:3.25.0'
+    implementation 'javax.annotation:javax.annotation-api:1.3.2'
+"""
+            # Add AI-detected Java dependencies
+            for dep in additional_deps:
+                if dep:
+                    build_gradle += f"    implementation '{dep}'\n"
+            build_gradle += """}
+
+protobuf {
+    protoc {
+        artifact = 'com.google.protobuf:protoc:3.25.0'
+    }
+    plugins {
+        grpc {
+            artifact = 'io.grpc:protoc-gen-grpc-java:1.59.0'
+        }
+    }
+    generateProtoTasks {
+        all()*.plugins {
+            grpc {}
+        }
+    }
+}
+
+application {
+    mainClass = 'com.sdp.raft.RaftServer'
+}
+
+jar {
+    manifest {
+        attributes 'Main-Class': 'com.sdp.raft.RaftServer'
+    }
+    from {
+        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+    }
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+"""
+            return {
+                "build.gradle": build_gradle,
             }
         return {}
 
-    def _get_cpp_cmakelists(self) -> str:
+    def _get_cpp_cmakelists(
+        self,
+        cmake_packages: Optional[List[str]] = None,
+        cmake_libraries: Optional[List[str]] = None,
+    ) -> str:
         """
         Get CMakeLists.txt for C++ Raft server.
+
+        Args:
+            cmake_packages: Additional find_package entries from AI analysis
+            cmake_libraries: Additional target_link_libraries entries from AI analysis
 
         This CMakeLists.txt:
         - Links against pre-compiled gRPC and protobuf from the base image
         - Links Abseil libraries required by newer protobuf
         - Supports AddressSanitizer, ThreadSanitizer, and UndefinedBehaviorSanitizer
         """
-        return '''cmake_minimum_required(VERSION 3.16)
+        # Generate additional find_package statements
+        extra_packages = ""
+        if cmake_packages:
+            for pkg in cmake_packages:
+                if pkg:
+                    extra_packages += f"find_package({pkg} QUIET)\n"
+
+        # Generate additional library links
+        extra_libraries = ""
+        if cmake_libraries:
+            for lib in cmake_libraries:
+                if lib:
+                    extra_libraries += f"    {lib}\n"
+
+        # Build the CMakeLists.txt using string concatenation to avoid f-string issues with ${}
+        cmake = '''cmake_minimum_required(VERSION 3.16)
 project(raft_server CXX)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -585,7 +748,13 @@ if(NOT absl_FOUND)
     endif()
 endif()
 
-# Include generated proto headers
+'''
+        # Add AI-detected additional packages
+        if extra_packages:
+            cmake += "# AI-detected additional packages\n"
+            cmake += extra_packages + "\n"
+
+        cmake += '''# Include generated proto headers
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/generated)
 
 # Collect proto sources
@@ -666,9 +835,18 @@ else()
     endif()
 endif()
 
-# Install
+'''
+        # Add AI-detected additional libraries
+        if extra_libraries:
+            cmake += "# AI-detected additional libraries\n"
+            cmake += "target_link_libraries(server\n"
+            cmake += extra_libraries
+            cmake += ")\n\n"
+
+        cmake += '''# Install
 install(TARGETS server DESTINATION bin)
 '''
+        return cmake
 
     async def deploy_cluster(
         self,

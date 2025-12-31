@@ -967,3 +967,138 @@ Respond with JSON in this exact format:
                 pass
 
         return result
+
+    async def analyze_distributed_code(
+        self,
+        source_code: str,
+        language: str,
+        proto_spec: str,
+        problem_type: str = "raft",
+    ) -> Dict[str, Any]:
+        """
+        Analyze distributed systems code submission for spec compliance and
+        generate appropriate build file modifications.
+
+        Args:
+            source_code: The user's submitted source code
+            language: Programming language (python, go, java, cpp, rust)
+            proto_spec: The gRPC proto specification
+            problem_type: Type of problem (e.g., "raft")
+
+        Returns:
+            Dict with:
+                - is_valid: bool - whether code adheres to spec
+                - errors: list - spec violations found
+                - warnings: list - potential issues
+                - build_modifications: dict - changes to build files
+        """
+        # Return mock response in demo mode
+        if self.demo_mode:
+            return {
+                "is_valid": True,
+                "errors": [],
+                "warnings": ["Demo mode: Build file analysis simulated"],
+                "build_modifications": self._get_default_build_modifications(language),
+            }
+
+        system_prompt = f"""You are an expert code analyzer for distributed systems implementations.
+
+Analyze the submitted {language} code for a {problem_type.upper()} consensus implementation.
+
+TASK:
+1. Check if the code implements all required gRPC services from the proto spec
+2. Identify any additional dependencies/imports beyond the standard ones
+3. Generate build file modifications needed for the code to compile
+
+PROTO SPECIFICATION:
+{proto_spec}
+
+REQUIRED SERVICES TO IMPLEMENT:
+- RaftService: RequestVote, AppendEntries, InstallSnapshot
+- KeyValueService: Get, Put, Delete, GetLeader, GetClusterStatus
+
+LANGUAGE-SPECIFIC BUILD FILES:
+- Python: requirements.txt (pip packages)
+- Go: go.mod (module dependencies)
+- Java: build.gradle (Gradle dependencies)
+- C++: CMakeLists.txt (find_package, target_link_libraries)
+- Rust: Cargo.toml (crate dependencies)
+
+Respond with JSON in this exact format:
+{{
+    "is_valid": true/false,
+    "errors": ["list of spec violations that would prevent the code from working"],
+    "warnings": ["list of potential issues or suggestions"],
+    "missing_services": ["list of gRPC services/methods not implemented"],
+    "detected_dependencies": ["list of additional libraries/packages detected in the code"],
+    "build_modifications": {{
+        "additional_dependencies": ["list of package names to add"],
+        "cmake_packages": ["for C++: additional find_package entries"],
+        "cmake_libraries": ["for C++: additional target_link_libraries entries"]
+    }}
+}}
+
+Be thorough but practical. Only flag real issues that would prevent compilation or runtime errors."""
+
+        try:
+            message = self.client.messages.create(
+                model=self.model,
+                max_tokens=2048,
+                system=system_prompt,
+                messages=[
+                    {"role": "user", "content": f"Analyze this {language} code:\n\n```{language}\n{source_code}\n```"}
+                ]
+            )
+
+            # Track token usage
+            self._track_usage(message)
+
+            response_text = message.content[0].text
+
+            try:
+                result = json.loads(response_text)
+            except json.JSONDecodeError:
+                # If not valid JSON, return safe defaults
+                result = {
+                    "is_valid": True,
+                    "errors": [],
+                    "warnings": ["Could not parse AI response, using defaults"],
+                    "build_modifications": self._get_default_build_modifications(language),
+                }
+
+            # Ensure build_modifications exists
+            if "build_modifications" not in result:
+                result["build_modifications"] = self._get_default_build_modifications(language)
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Error analyzing distributed code: {e}")
+            return {
+                "is_valid": True,
+                "errors": [],
+                "warnings": [f"Analysis error: {str(e)}, using defaults"],
+                "build_modifications": self._get_default_build_modifications(language),
+            }
+
+    def _get_default_build_modifications(self, language: str) -> Dict[str, Any]:
+        """Get default build modifications for a language."""
+        defaults = {
+            "python": {
+                "additional_dependencies": [],
+            },
+            "go": {
+                "additional_dependencies": [],
+            },
+            "java": {
+                "additional_dependencies": [],
+            },
+            "cpp": {
+                "cmake_packages": [],
+                "cmake_libraries": [],
+            },
+            "rust": {
+                "additional_dependencies": [],
+            },
+        }
+        return defaults.get(language, {"additional_dependencies": []})

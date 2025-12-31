@@ -23,6 +23,7 @@ from backend.models.submission import Submission, SubmissionStatus, SubmissionTy
 from backend.models.user import User
 from backend.auth.jwt_handler import get_current_user
 from backend.services.distributed_build import DistributedBuildService
+from backend.services.ai_service import AIService
 from backend.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -143,10 +144,11 @@ async def run_distributed_build(submission_id: int, language: str, source_code: 
     Background task to run the distributed build process.
 
     This function:
-    1. Starts the Cloud Build job
-    2. Monitors build progress and streams logs
-    3. Updates submission status and stores logs in database
-    4. Deploys the cluster on successful build
+    1. Analyzes the code using Claude AI for spec validation and dependency detection
+    2. Starts the Cloud Build job with AI-modified build files
+    3. Monitors build progress and streams logs
+    4. Updates submission status and stores logs in database
+    5. Deploys the cluster on successful build
     """
     db = SessionLocal()
     try:
@@ -156,17 +158,54 @@ async def run_distributed_build(submission_id: int, language: str, source_code: 
             return
 
         build_service = DistributedBuildService()
+        ai_service = AIService()
         project_id = settings.gcp_project_id
 
         # Update status to building
         submission.status = SubmissionStatus.BUILDING.value
-        submission.build_logs = "Starting build process...\n"
+        submission.build_logs = "Analyzing code and preparing build...\n"
         db.commit()
 
         try:
-            # Start the Cloud Build
+            # Load the proto spec
+            proto_path = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+                "distributed_problems",
+                "raft",
+                "proto",
+                "raft.proto"
+            )
+            proto_spec = ""
+            if os.path.exists(proto_path):
+                with open(proto_path, "r") as f:
+                    proto_spec = f.read()
+
+            # Analyze code using Claude AI for spec validation and dependency detection
+            logger.info(f"Analyzing code for submission {submission_id}, language: {language}")
+            analysis_result = await ai_service.analyze_distributed_code(
+                source_code=source_code,
+                language=language,
+                proto_spec=proto_spec,
+                problem_type="raft",
+            )
+
+            # Log analysis results
+            build_modifications = analysis_result.get("build_modifications", {})
+            if analysis_result.get("errors"):
+                submission.build_logs += f"Spec validation warnings: {', '.join(analysis_result['errors'])}\n"
+            if analysis_result.get("warnings"):
+                submission.build_logs += f"Analysis notes: {', '.join(analysis_result['warnings'])}\n"
+            if analysis_result.get("detected_dependencies"):
+                submission.build_logs += f"Detected dependencies: {', '.join(analysis_result['detected_dependencies'])}\n"
+
+            submission.build_logs += "\nStarting build process...\n"
+            db.commit()
+
+            # Start the Cloud Build with AI-generated build modifications
             logger.info(f"Starting build for submission {submission_id}, language: {language}")
-            build_id = await build_service.start_build(submission_id, language, source_code)
+            build_id = await build_service.start_build(
+                submission_id, language, source_code, build_modifications
+            )
 
             submission.build_logs = f"Build started. Build ID: {build_id}\n"
             db.commit()
