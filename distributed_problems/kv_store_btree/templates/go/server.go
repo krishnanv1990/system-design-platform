@@ -392,29 +392,7 @@ func (t *BPlusTree) allocatePage() uint32 {
 // 2. If internal node, find child to follow
 // 3. If leaf node, search for key
 func (t *BPlusTree) Search(key string) (string, bool, error) {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-
-	node, err := t.readPage(t.rootPageID)
-	if err != nil {
-		return "", false, err
-	}
-
-	// Traverse to leaf
-	for !node.IsLeaf {
-		childIdx := t.findChildIndex(node, key)
-		node, err = t.readPage(node.Children[childIdx])
-		if err != nil {
-			return "", false, err
-		}
-	}
-
-	// Search in leaf
-	idx := sort.SearchStrings(node.Keys, key)
-	if idx < len(node.Keys) && node.Keys[idx] == key {
-		return node.Values[idx], true, nil
-	}
-
+	// TODO: Implement this method
 	return "", false, nil
 }
 
@@ -430,214 +408,30 @@ func (t *BPlusTree) findChildIndex(node *BPlusTreeNode, key string) int {
 // 2. Insert key-value in sorted order
 // 3. If node overflows, split and propagate up
 func (t *BPlusTree) Insert(key, value string) error {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	// Write to WAL first
-	if err := t.writeWAL(0, key, value); err != nil {
-		return err
-	}
-
-	root, err := t.readPage(t.rootPageID)
-	if err != nil {
-		return err
-	}
-
-	// If root needs splitting
-	if len(root.Keys) >= MaxKeys {
-		newRoot := NewInternalNode(t.allocatePage())
-		newRoot.Children = append(newRoot.Children, t.rootPageID)
-
-		t.splitChild(newRoot, 0)
-
-		t.bufferPool.Put(newRoot)
-		t.writePage(newRoot)
-		t.rootPageID = newRoot.PageID
-		t.saveMetadata()
-	}
-
-	return t.insertNonFull(t.rootPageID, key, value)
+	// TODO: Implement this method
+	return nil
 }
 
 func (t *BPlusTree) insertNonFull(pageID uint32, key, value string) error {
-	node, err := t.readPage(pageID)
-	if err != nil {
-		return err
-	}
-
-	if node.IsLeaf {
-		// Insert into leaf
-		idx := sort.SearchStrings(node.Keys, key)
-
-		// Check for update
-		if idx < len(node.Keys) && node.Keys[idx] == key {
-			node.Values[idx] = value
-		} else {
-			// Insert new key-value
-			node.Keys = append(node.Keys, "")
-			node.Values = append(node.Values, "")
-			copy(node.Keys[idx+1:], node.Keys[idx:])
-			copy(node.Values[idx+1:], node.Values[idx:])
-			node.Keys[idx] = key
-			node.Values[idx] = value
-		}
-
-		node.Dirty = true
-		return t.writePage(node)
-	}
-
-	// Find child
-	childIdx := t.findChildIndex(node, key)
-	child, err := t.readPage(node.Children[childIdx])
-	if err != nil {
-		return err
-	}
-
-	// Split child if full
-	if len(child.Keys) >= MaxKeys {
-		t.splitChild(node, childIdx)
-		t.writePage(node)
-
-		// Determine which child to follow after split
-		if key > node.Keys[childIdx] {
-			childIdx++
-		}
-	}
-
-	return t.insertNonFull(node.Children[childIdx], key, value)
+	// TODO: Implement this helper method
+	return nil
 }
 
 func (t *BPlusTree) splitChild(parent *BPlusTreeNode, childIdx int) error {
-	child, err := t.readPage(parent.Children[childIdx])
-	if err != nil {
-		return err
-	}
-
-	mid := len(child.Keys) / 2
-	var newNode *BPlusTreeNode
-
-	if child.IsLeaf {
-		newNode = NewLeafNode(t.allocatePage())
-		newNode.Keys = append(newNode.Keys, child.Keys[mid:]...)
-		newNode.Values = append(newNode.Values, child.Values[mid:]...)
-		newNode.Next = child.Next
-		child.Next = newNode.PageID
-
-		child.Keys = child.Keys[:mid]
-		child.Values = child.Values[:mid]
-
-		// Promote first key of new node
-		parent.Keys = append(parent.Keys, "")
-		copy(parent.Keys[childIdx+1:], parent.Keys[childIdx:])
-		parent.Keys[childIdx] = newNode.Keys[0]
-	} else {
-		newNode = NewInternalNode(t.allocatePage())
-		promoteKey := child.Keys[mid]
-
-		newNode.Keys = append(newNode.Keys, child.Keys[mid+1:]...)
-		newNode.Children = append(newNode.Children, child.Children[mid+1:]...)
-
-		child.Keys = child.Keys[:mid]
-		child.Children = child.Children[:mid+1]
-
-		parent.Keys = append(parent.Keys, "")
-		copy(parent.Keys[childIdx+1:], parent.Keys[childIdx:])
-		parent.Keys[childIdx] = promoteKey
-	}
-
-	parent.Children = append(parent.Children, 0)
-	copy(parent.Children[childIdx+2:], parent.Children[childIdx+1:])
-	parent.Children[childIdx+1] = newNode.PageID
-
-	t.bufferPool.Put(newNode)
-	t.writePage(child)
-	t.writePage(newNode)
-	parent.Dirty = true
-
+	// TODO: Implement this helper method
 	return nil
 }
 
 // Delete removes a key from the B+ tree
 func (t *BPlusTree) Delete(key string) error {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	// Write to WAL first
-	if err := t.writeWAL(1, key, ""); err != nil {
-		return err
-	}
-
-	// Find and delete from leaf
-	node, err := t.readPage(t.rootPageID)
-	if err != nil {
-		return err
-	}
-
-	// Traverse to leaf
-	for !node.IsLeaf {
-		childIdx := t.findChildIndex(node, key)
-		node, err = t.readPage(node.Children[childIdx])
-		if err != nil {
-			return err
-		}
-	}
-
-	// Delete from leaf
-	idx := sort.SearchStrings(node.Keys, key)
-	if idx < len(node.Keys) && node.Keys[idx] == key {
-		node.Keys = append(node.Keys[:idx], node.Keys[idx+1:]...)
-		node.Values = append(node.Values[:idx], node.Values[idx+1:]...)
-		node.Dirty = true
-		return t.writePage(node)
-	}
-
+	// TODO: Implement this method
 	return nil
 }
 
 // Scan returns all key-value pairs in a range
 func (t *BPlusTree) Scan(startKey, endKey string) ([]string, []string, error) {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-
-	// Find starting leaf
-	node, err := t.readPage(t.rootPageID)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	for !node.IsLeaf {
-		childIdx := t.findChildIndex(node, startKey)
-		node, err = t.readPage(node.Children[childIdx])
-		if err != nil {
-			return nil, nil, err
-		}
-	}
-
-	// Collect results
-	keys := make([]string, 0)
-	values := make([]string, 0)
-
-	for {
-		for i, key := range node.Keys {
-			if key >= startKey && key <= endKey {
-				keys = append(keys, key)
-				values = append(values, node.Values[i])
-			} else if key > endKey {
-				return keys, values, nil
-			}
-		}
-
-		if node.Next == 0 {
-			break
-		}
-
-		node, err = t.readPage(node.Next)
-		if err != nil {
-			return nil, nil, err
-		}
-	}
-
-	return keys, values, nil
+	// TODO: Implement this method
+	return nil, nil, nil
 }
 
 func (t *BPlusTree) writeWAL(op byte, key, value string) error {

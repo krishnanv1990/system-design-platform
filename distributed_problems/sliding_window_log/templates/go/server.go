@@ -105,21 +105,7 @@ func (r *SlidingWindowLogRateLimiter) GetOrCreateCounter(counterID string, windo
 // 2. Remove all timestamps before window start
 // 3. Maintain sorted order for efficient cleanup
 func (r *SlidingWindowLogRateLimiter) CleanupOldTimestamps(counter *WindowState) {
-	counter.mu.Lock()
-	defer counter.mu.Unlock()
-
-	now := time.Now().UnixMilli()
-	windowStart := now - int64(counter.WindowSizeMs)
-
-	// TODO: Find first timestamp within the window using binary search
-	idx := sort.Search(len(counter.Timestamps), func(i int) bool {
-		return counter.Timestamps[i] >= windowStart
-	})
-
-	// TODO: Remove old timestamps
-	if idx > 0 {
-		counter.Timestamps = counter.Timestamps[idx:]
-	}
+	// TODO: Implement this method
 }
 
 // CountRequestsInWindow counts requests in the current sliding window
@@ -128,12 +114,8 @@ func (r *SlidingWindowLogRateLimiter) CleanupOldTimestamps(counter *WindowState)
 // 1. First cleanup old timestamps
 // 2. Return the count of remaining timestamps
 func (r *SlidingWindowLogRateLimiter) CountRequestsInWindow(counter *WindowState) uint64 {
-	r.CleanupOldTimestamps(counter)
-
-	counter.mu.Lock()
-	defer counter.mu.Unlock()
-
-	return uint64(len(counter.Timestamps))
+	// TODO: Implement this method
+	return 0
 }
 
 // TryRecord attempts to record a request
@@ -144,23 +126,8 @@ func (r *SlidingWindowLogRateLimiter) CountRequestsInWindow(counter *WindowState
 // 3. If within limit, add current timestamp and return true
 // 4. If would exceed, return false
 func (r *SlidingWindowLogRateLimiter) TryRecord(counter *WindowState, count uint64) bool {
-	r.CleanupOldTimestamps(counter)
-
-	counter.mu.Lock()
-	defer counter.mu.Unlock()
-
-	// TODO: Check if requests would exceed limit
-	if uint64(len(counter.Timestamps))+count > counter.RequestLimit {
-		return false
-	}
-
-	// TODO: Record new timestamps
-	now := time.Now().UnixMilli()
-	for i := uint64(0); i < count; i++ {
-		counter.Timestamps = append(counter.Timestamps, now)
-	}
-
-	return true
+	// TODO: Implement this method
+	return false
 }
 
 // =============================================================================

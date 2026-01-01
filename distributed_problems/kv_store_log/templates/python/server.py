@@ -149,39 +149,8 @@ class LogStructuredStore:
         Returns:
             Offset of the entry
         """
-        with self.lock:
-            timestamp = self._current_time_ms()
-            offset = self.current_offset
-
-            entry = LogEntry(
-                offset=offset,
-                timestamp=timestamp,
-                entry_type=entry_type,
-                key=key,
-                value=value,
-                checksum=self._compute_checksum(key.encode() + value),
-            )
-
-            self.active_buffer.append(entry)
-            self.total_entries += 1
-
-            # Update KeyDir
-            if entry_type == EntryType.PUT:
-                self.keydir[key] = KeyDirEntry(
-                    key=key,
-                    segment_id=self.active_segment_id,
-                    offset=offset,
-                    size=len(value),
-                    timestamp=timestamp,
-                )
-                self.live_entries += 1
-            elif entry_type == EntryType.DELETE:
-                if key in self.keydir:
-                    del self.keydir[key]
-                    self.live_entries -= 1
-
-            self.current_offset += 1
-            return offset
+        # TODO: Implement this method
+        return 0
 
     def get(self, key: str) -> Tuple[Optional[bytes], bool]:
         """
@@ -193,42 +162,33 @@ class LogStructuredStore:
         3. Verify checksum
         4. Return (value, found)
         """
-        with self.lock:
-            if key not in self.keydir:
-                return (None, False)
-
-            entry_info = self.keydir[key]
-
-            # For simplicity, search in active buffer
-            for entry in reversed(self.active_buffer):
-                if entry.key == key and entry.entry_type == EntryType.PUT:
-                    return (entry.value, True)
-
-            return (None, False)
+        # TODO: Implement this method
+        return (None, False)
 
     def delete(self, key: str) -> bool:
-        """Delete a key by appending a tombstone."""
-        with self.lock:
-            existed = key in self.keydir
-            if existed:
-                self.append(key, b"", EntryType.DELETE)
-            return existed
+        """
+        Delete a key by appending a tombstone.
+
+        TODO: Implement delete:
+        1. Check if key exists in keydir
+        2. If yes, append a DELETE entry
+        3. Return True if key existed
+        """
+        # TODO: Implement this method
+        return False
 
     def scan(self, start_key: str, end_key: str, limit: int = 100) -> List[Tuple[str, bytes]]:
-        """Scan a range of keys."""
-        with self.lock:
-            results = []
-            for key in sorted(self.keydir.keys()):
-                if start_key and key < start_key:
-                    continue
-                if end_key and key >= end_key:
-                    break
-                value, found = self.get(key)
-                if found:
-                    results.append((key, value))
-                if len(results) >= limit:
-                    break
-            return results
+        """
+        Scan a range of keys.
+
+        TODO: Implement scan:
+        1. Iterate over sorted keys in keydir
+        2. Filter by start_key and end_key
+        3. Get value for each key
+        4. Return up to limit results
+        """
+        # TODO: Implement this method
+        return []
 
     def compact(self) -> Tuple[int, int]:
         """
@@ -241,23 +201,8 @@ class LogStructuredStore:
         4. Delete old segments
         5. Return (entries_processed, entries_removed)
         """
-        with self.lock:
-            # For simplicity, filter active buffer
-            new_buffer = []
-            removed = 0
-
-            for entry in self.active_buffer:
-                if entry.key in self.keydir:
-                    kd = self.keydir[entry.key]
-                    if kd.offset == entry.offset:
-                        new_buffer.append(entry)
-                    else:
-                        removed += 1
-                else:
-                    removed += 1
-
-            self.active_buffer = new_buffer
-            return (len(self.active_buffer) + removed, removed)
+        # TODO: Implement this method
+        return (0, 0)
 
 
 class KVStoreNode:

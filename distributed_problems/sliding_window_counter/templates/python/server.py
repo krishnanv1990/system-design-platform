@@ -130,29 +130,7 @@ class SlidingWindowCounterRateLimiter:
         3. If crossing multiple windows, clear previous
         4. Reset current count
         """
-        if now is None:
-            now = self._current_time_ms()
-
-        current_start = self.get_window_start(window.window_size_ms, now)
-
-        # Check if we're in a new window
-        if current_start > window.current_window_start:
-            # Calculate how many windows we've skipped
-            windows_skipped = (current_start - window.current_window_start) // window.window_size_ms
-
-            if windows_skipped == 1:
-                # Normal rotation: current becomes previous
-                window.previous_window_start = window.current_window_start
-                window.previous_count = window.current_count
-            else:
-                # Skipped multiple windows: previous is too old
-                window.previous_window_start = current_start - window.window_size_ms
-                window.previous_count = 0
-
-            window.current_window_start = current_start
-            window.current_count = 0
-            return True
-
+        # TODO: Implement this method
         return False
 
     def get_sliding_count(self, window: WindowState, now: Optional[int] = None) -> float:
@@ -167,22 +145,8 @@ class SlidingWindowCounterRateLimiter:
         Returns:
             Weighted count estimate
         """
-        if now is None:
-            now = self._current_time_ms()
-
-        self.maybe_rotate_window(window, now)
-
-        # Calculate elapsed time in current window
-        elapsed = now - window.current_window_start
-        position = elapsed / window.window_size_ms  # 0.0 to 1.0
-
-        # Weight for previous window (decreases as we progress through current)
-        prev_weight = 1.0 - position
-
-        # Sliding estimate
-        sliding_count = (window.previous_count * prev_weight) + window.current_count
-
-        return sliding_count
+        # TODO: Implement this method
+        return 0.0
 
     def check_and_increment(self, window: WindowState, cost: int = 1, timestamp: Optional[int] = None) -> tuple:
         """
@@ -197,25 +161,8 @@ class SlidingWindowCounterRateLimiter:
         Returns:
             Tuple of (allowed, sliding_count, remaining)
         """
-        with self.lock:
-            if timestamp is None:
-                timestamp = self._current_time_ms()
-
-            # Get sliding count estimate
-            sliding_count = self.get_sliding_count(window, timestamp)
-
-            window.total_requests += 1
-
-            if sliding_count + cost <= window.max_requests:
-                window.current_count += cost
-                window.total_allowed += 1
-                # Recalculate after increment
-                new_sliding = self.get_sliding_count(window, timestamp)
-                remaining = max(0, int(window.max_requests - new_sliding))
-                return (True, new_sliding, remaining)
-            else:
-                window.total_rejected += 1
-                return (False, sliding_count, 0)
+        # TODO: Implement this method
+        return (False, 0.0, 0)
 
     def get_or_create_window(
         self,
@@ -223,20 +170,23 @@ class SlidingWindowCounterRateLimiter:
         max_requests: int = DEFAULT_MAX_REQUESTS,
         window_size_ms: int = DEFAULT_WINDOW_SIZE_MS
     ) -> WindowState:
-        """Get an existing window or create a new one."""
-        with self.lock:
-            if limit_id not in self.windows:
-                now = self._current_time_ms()
-                current_start = self.get_window_start(window_size_ms, now)
-                self.windows[limit_id] = WindowState(
-                    limit_id=limit_id,
-                    max_requests=max_requests,
-                    window_size_ms=window_size_ms,
-                    current_window_start=current_start,
-                    previous_window_start=current_start - window_size_ms,
-                )
-                logger.info(f"Created window {limit_id} with max={max_requests}, size={window_size_ms}ms")
-            return self.windows[limit_id]
+        """
+        Get an existing window or create a new one.
+
+        TODO: Implement window management:
+        1. Check if window exists
+        2. If not, create new window with given config
+        3. Return the window
+        """
+        # TODO: Implement this method
+        # For now, return a placeholder window
+        return WindowState(
+            limit_id=limit_id,
+            max_requests=max_requests,
+            window_size_ms=window_size_ms,
+            current_window_start=0,
+            previous_window_start=0,
+        )
 
 
 class RateLimiterServicer(sliding_window_counter_pb2_grpc.RateLimiterServiceServicer):

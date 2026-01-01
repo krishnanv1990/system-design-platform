@@ -113,27 +113,8 @@ public class SlidingWindowCounterServer {
          *    a. Reset both counts (too old)
          */
         public void checkAndRotateWindow(WindowState counter) {
-            counter.lock.lock();
-            try {
-                long currentWindow = getCurrentWindowStart(counter.windowSizeMs);
-
-                // Calculate how many windows have passed
-                long windowsPassed = (currentWindow - counter.currentWindowStart) / counter.windowSizeMs;
-
-                if (windowsPassed >= 2) {
-                    // TODO: Too old, reset both counts
-                    counter.previousCount = 0;
-                    counter.currentCount = 0;
-                    counter.currentWindowStart = currentWindow;
-                } else if (windowsPassed == 1) {
-                    // TODO: Moved to next window, rotate counts
-                    counter.previousCount = counter.currentCount;
-                    counter.currentCount = 0;
-                    counter.currentWindowStart = currentWindow;
-                }
-            } finally {
-                counter.lock.unlock();
-            }
+            // TODO: Implement this method
+            throw new UnsupportedOperationException("checkAndRotateWindow not implemented");
         }
 
         /**
@@ -146,26 +127,8 @@ public class SlidingWindowCounterServer {
          * 4. Return total weighted count
          */
         public double calculateWeightedCount(WindowState counter) {
-            checkAndRotateWindow(counter);
-
-            counter.lock.lock();
-            try {
-                long now = System.currentTimeMillis();
-
-                // TODO: Calculate position within current window (0.0 to 1.0)
-                double elapsed = now - counter.currentWindowStart;
-                double position = elapsed / counter.windowSizeMs;
-                if (position > 1.0) position = 1.0;
-
-                // TODO: Calculate weighted count
-                // Previous window weighted by overlap with sliding window
-                double previousWeight = 1.0 - position;
-                double weightedCount = counter.previousCount * previousWeight + counter.currentCount;
-
-                return weightedCount;
-            } finally {
-                counter.lock.unlock();
-            }
+            // TODO: Implement this method
+            throw new UnsupportedOperationException("calculateWeightedCount not implemented");
         }
 
         /**
@@ -178,19 +141,8 @@ public class SlidingWindowCounterServer {
          * 4. If would exceed, return false
          */
         public boolean tryIncrement(WindowState counter, long count) {
-            double weightedCount = calculateWeightedCount(counter);
-
-            counter.lock.lock();
-            try {
-                // TODO: Check if request would exceed limit
-                if (weightedCount + count <= counter.requestLimit) {
-                    counter.currentCount += count;
-                    return true;
-                }
-                return false;
-            } finally {
-                counter.lock.unlock();
-            }
+            // TODO: Implement this method
+            throw new UnsupportedOperationException("tryIncrement not implemented");
         }
 
         // =========================================================================

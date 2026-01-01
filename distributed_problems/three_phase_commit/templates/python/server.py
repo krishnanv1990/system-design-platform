@@ -201,111 +201,26 @@ class ThreePhaseCommitNode:
         Returns:
             Tuple of (success, final_state, participant_states)
         """
-        with self.lock:
-            if tx_id not in self.transactions:
-                return (False, None, {})
-            tx = self.transactions[tx_id]
-
-        # Phase 1: CanCommit
-        tx.state = TransactionState.WAITING
-        votes = {}
-
-        for participant in tx.participants:
-            if participant == self.node_id:
-                # Local vote
-                votes[participant] = self._local_can_commit(tx_id, tx.data)
-            elif participant in self.peer_stubs:
-                try:
-                    stub = self.peer_stubs[participant][0]
-                    response = await stub.CanCommit(
-                        three_phase_commit_pb2.CanCommitRequest(
-                            transaction_id=tx_id,
-                            coordinator=self.node_id,
-                            data=tx.data,
-                        )
-                    )
-                    votes[participant] = response.vote
-                except Exception as e:
-                    logger.error(f"CanCommit failed for {participant}: {e}")
-                    votes[participant] = False
-
-        # Check if all voted YES
-        if not all(votes.values()):
-            # Abort
-            await self._abort_transaction(tx_id, "Participant voted NO")
-            return (False, TransactionState.ABORTED, votes)
-
-        # Phase 2: PreCommit
-        tx.state = TransactionState.PRECOMMIT
-        acks = {}
-
-        for participant in tx.participants:
-            if participant == self.node_id:
-                acks[participant] = self._local_pre_commit(tx_id)
-            elif participant in self.peer_stubs:
-                try:
-                    stub = self.peer_stubs[participant][0]
-                    response = await stub.PreCommit(
-                        three_phase_commit_pb2.PreCommitRequest(transaction_id=tx_id)
-                    )
-                    acks[participant] = response.acknowledged
-                except Exception as e:
-                    logger.error(f"PreCommit failed for {participant}: {e}")
-                    acks[participant] = False
-
-        if not all(acks.values()):
-            await self._abort_transaction(tx_id, "PreCommit failed")
-            return (False, TransactionState.ABORTED, acks)
-
-        # Phase 3: DoCommit
-        tx.state = TransactionState.COMMITTING
-        commits = {}
-
-        for participant in tx.participants:
-            if participant == self.node_id:
-                commits[participant] = self._local_do_commit(tx_id)
-            elif participant in self.peer_stubs:
-                try:
-                    stub = self.peer_stubs[participant][0]
-                    response = await stub.DoCommit(
-                        three_phase_commit_pb2.DoCommitRequest(transaction_id=tx_id)
-                    )
-                    commits[participant] = response.success
-                except Exception as e:
-                    logger.error(f"DoCommit failed for {participant}: {e}")
-                    commits[participant] = False
-
-        tx.state = TransactionState.COMMITTED
-        tx.last_update = self._current_time_ms()
-
-        logger.info(f"Transaction {tx_id} committed")
-        return (True, TransactionState.COMMITTED, commits)
+        # TODO: Implement this method
+        # 1. Phase 1 (CanCommit): Send CanCommit to all participants
+        # 2. If all vote YES, proceed to Phase 2
+        # 3. Phase 2 (PreCommit): Send PreCommit to all participants
+        # 4. If all acknowledge, proceed to Phase 3
+        # 5. Phase 3 (DoCommit): Send DoCommit to all participants
+        # 6. Return (success, final_state, participant_states)
+        return (False, None, {})
 
     async def _abort_transaction(self, tx_id: str, reason: str):
-        """Send abort to all participants."""
-        with self.lock:
-            if tx_id in self.transactions:
-                tx = self.transactions[tx_id]
-                tx.state = TransactionState.ABORTING
+        """
+        Send abort to all participants.
 
-        for participant in tx.participants:
-            if participant == self.node_id:
-                self._local_do_abort(tx_id)
-            elif participant in self.peer_stubs:
-                try:
-                    stub = self.peer_stubs[participant][0]
-                    await stub.DoAbort(
-                        three_phase_commit_pb2.DoAbortRequest(
-                            transaction_id=tx_id,
-                            reason=reason,
-                        )
-                    )
-                except Exception as e:
-                    logger.error(f"DoAbort failed for {participant}: {e}")
-
-        with self.lock:
-            if tx_id in self.transactions:
-                self.transactions[tx_id].state = TransactionState.ABORTED
+        TODO: Implement abort:
+        1. Update transaction state to ABORTING
+        2. Send DoAbort to all participants
+        3. Update transaction state to ABORTED
+        """
+        # TODO: Implement this method
+        pass
 
     # =========================================================================
     # Participant Methods (local execution)
@@ -319,29 +234,21 @@ class ThreePhaseCommitNode:
         1. Check if transaction can be committed
         2. Validate data
         3. Acquire any necessary locks
+        4. Store pending writes
+        5. Return True if can commit, False otherwise
         """
-        with self.lock:
-            # Store pending writes
-            self.pending_writes[tx_id] = data.copy()
-
-            # Create participant state
-            self.participant_states[tx_id] = ParticipantInfo(
-                node_id=self.node_id,
-                transaction_id=tx_id,
-                state=ParticipantState.UNCERTAIN,
-                vote=True,
-                last_update=self._current_time_ms(),
-            )
-
-        return True
+        # TODO: Implement this method
+        return False
 
     def _local_pre_commit(self, tx_id: str) -> bool:
-        """Local PreCommit handling."""
-        with self.lock:
-            if tx_id in self.participant_states:
-                self.participant_states[tx_id].state = ParticipantState.PRECOMMITTED
-                self.participant_states[tx_id].last_update = self._current_time_ms()
-                return True
+        """
+        Local PreCommit handling.
+
+        TODO: Implement pre-commit:
+        1. Update participant state to PRECOMMITTED
+        2. Return True if successful
+        """
+        # TODO: Implement this method
         return False
 
     def _local_do_commit(self, tx_id: str) -> bool:
@@ -352,31 +259,22 @@ class ThreePhaseCommitNode:
         1. Apply pending writes to data store
         2. Release locks
         3. Clean up transaction state
+        4. Update participant state to COMMITTED
         """
-        with self.lock:
-            if tx_id in self.pending_writes:
-                # Apply writes
-                for key, value in self.pending_writes[tx_id].items():
-                    self.data_store[key] = value
-                del self.pending_writes[tx_id]
-
-            if tx_id in self.participant_states:
-                self.participant_states[tx_id].state = ParticipantState.COMMITTED
-                self.participant_states[tx_id].last_update = self._current_time_ms()
-
-        return True
+        # TODO: Implement this method
+        return False
 
     def _local_do_abort(self, tx_id: str) -> bool:
-        """Local DoAbort execution."""
-        with self.lock:
-            if tx_id in self.pending_writes:
-                del self.pending_writes[tx_id]
+        """
+        Local DoAbort execution.
 
-            if tx_id in self.participant_states:
-                self.participant_states[tx_id].state = ParticipantState.ABORTED
-                self.participant_states[tx_id].last_update = self._current_time_ms()
-
-        return True
+        TODO: Implement abort:
+        1. Discard pending writes
+        2. Release locks
+        3. Update participant state to ABORTED
+        """
+        # TODO: Implement this method
+        return False
 
 
 class CoordinatorServicer(three_phase_commit_pb2_grpc.CoordinatorServiceServicer):

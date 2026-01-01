@@ -107,19 +107,7 @@ func (r *TokenBucketRateLimiter) GetOrCreateBucket(bucketID string, capacity, re
 // 3. Cap tokens at capacity
 // 4. Update last refill time
 func (r *TokenBucketRateLimiter) RefillTokens(bucket *BucketState) {
-	bucket.mu.Lock()
-	defer bucket.mu.Unlock()
-
-	now := time.Now()
-	elapsed := now.Sub(bucket.LastRefillTime).Seconds()
-
-	// TODO: Calculate tokens to add based on elapsed time and refill rate
-	tokensToAdd := elapsed * bucket.RefillRate
-
-	// TODO: Add tokens but don't exceed capacity
-	bucket.Tokens = min(bucket.Tokens+tokensToAdd, bucket.Capacity)
-
-	bucket.LastRefillTime = now
+	// TODO: Implement this method
 }
 
 // TryConsume attempts to consume tokens from the bucket
@@ -130,16 +118,7 @@ func (r *TokenBucketRateLimiter) RefillTokens(bucket *BucketState) {
 // 3. If yes, deduct tokens and return true
 // 4. If no, return false (request should be rate limited)
 func (r *TokenBucketRateLimiter) TryConsume(bucket *BucketState, tokens float64) bool {
-	r.RefillTokens(bucket)
-
-	bucket.mu.Lock()
-	defer bucket.mu.Unlock()
-
-	// TODO: Check if enough tokens and consume
-	if bucket.Tokens >= tokens {
-		bucket.Tokens -= tokens
-		return true
-	}
+	// TODO: Implement this method
 	return false
 }
 

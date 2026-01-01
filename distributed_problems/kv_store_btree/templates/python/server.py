@@ -118,37 +118,51 @@ class BufferPool:
         self.evictions = 0
 
     def get_page(self, page_id: int) -> Optional[Page]:
-        """Get page from buffer pool."""
-        if page_id in self.pages:
-            self.cache_hits += 1
-            return self.pages[page_id]
-        self.cache_misses += 1
+        """
+        Get page from buffer pool.
+
+        TODO: Implement get_page:
+        1. Check if page is in cache
+        2. Update cache hit/miss stats
+        3. Return page or None
+        """
+        # TODO: Implement this method
         return None
 
     def put_page(self, page: Page):
-        """Put page into buffer pool."""
-        if len(self.pages) >= self.max_size:
-            self._evict()
-        self.pages[page.page_id] = page
+        """
+        Put page into buffer pool.
+
+        TODO: Implement put_page:
+        1. If pool is full, evict a page
+        2. Add page to pool
+        """
+        # TODO: Implement this method
+        pass
 
     def _evict(self):
-        """Evict a page (simple FIFO for now)."""
-        if self.pages:
-            # Find non-dirty page to evict
-            for page_id, page in list(self.pages.items()):
-                if not page.is_dirty:
-                    del self.pages[page_id]
-                    self.evictions += 1
-                    return
+        """
+        Evict a page using LRU policy.
+
+        TODO: Implement eviction:
+        1. Find a non-dirty page to evict
+        2. Remove from pool
+        3. Update eviction stats
+        """
+        # TODO: Implement this method
+        pass
 
     def flush_all(self) -> int:
-        """Flush all dirty pages."""
-        flushed = 0
-        for page in self.pages.values():
-            if page.is_dirty:
-                page.is_dirty = False
-                flushed += 1
-        return flushed
+        """
+        Flush all dirty pages.
+
+        TODO: Implement flush:
+        1. Write all dirty pages to disk
+        2. Mark them as clean
+        3. Return count of flushed pages
+        """
+        # TODO: Implement this method
+        return 0
 
     @property
     def hit_ratio(self) -> float:
@@ -221,130 +235,86 @@ class BPlusTree:
         3. If leaf is full, split and propagate up
         4. Update WAL
         """
-        with self.lock:
-            self.lsn += 1
-
-            # Find leaf page
-            leaf = self._find_leaf(key)
-
-            # Find insert position
-            idx = bisect.bisect_left(leaf.keys, key)
-
-            # Check if key exists
-            if idx < len(leaf.keys) and leaf.keys[idx] == key:
-                # Update existing
-                leaf.values[idx] = value
-            else:
-                # Insert new
-                leaf.keys.insert(idx, key)
-                leaf.values.insert(idx, value)
-                self.total_keys += 1
-
-            leaf.is_dirty = True
-            leaf.lsn = self.lsn
-
-            # Check if split needed
-            if len(leaf.keys) > self.branching_factor:
-                self._split_leaf(leaf)
-
-            return self.lsn
+        # TODO: Implement this method
+        return 0
 
     def search(self, key: str) -> Tuple[Optional[bytes], bool]:
-        """Search for a key."""
-        with self.lock:
-            leaf = self._find_leaf(key)
-            idx = bisect.bisect_left(leaf.keys, key)
+        """
+        Search for a key.
 
-            if idx < len(leaf.keys) and leaf.keys[idx] == key:
-                return (leaf.values[idx], True)
-            return (None, False)
+        TODO: Implement search:
+        1. Find the leaf page for this key
+        2. Binary search in leaf keys
+        3. Return (value, True) if found, (None, False) otherwise
+        """
+        # TODO: Implement this method
+        return (None, False)
 
     def delete(self, key: str) -> Tuple[bool, int]:
-        """Delete a key."""
-        with self.lock:
-            self.lsn += 1
+        """
+        Delete a key.
 
-            leaf = self._find_leaf(key)
-            idx = bisect.bisect_left(leaf.keys, key)
-
-            if idx < len(leaf.keys) and leaf.keys[idx] == key:
-                leaf.keys.pop(idx)
-                leaf.values.pop(idx)
-                leaf.is_dirty = True
-                leaf.lsn = self.lsn
-                self.total_keys -= 1
-                return (True, self.lsn)
-
-            return (False, self.lsn)
+        TODO: Implement delete:
+        1. Find the leaf page
+        2. Remove key if found
+        3. Merge nodes if needed
+        4. Return (existed, lsn)
+        """
+        # TODO: Implement this method
+        return (False, 0)
 
     def scan(self, start_key: str, end_key: str, limit: int = 100) -> List[Tuple[str, bytes]]:
         """
         Scan a range of keys.
 
-        TODO: Implement scan using leaf pointers for efficiency.
+        TODO: Implement scan using leaf pointers for efficiency:
+        1. Find leaf for start_key
+        2. Iterate through keys in range
+        3. Follow next_leaf pointers
+        4. Return up to limit results
         """
-        with self.lock:
-            results = []
-            leaf = self._find_leaf(start_key)
-
-            while leaf is not None:
-                for i, key in enumerate(leaf.keys):
-                    if start_key and key < start_key:
-                        continue
-                    if end_key and key >= end_key:
-                        return results
-                    results.append((key, leaf.values[i]))
-                    if len(results) >= limit:
-                        return results
-
-                # Move to next leaf
-                if leaf.next_leaf is not None:
-                    leaf = self.buffer_pool.get_page(leaf.next_leaf)
-                else:
-                    break
-
-            return results
+        # TODO: Implement this method
+        return []
 
     def _find_leaf(self, key: str) -> Page:
-        """Find the leaf page for a key."""
-        page = self.buffer_pool.get_page(self.root_page_id)
+        """
+        Find the leaf page for a key.
 
-        while page.page_type == PageType.INTERNAL:
-            idx = bisect.bisect_right(page.keys, key)
-            child_id = page.children[idx] if idx < len(page.children) else page.children[-1]
-            page = self.buffer_pool.get_page(child_id)
-
-        return page
+        TODO: Implement tree traversal:
+        1. Start at root
+        2. If internal node, find child to follow
+        3. Recurse until leaf
+        """
+        # TODO: Implement this method
+        # Return root page as placeholder
+        return self.buffer_pool.get_page(self.root_page_id) or Page(
+            page_id=0, page_type=PageType.LEAF, level=0
+        )
 
     def _split_leaf(self, leaf: Page):
-        """Split a leaf page."""
-        mid = len(leaf.keys) // 2
+        """
+        Split a leaf page.
 
-        # Create new leaf
-        new_leaf = self._new_page(PageType.LEAF, 0)
-        new_leaf.keys = leaf.keys[mid:]
-        new_leaf.values = leaf.values[mid:]
-        new_leaf.next_leaf = leaf.next_leaf
-        new_leaf.prev_leaf = leaf.page_id
-
-        # Update old leaf
-        leaf.keys = leaf.keys[:mid]
-        leaf.values = leaf.values[:mid]
-        leaf.next_leaf = new_leaf.page_id
-
-        # Promote middle key to parent
-        promoted_key = new_leaf.keys[0]
-        self._insert_into_parent(leaf, promoted_key, new_leaf)
+        TODO: Implement leaf split:
+        1. Create new leaf with upper half of keys
+        2. Update leaf pointers
+        3. Promote middle key to parent
+        """
+        # TODO: Implement this method
+        pass
 
     def _insert_into_parent(self, left: Page, key: str, right: Page):
-        """Insert into parent (simplified - creates new root if needed)."""
-        # For simplicity, just create a new root
-        if left.page_id == self.root_page_id:
-            new_root = self._new_page(PageType.INTERNAL, self.height)
-            new_root.keys = [key]
-            new_root.children = [left.page_id, right.page_id]
-            self.root_page_id = new_root.page_id
-            self.height += 1
+        """
+        Insert into parent node.
+
+        TODO: Implement parent insertion:
+        1. Find parent of left
+        2. Insert key and right child pointer
+        3. Split parent if needed
+        4. Create new root if splitting root
+        """
+        # TODO: Implement this method
+        pass
 
 
 class KVStoreNode:

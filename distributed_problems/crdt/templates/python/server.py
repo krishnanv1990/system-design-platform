@@ -110,19 +110,35 @@ class GCounter(BaseCRDT):
         self.counts: Dict[str, int] = {}
 
     def increment(self, amount: int = 1):
-        """Increment the counter."""
-        self.counts[self.node_id] = self.counts.get(self.node_id, 0) + amount
-        self.last_updated = int(time.time() * 1000)
+        """
+        Increment the counter.
+
+        TODO: Implement increment:
+        1. Increment this node's count by amount
+        2. Update last_updated timestamp
+        """
+        # TODO: Implement this method
+        pass
 
     def get_value(self) -> int:
-        """Get the counter value."""
-        return sum(self.counts.values())
+        """
+        Get the counter value.
+
+        TODO: Return the sum of all node counts
+        """
+        # TODO: Implement this method
+        return 0
 
     def merge(self, other: 'GCounter'):
-        """Merge another G-Counter."""
-        for node_id, count in other.counts.items():
-            self.counts[node_id] = max(self.counts.get(node_id, 0), count)
-        self.last_updated = int(time.time() * 1000)
+        """
+        Merge another G-Counter.
+
+        TODO: Implement merge:
+        1. For each node in other.counts
+        2. Take max of this count and other count
+        """
+        # TODO: Implement this method
+        pass
 
     def to_proto(self) -> crdt_pb2.CRDTState:
         return crdt_pb2.CRDTState(
@@ -150,26 +166,44 @@ class PNCounter(BaseCRDT):
         self.negative: Dict[str, int] = {}
 
     def increment(self, amount: int = 1):
-        """Increment the counter."""
-        self.positive[self.node_id] = self.positive.get(self.node_id, 0) + amount
-        self.last_updated = int(time.time() * 1000)
+        """
+        Increment the counter.
+
+        TODO: Implement increment:
+        1. Add amount to this node's positive count
+        """
+        # TODO: Implement this method
+        pass
 
     def decrement(self, amount: int = 1):
-        """Decrement the counter."""
-        self.negative[self.node_id] = self.negative.get(self.node_id, 0) + amount
-        self.last_updated = int(time.time() * 1000)
+        """
+        Decrement the counter.
+
+        TODO: Implement decrement:
+        1. Add amount to this node's negative count
+        """
+        # TODO: Implement this method
+        pass
 
     def get_value(self) -> int:
-        """Get the counter value."""
-        return sum(self.positive.values()) - sum(self.negative.values())
+        """
+        Get the counter value.
+
+        TODO: Return sum(positive) - sum(negative)
+        """
+        # TODO: Implement this method
+        return 0
 
     def merge(self, other: 'PNCounter'):
-        """Merge another PN-Counter."""
-        for node_id, count in other.positive.items():
-            self.positive[node_id] = max(self.positive.get(node_id, 0), count)
-        for node_id, count in other.negative.items():
-            self.negative[node_id] = max(self.negative.get(node_id, 0), count)
-        self.last_updated = int(time.time() * 1000)
+        """
+        Merge another PN-Counter.
+
+        TODO: Implement merge:
+        1. Merge positive counts (take max per node)
+        2. Merge negative counts (take max per node)
+        """
+        # TODO: Implement this method
+        pass
 
     def to_proto(self) -> crdt_pb2.CRDTState:
         return crdt_pb2.CRDTState(
@@ -198,22 +232,40 @@ class GSet(BaseCRDT):
         self.elements: Set[str] = set()
 
     def add(self, element: str):
-        """Add an element to the set."""
-        self.elements.add(element)
-        self.last_updated = int(time.time() * 1000)
+        """
+        Add an element to the set.
+
+        TODO: Add element to the set
+        """
+        # TODO: Implement this method
+        pass
 
     def contains(self, element: str) -> bool:
-        """Check if element is in set."""
-        return element in self.elements
+        """
+        Check if element is in set.
+
+        TODO: Return True if element is in set
+        """
+        # TODO: Implement this method
+        return False
 
     def get_value(self) -> Set[str]:
-        """Get the set elements."""
-        return self.elements.copy()
+        """
+        Get the set elements.
+
+        TODO: Return a copy of the elements set
+        """
+        # TODO: Implement this method
+        return set()
 
     def merge(self, other: 'GSet'):
-        """Merge another G-Set."""
-        self.elements = self.elements.union(other.elements)
-        self.last_updated = int(time.time() * 1000)
+        """
+        Merge another G-Set.
+
+        TODO: Implement merge as union of sets
+        """
+        # TODO: Implement this method
+        pass
 
     def to_proto(self) -> crdt_pb2.CRDTState:
         return crdt_pb2.CRDTState(
@@ -250,52 +302,59 @@ class ORSet(BaseCRDT):
         self.tombstones: Set[str] = set()
 
     def add(self, value: str):
-        """Add an element to the set."""
-        tag = str(uuid.uuid4())
-        self.elements[tag] = ORSetElement(
-            value=value,
-            unique_tag=tag,
-            added_by=self.node_id,
-        )
-        self.last_updated = int(time.time() * 1000)
+        """
+        Add an element to the set.
+
+        TODO: Implement add:
+        1. Generate a unique tag (use uuid)
+        2. Create ORSetElement with value, tag, and node_id
+        3. Add to elements dict
+        """
+        # TODO: Implement this method
+        pass
 
     def remove(self, value: str) -> bool:
-        """Remove an element from the set."""
-        removed = False
-        tags_to_remove = [
-            tag for tag, elem in self.elements.items()
-            if elem.value == value and tag not in self.tombstones
-        ]
-        for tag in tags_to_remove:
-            self.tombstones.add(tag)
-            removed = True
-        if removed:
-            self.last_updated = int(time.time() * 1000)
-        return removed
+        """
+        Remove an element from the set.
+
+        TODO: Implement remove:
+        1. Find all tags for elements with this value
+        2. Add those tags to tombstones
+        3. Return True if any were removed
+        """
+        # TODO: Implement this method
+        return False
 
     def contains(self, value: str) -> bool:
-        """Check if element is in set."""
-        for tag, elem in self.elements.items():
-            if elem.value == value and tag not in self.tombstones:
-                return True
+        """
+        Check if element is in set.
+
+        TODO: Return True if any element with this value
+        has a tag not in tombstones
+        """
+        # TODO: Implement this method
         return False
 
     def get_value(self) -> Set[str]:
-        """Get the set elements."""
-        return {
-            elem.value for tag, elem in self.elements.items()
-            if tag not in self.tombstones
-        }
+        """
+        Get the set elements.
+
+        TODO: Return set of values for elements
+        whose tags are not tombstoned
+        """
+        # TODO: Implement this method
+        return set()
 
     def merge(self, other: 'ORSet'):
-        """Merge another OR-Set."""
-        # Union of elements
-        for tag, elem in other.elements.items():
-            if tag not in self.elements:
-                self.elements[tag] = elem
-        # Union of tombstones
-        self.tombstones = self.tombstones.union(other.tombstones)
-        self.last_updated = int(time.time() * 1000)
+        """
+        Merge another OR-Set.
+
+        TODO: Implement merge:
+        1. Union of elements
+        2. Union of tombstones
+        """
+        # TODO: Implement this method
+        pass
 
     def to_proto(self) -> crdt_pb2.CRDTState:
         elements = [
@@ -335,27 +394,36 @@ class LWWRegister(BaseCRDT):
         self.writer: str = ""
 
     def set(self, value: str, timestamp: Optional[int] = None):
-        """Set the register value."""
-        if timestamp is None:
-            timestamp = int(time.time() * 1000)
+        """
+        Set the register value.
 
-        if timestamp > self.timestamp:
-            self.value = value
-            self.timestamp = timestamp
-            self.writer = self.node_id
-            self.last_updated = int(time.time() * 1000)
+        TODO: Implement set:
+        1. If timestamp is None, use current time
+        2. Only update if new timestamp > current timestamp
+        3. Update value, timestamp, and writer
+        """
+        # TODO: Implement this method
+        pass
 
     def get_value(self) -> str:
-        """Get the register value."""
-        return self.value
+        """
+        Get the register value.
+
+        TODO: Return the current value
+        """
+        # TODO: Implement this method
+        return ""
 
     def merge(self, other: 'LWWRegister'):
-        """Merge another LWW-Register."""
-        if other.timestamp > self.timestamp:
-            self.value = other.value
-            self.timestamp = other.timestamp
-            self.writer = other.writer
-        self.last_updated = int(time.time() * 1000)
+        """
+        Merge another LWW-Register.
+
+        TODO: Implement merge:
+        1. If other.timestamp > this.timestamp
+        2. Copy value, timestamp, writer from other
+        """
+        # TODO: Implement this method
+        pass
 
     def to_proto(self) -> crdt_pb2.CRDTState:
         return crdt_pb2.CRDTState(

@@ -55,10 +55,7 @@ func NewGCounter(id string) *GCounter {
 // - Only increment this node's counter
 // - Each node maintains its own count
 func (c *GCounter) Increment(nodeID string, amount uint64) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	c.Counts[nodeID] += amount
+	// TODO: Implement this method
 }
 
 // Value returns the total count across all nodes
@@ -66,14 +63,8 @@ func (c *GCounter) Increment(nodeID string, amount uint64) {
 // TODO: Implement value calculation:
 // - Sum all node counters
 func (c *GCounter) Value() uint64 {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	var total uint64
-	for _, count := range c.Counts {
-		total += count
-	}
-	return total
+	// TODO: Implement this method
+	return 0
 }
 
 // Merge combines another G-Counter into this one
@@ -82,14 +73,7 @@ func (c *GCounter) Value() uint64 {
 // - Take maximum of each node's counter
 // - This ensures convergence
 func (c *GCounter) Merge(other map[string]uint64) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	for nodeID, count := range other {
-		if count > c.Counts[nodeID] {
-			c.Counts[nodeID] = count
-		}
-	}
+	// TODO: Implement this method
 }
 
 // =============================================================================
@@ -127,7 +111,8 @@ func (c *PNCounter) Decrement(nodeID string, amount uint64) {
 // TODO: Implement value calculation:
 // - Return positive.value() - negative.value()
 func (c *PNCounter) Value() int64 {
-	return int64(c.Positive.Value()) - int64(c.Negative.Value())
+	// TODO: Implement this method
+	return 0
 }
 
 // =============================================================================
@@ -206,16 +191,7 @@ func NewORSet(id string) *ORSet {
 // - Generate unique tag (e.g., node_id + timestamp)
 // - Add element with tag
 func (s *ORSet) Add(element string, tag string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if _, exists := s.Elements[element]; !exists {
-		s.Elements[element] = &ORSetElement{
-			Value: element,
-			Tags:  make(map[string]bool),
-		}
-	}
-	s.Elements[element].Tags[tag] = true
+	// TODO: Implement this method
 }
 
 // Remove removes all known tags for an element
@@ -224,21 +200,8 @@ func (s *ORSet) Add(element string, tag string) {
 // - Remove all currently known tags for the element
 // - Concurrent adds with new tags will survive
 func (s *ORSet) Remove(element string) []string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	elem, exists := s.Elements[element]
-	if !exists {
-		return nil
-	}
-
-	removedTags := make([]string, 0, len(elem.Tags))
-	for tag := range elem.Tags {
-		removedTags = append(removedTags, tag)
-	}
-
-	delete(s.Elements, element)
-	return removedTags
+	// TODO: Implement this method
+	return nil
 }
 
 // Contains checks if element is in the set
@@ -277,14 +240,7 @@ func NewLWWRegister(id string) *LWWRegister {
 // - Only update if new timestamp > current timestamp
 // - This ensures last write wins
 func (r *LWWRegister) Set(value string, timestamp uint64) bool {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	if timestamp > r.Timestamp {
-		r.Value = value
-		r.Timestamp = timestamp
-		return true
-	}
+	// TODO: Implement this method
 	return false
 }
 

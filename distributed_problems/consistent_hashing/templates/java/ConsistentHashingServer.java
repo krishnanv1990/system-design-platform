@@ -135,19 +135,8 @@ public class ConsistentHashingServer {
          * - Must be deterministic (same key always hashes to same position)
          */
         public long hash(String key) {
-            try {
-                MessageDigest md = MessageDigest.getInstance("MD5");
-                byte[] digest = md.digest(key.getBytes());
-                // Use first 8 bytes as a long
-                long result = 0;
-                for (int i = 0; i < 8; i++) {
-                    result = (result << 8) | (digest[i] & 0xFF);
-                }
-                return result;
-            } catch (NoSuchAlgorithmException e) {
-                // Fallback to simple hash
-                return key.hashCode();
-            }
+            // TODO: Implement this method
+            throw new UnsupportedOperationException("hash not implemented");
         }
 
         private long getVNodeHash(String nodeId, int virtualId) {
@@ -163,33 +152,8 @@ public class ConsistentHashingServer {
          * 3. Return list of added virtual nodes
          */
         public List<VirtualNode> addNodeInternal(String nodeId, String address, int numVNodes) {
-            lock.writeLock().lock();
-            try {
-                // Check if node already exists
-                if (state.nodes.containsKey(nodeId)) {
-                    return Collections.emptyList();
-                }
-
-                // Create node info
-                state.nodes.put(nodeId, new NodeInfo(nodeId, address, numVNodes));
-
-                // Create virtual nodes
-                List<VirtualNode> addedVNodes = new ArrayList<>();
-                for (int i = 0; i < numVNodes; i++) {
-                    long vnodeHash = getVNodeHash(nodeId, i);
-                    VirtualNode vnode = new VirtualNode(nodeId, i, vnodeHash);
-                    addedVNodes.add(vnode);
-                    state.vnodes.add(vnode);
-                }
-
-                // Sort virtual nodes by hash value
-                Collections.sort(state.vnodes);
-
-                logger.info("Added node " + nodeId + " with " + numVNodes + " virtual nodes");
-                return addedVNodes;
-            } finally {
-                lock.writeLock().unlock();
-            }
+            // TODO: Implement this method
+            throw new UnsupportedOperationException("addNodeInternal not implemented");
         }
 
         /**
@@ -201,21 +165,8 @@ public class ConsistentHashingServer {
          * 3. Return true if successful
          */
         public boolean removeNodeInternal(String nodeId) {
-            lock.writeLock().lock();
-            try {
-                if (!state.nodes.containsKey(nodeId)) {
-                    return false;
-                }
-
-                // Remove virtual nodes
-                state.vnodes.removeIf(vnode -> vnode.nodeId.equals(nodeId));
-                state.nodes.remove(nodeId);
-
-                logger.info("Removed node " + nodeId);
-                return true;
-            } finally {
-                lock.writeLock().unlock();
-            }
+            // TODO: Implement this method
+            throw new UnsupportedOperationException("removeNodeInternal not implemented");
         }
 
         /**
@@ -227,32 +178,8 @@ public class ConsistentHashingServer {
          * 3. Handle wrap-around (if key hash > max vnode hash, use first node)
          */
         public NodeInfo getNodeForKey(String key) {
-            lock.readLock().lock();
-            try {
-                if (state.vnodes.isEmpty()) {
-                    return null;
-                }
-
-                long keyHash = hash(key);
-
-                // Binary search to find first vnode with hash >= keyHash
-                int idx = Collections.binarySearch(state.vnodes,
-                    new VirtualNode("", 0, keyHash));
-
-                if (idx < 0) {
-                    idx = -(idx + 1);
-                }
-
-                // Wrap around if necessary
-                if (idx >= state.vnodes.size()) {
-                    idx = 0;
-                }
-
-                VirtualNode vnode = state.vnodes.get(idx);
-                return state.nodes.get(vnode.nodeId);
-            } finally {
-                lock.readLock().unlock();
-            }
+            // TODO: Implement this method
+            return null;
         }
 
         /**
@@ -264,39 +191,8 @@ public class ConsistentHashingServer {
          * 3. Return up to 'count' unique physical nodes
          */
         public List<NodeInfo> getNodesForKey(String key, int count) {
-            lock.readLock().lock();
-            try {
-                if (state.vnodes.isEmpty()) {
-                    return Collections.emptyList();
-                }
-
-                long keyHash = hash(key);
-                int idx = Collections.binarySearch(state.vnodes,
-                    new VirtualNode("", 0, keyHash));
-
-                if (idx < 0) {
-                    idx = -(idx + 1);
-                }
-
-                List<NodeInfo> result = new ArrayList<>();
-                Set<String> seenNodes = new HashSet<>();
-                int ringSize = state.vnodes.size();
-
-                for (int i = 0; i < ringSize && result.size() < count; i++) {
-                    VirtualNode vnode = state.vnodes.get((idx + i) % ringSize);
-                    if (!seenNodes.contains(vnode.nodeId)) {
-                        seenNodes.add(vnode.nodeId);
-                        NodeInfo node = state.nodes.get(vnode.nodeId);
-                        if (node != null) {
-                            result.add(node);
-                        }
-                    }
-                }
-
-                return result;
-            } finally {
-                lock.readLock().unlock();
-            }
+            // TODO: Implement this method
+            return Collections.emptyList();
         }
 
         // =========================================================================

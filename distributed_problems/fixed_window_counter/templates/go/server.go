@@ -106,14 +106,8 @@ func (r *FixedWindowRateLimiter) GetOrCreateCounter(counterID string, windowSize
 // 2. Calculate which window we're in: window_num = current_time / window_size
 // 3. Return window start: window_start = window_num * window_size
 func (r *FixedWindowRateLimiter) GetCurrentWindow(windowSizeMs uint64) time.Time {
-	now := time.Now()
-	windowDuration := time.Duration(windowSizeMs) * time.Millisecond
-
-	// TODO: Calculate window start by truncating to window boundary
-	windowNum := now.UnixMilli() / int64(windowSizeMs)
-	windowStart := time.UnixMilli(windowNum * int64(windowSizeMs))
-
-	return windowStart
+	// TODO: Implement this method
+	return time.Time{}
 }
 
 // CheckAndRotateWindow rotates to new window if needed
@@ -123,17 +117,7 @@ func (r *FixedWindowRateLimiter) GetCurrentWindow(windowSizeMs uint64) time.Time
 // 2. If window has changed, reset the counter
 // 3. Update window start time
 func (r *FixedWindowRateLimiter) CheckAndRotateWindow(counter *WindowState) {
-	counter.mu.Lock()
-	defer counter.mu.Unlock()
-
-	currentWindow := r.GetCurrentWindow(counter.WindowSizeMs)
-
-	// TODO: Check if we've moved to a new window
-	if currentWindow.After(counter.WindowStart) {
-		// Reset counter for new window
-		counter.WindowStart = currentWindow
-		counter.RequestCount = 0
-	}
+	// TODO: Implement this method
 }
 
 // TryIncrement attempts to increment the counter
@@ -144,16 +128,7 @@ func (r *FixedWindowRateLimiter) CheckAndRotateWindow(counter *WindowState) {
 // 3. If within limit, increment and return true
 // 4. If would exceed, return false
 func (r *FixedWindowRateLimiter) TryIncrement(counter *WindowState, count uint64) bool {
-	r.CheckAndRotateWindow(counter)
-
-	counter.mu.Lock()
-	defer counter.mu.Unlock()
-
-	// TODO: Check if request would exceed limit
-	if counter.RequestCount+count <= counter.RequestLimit {
-		counter.RequestCount += count
-		return true
-	}
+	// TODO: Implement this method
 	return false
 }
 

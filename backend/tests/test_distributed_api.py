@@ -562,7 +562,7 @@ class TestDistributedBuildProcess:
                 mock_service_class.return_value = mock_service
 
                 # Run the build (should handle error gracefully)
-                await run_distributed_build(1, "python", "print('hello')")
+                await run_distributed_build(1, "python", "print('hello')", 1)
 
                 # Verify submission was updated with error
                 assert mock_submission.status == "build_failed"
@@ -1007,7 +1007,7 @@ class TestAIIntegrationInSubmission:
                     mock_build_class.return_value = mock_build
 
                     # Run the build
-                    await run_distributed_build(1, "python", "print('hello')")
+                    await run_distributed_build(1, "python", "print('hello')", 1)
 
                     # Verify AI analysis was called
                     mock_ai.analyze_distributed_code.assert_called_once()
@@ -1047,7 +1047,7 @@ class TestAIIntegrationInSubmission:
                     mock_build_class.return_value = mock_build
 
                     # Run the build
-                    await run_distributed_build(1, "python", "print('hello')")
+                    await run_distributed_build(1, "python", "print('hello')", 1)
 
                     # Verify build was called with modifications
                     mock_build.start_build.assert_called_once()

@@ -318,24 +318,7 @@ func (l *LSMTree) writeToWAL(op byte, key, value string, timestamp uint64) error
 // 2. Write to MemTable
 // 3. If MemTable is full, flush to SSTable
 func (l *LSMTree) Put(key, value string) error {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-
-	timestamp := uint64(time.Now().UnixNano())
-
-	// Write to WAL
-	if err := l.writeToWAL(0, key, value, timestamp); err != nil {
-		return err
-	}
-
-	// Write to MemTable
-	l.memTable.Put(key, value, timestamp)
-
-	// Check if flush needed
-	if l.memTable.size >= MemTableMaxSize {
-		go l.flush()
-	}
-
+	// TODO: Implement this method
 	return nil
 }
 
@@ -346,44 +329,7 @@ func (l *LSMTree) Put(key, value string) error {
 // 2. Check immutable MemTable if exists
 // 3. Check SSTables from L0 to Ln
 func (l *LSMTree) Get(key string) (string, bool, error) {
-	l.mu.RLock()
-	defer l.mu.RUnlock()
-
-	// Check MemTable
-	if entry, found := l.memTable.Get(key); found {
-		if entry.Deleted {
-			return "", false, nil
-		}
-		return entry.Value, true, nil
-	}
-
-	// Check immutable MemTable
-	if l.immutable != nil {
-		if entry, found := l.immutable.Get(key); found {
-			if entry.Deleted {
-				return "", false, nil
-			}
-			return entry.Value, true, nil
-		}
-	}
-
-	// Check SSTables (L0 first, then other levels)
-	for level := uint32(0); level <= 5; level++ {
-		tables := l.sstables[level]
-		for i := len(tables) - 1; i >= 0; i-- {
-			value, found, deleted, err := l.searchSSTable(tables[i], key)
-			if err != nil {
-				continue
-			}
-			if found {
-				if deleted {
-					return "", false, nil
-				}
-				return value, true, nil
-			}
-		}
-	}
-
+	// TODO: Implement this method
 	return "", false, nil
 }
 
@@ -452,82 +398,7 @@ func (l *LSMTree) Delete(key string) error {
 // 3. Write immutable MemTable to L0 SSTable
 // 4. Clear WAL after successful write
 func (l *LSMTree) flush() error {
-	l.mu.Lock()
-
-	if l.memTable.size == 0 {
-		l.mu.Unlock()
-		return nil
-	}
-
-	// Make current MemTable immutable
-	l.immutable = l.memTable
-	l.memTable = NewMemTable()
-
-	entries := l.immutable.GetSortedEntries()
-	ssID := l.nextSSID
-	l.nextSSID++
-	l.mu.Unlock()
-
-	// Write SSTable
-	path := filepath.Join(l.dataDir, "sst", fmt.Sprintf("sst_%06d_L0.sst", ssID))
-	file, err := os.Create(path)
-	if err != nil {
-		return err
-	}
-
-	var minKey, maxKey string
-	for i, entry := range entries {
-		if i == 0 {
-			minKey = entry.Key
-		}
-		maxKey = entry.Key
-
-		header := make([]byte, 13)
-		if entry.Deleted {
-			header[0] = 1
-		}
-		binary.LittleEndian.PutUint32(header[1:5], uint32(len(entry.Key)))
-		binary.LittleEndian.PutUint32(header[5:9], uint32(len(entry.Value)))
-		binary.LittleEndian.PutUint32(header[9:13], uint32(entry.Timestamp))
-
-		file.Write(header)
-		file.WriteString(entry.Key)
-		file.WriteString(entry.Value)
-	}
-
-	file.Sync()
-	stat, _ := file.Stat()
-	file.Close()
-
-	// Update metadata
-	l.mu.Lock()
-	info := &SSTableInfo{
-		ID:         ssID,
-		Level:      0,
-		Path:       path,
-		MinKey:     minKey,
-		MaxKey:     maxKey,
-		EntryCount: uint64(len(entries)),
-		Size:       uint64(stat.Size()),
-	}
-
-	if l.sstables[0] == nil {
-		l.sstables[0] = make([]*SSTableInfo, 0)
-	}
-	l.sstables[0] = append(l.sstables[0], info)
-
-	l.immutable = nil
-
-	// Clear WAL
-	l.walFile.Truncate(0)
-	l.walFile.Seek(0, 0)
-	l.mu.Unlock()
-
-	// Check if compaction needed
-	if len(l.sstables[0]) >= Level0MaxFiles {
-		go l.compact(0)
-	}
-
+	// TODO: Implement this method
 	return nil
 }
 
@@ -539,119 +410,7 @@ func (l *LSMTree) flush() error {
 // 3. Write to next level
 // 4. Remove old SSTables
 func (l *LSMTree) compact(level uint32) error {
-	l.mu.Lock()
-	tables := l.sstables[level]
-	if len(tables) < 2 {
-		l.mu.Unlock()
-		return nil
-	}
-	l.mu.Unlock()
-
-	// Read and merge all entries
-	allEntries := make(map[string]*MemTableEntry)
-	for _, table := range tables {
-		file, err := os.Open(table.Path)
-		if err != nil {
-			continue
-		}
-
-		for {
-			header := make([]byte, 13)
-			if _, err := io.ReadFull(file, header); err != nil {
-				break
-			}
-
-			deleted := header[0] == 1
-			keyLen := binary.LittleEndian.Uint32(header[1:5])
-			valueLen := binary.LittleEndian.Uint32(header[5:9])
-			timestamp := uint64(binary.LittleEndian.Uint32(header[9:13]))
-
-			keyBytes := make([]byte, keyLen)
-			io.ReadFull(file, keyBytes)
-			valueBytes := make([]byte, valueLen)
-			io.ReadFull(file, valueBytes)
-
-			key := string(keyBytes)
-			if existing, ok := allEntries[key]; !ok || timestamp > existing.Timestamp {
-				allEntries[key] = &MemTableEntry{
-					Key:       key,
-					Value:     string(valueBytes),
-					Timestamp: timestamp,
-					Deleted:   deleted,
-				}
-			}
-		}
-		file.Close()
-	}
-
-	// Sort entries
-	entries := make([]*MemTableEntry, 0, len(allEntries))
-	for _, e := range allEntries {
-		if !e.Deleted {
-			entries = append(entries, e)
-		}
-	}
-	sort.Slice(entries, func(i, j int) bool {
-		return entries[i].Key < entries[j].Key
-	})
-
-	// Write new SSTable at next level
-	l.mu.Lock()
-	ssID := l.nextSSID
-	l.nextSSID++
-	nextLevel := level + 1
-
-	path := filepath.Join(l.dataDir, "sst", fmt.Sprintf("sst_%06d_L%d.sst", ssID, nextLevel))
-	file, err := os.Create(path)
-	if err != nil {
-		l.mu.Unlock()
-		return err
-	}
-
-	var minKey, maxKey string
-	for i, entry := range entries {
-		if i == 0 {
-			minKey = entry.Key
-		}
-		maxKey = entry.Key
-
-		header := make([]byte, 13)
-		binary.LittleEndian.PutUint32(header[1:5], uint32(len(entry.Key)))
-		binary.LittleEndian.PutUint32(header[5:9], uint32(len(entry.Value)))
-
-		file.Write(header)
-		file.WriteString(entry.Key)
-		file.WriteString(entry.Value)
-	}
-
-	file.Sync()
-	stat, _ := file.Stat()
-	file.Close()
-
-	// Update metadata
-	info := &SSTableInfo{
-		ID:         ssID,
-		Level:      nextLevel,
-		Path:       path,
-		MinKey:     minKey,
-		MaxKey:     maxKey,
-		EntryCount: uint64(len(entries)),
-		Size:       uint64(stat.Size()),
-	}
-
-	if l.sstables[nextLevel] == nil {
-		l.sstables[nextLevel] = make([]*SSTableInfo, 0)
-	}
-	l.sstables[nextLevel] = append(l.sstables[nextLevel], info)
-
-	// Remove old SSTables
-	for _, table := range tables {
-		os.Remove(table.Path)
-	}
-	l.sstables[level] = make([]*SSTableInfo, 0)
-
-	l.mu.Unlock()
-
+	// TODO: Implement this method
 	return nil
 }
 

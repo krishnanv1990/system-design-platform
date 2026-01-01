@@ -119,26 +119,7 @@ func (r *SlidingWindowCounterRateLimiter) GetCurrentWindowStart(windowSizeMs uin
 // 3. If we've moved past two windows:
 //    a. Reset both counts (too old)
 func (r *SlidingWindowCounterRateLimiter) CheckAndRotateWindow(counter *WindowState) {
-	counter.mu.Lock()
-	defer counter.mu.Unlock()
-
-	currentWindow := r.GetCurrentWindowStart(counter.WindowSizeMs)
-	windowDuration := time.Duration(counter.WindowSizeMs) * time.Millisecond
-
-	// Calculate how many windows have passed
-	windowsPassed := int(currentWindow.Sub(counter.CurrentWindowStart) / windowDuration)
-
-	if windowsPassed >= 2 {
-		// TODO: Too old, reset both counts
-		counter.PreviousCount = 0
-		counter.CurrentCount = 0
-		counter.CurrentWindowStart = currentWindow
-	} else if windowsPassed == 1 {
-		// TODO: Moved to next window, rotate counts
-		counter.PreviousCount = counter.CurrentCount
-		counter.CurrentCount = 0
-		counter.CurrentWindowStart = currentWindow
-	}
+	// TODO: Implement this method
 }
 
 // CalculateWeightedCount calculates the weighted request count
@@ -149,27 +130,8 @@ func (r *SlidingWindowCounterRateLimiter) CheckAndRotateWindow(counter *WindowSt
 // 3. Add current window count: current_count * 1.0
 // 4. Return total weighted count
 func (r *SlidingWindowCounterRateLimiter) CalculateWeightedCount(counter *WindowState) float64 {
-	r.CheckAndRotateWindow(counter)
-
-	counter.mu.Lock()
-	defer counter.mu.Unlock()
-
-	now := time.Now()
-	windowDuration := time.Duration(counter.WindowSizeMs) * time.Millisecond
-
-	// TODO: Calculate position within current window (0.0 to 1.0)
-	elapsed := now.Sub(counter.CurrentWindowStart)
-	position := float64(elapsed) / float64(windowDuration)
-	if position > 1.0 {
-		position = 1.0
-	}
-
-	// TODO: Calculate weighted count
-	// Previous window weighted by overlap with sliding window
-	previousWeight := 1.0 - position
-	weightedCount := float64(counter.PreviousCount)*previousWeight + float64(counter.CurrentCount)
-
-	return weightedCount
+	// TODO: Implement this method
+	return 0.0
 }
 
 // TryIncrement attempts to increment the counter
@@ -180,16 +142,7 @@ func (r *SlidingWindowCounterRateLimiter) CalculateWeightedCount(counter *Window
 // 3. If within limit, increment current count and return true
 // 4. If would exceed, return false
 func (r *SlidingWindowCounterRateLimiter) TryIncrement(counter *WindowState, count uint64) bool {
-	weightedCount := r.CalculateWeightedCount(counter)
-
-	counter.mu.Lock()
-	defer counter.mu.Unlock()
-
-	// TODO: Check if request would exceed limit
-	if weightedCount+float64(count) <= float64(counter.RequestLimit) {
-		counter.CurrentCount += count
-		return true
-	}
+	// TODO: Implement this method
 	return false
 }
 

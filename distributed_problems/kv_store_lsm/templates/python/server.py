@@ -104,42 +104,60 @@ class MemTable:
         self.newest_sequence = 0
 
     def put(self, key: str, value: bytes, sequence: int):
-        """Put a key-value pair."""
-        old_size = len(self.data.get(key, (b"", 0, WriteType.PUT))[0])
-        self.data[key] = (value, sequence, WriteType.PUT)
-        self.size_bytes += len(key) + len(value) - old_size
-        self.newest_sequence = max(self.newest_sequence, sequence)
-        if self.oldest_sequence == 0:
-            self.oldest_sequence = sequence
+        """
+        Put a key-value pair.
+
+        TODO: Implement put:
+        1. Store (value, sequence, WriteType.PUT) in data dict
+        2. Update size_bytes
+        3. Update sequence numbers
+        """
+        # TODO: Implement this method
+        pass
 
     def delete(self, key: str, sequence: int):
-        """Mark a key as deleted (tombstone)."""
-        self.data[key] = (b"", sequence, WriteType.DELETE)
-        self.newest_sequence = max(self.newest_sequence, sequence)
+        """
+        Mark a key as deleted (tombstone).
+
+        TODO: Implement delete:
+        1. Store (b"", sequence, WriteType.DELETE) in data dict
+        2. Update sequence numbers
+        """
+        # TODO: Implement this method
+        pass
 
     def get(self, key: str) -> Tuple[Optional[bytes], bool, WriteType]:
-        """Get a value by key."""
-        if key in self.data:
-            value, seq, wtype = self.data[key]
-            return (value, True, wtype)
+        """
+        Get a value by key.
+
+        TODO: Implement get:
+        1. Look up key in data dict
+        2. Return (value, True, type) if found
+        3. Return (None, False, PUT) if not found
+        """
+        # TODO: Implement this method
         return (None, False, WriteType.PUT)
 
     def is_full(self) -> bool:
-        """Check if memtable is full."""
-        return self.size_bytes >= self.max_size
+        """
+        Check if memtable is full.
+
+        TODO: Return True if size_bytes >= max_size
+        """
+        # TODO: Implement this method
+        return False
 
     def scan(self, start: str, end: str) -> List[Tuple[str, bytes, int]]:
-        """Scan a range of keys."""
-        results = []
-        for key in sorted(self.data.keys()):
-            if start and key < start:
-                continue
-            if end and key >= end:
-                break
-            value, seq, wtype = self.data[key]
-            if wtype == WriteType.PUT:
-                results.append((key, value, seq))
-        return results
+        """
+        Scan a range of keys.
+
+        TODO: Implement scan:
+        1. Iterate over sorted keys
+        2. Filter by start/end
+        3. Return list of (key, value, sequence) for PUT entries
+        """
+        # TODO: Implement this method
+        return []
 
 
 class LSMTree:
@@ -189,45 +207,19 @@ class LSMTree:
         2. Write to MemTable
         3. If MemTable full, trigger flush
         """
-        with self.lock:
-            seq = self._next_sequence()
-
-            # Write to WAL
-            self.wal.append(WALEntry(
-                sequence_number=seq,
-                write_type=WriteType.PUT,
-                key=key,
-                value=value,
-                timestamp=self._current_time_ms(),
-            ))
-
-            # Write to MemTable
-            self.memtable.put(key, value, seq)
-
-            # Check if need to flush
-            if self.memtable.is_full():
-                self._rotate_memtable()
-
-            return seq
+        # TODO: Implement this method
+        return 0
 
     def delete(self, key: str, sync: bool = False) -> int:
-        """Delete a key."""
-        with self.lock:
-            seq = self._next_sequence()
+        """
+        Delete a key.
 
-            # Write tombstone to WAL
-            self.wal.append(WALEntry(
-                sequence_number=seq,
-                write_type=WriteType.DELETE,
-                key=key,
-                value=b"",
-                timestamp=self._current_time_ms(),
-            ))
-
-            # Write tombstone to MemTable
-            self.memtable.delete(key, seq)
-
-            return seq
+        TODO: Implement delete:
+        1. Write tombstone to WAL
+        2. Write tombstone to MemTable
+        """
+        # TODO: Implement this method
+        return 0
 
     def get(self, key: str) -> Tuple[Optional[bytes], bool, str]:
         """
@@ -239,110 +231,70 @@ class LSMTree:
         3. Check L0 SSTables (most recent first)
         4. Check L1, L2, ... (use bloom filters)
         """
-        with self.lock:
-            # Check MemTable
-            value, found, wtype = self.memtable.get(key)
-            if found:
-                if wtype == WriteType.DELETE:
-                    return (None, False, "memtable")
-                return (value, True, "memtable")
-
-            # Check Immutable MemTable
-            if self.immutable_memtable:
-                value, found, wtype = self.immutable_memtable.get(key)
-                if found:
-                    if wtype == WriteType.DELETE:
-                        return (None, False, "immutable")
-                    return (value, True, "immutable")
-
-            # In a real implementation, check SSTables here
-            return (None, False, "not_found")
+        # TODO: Implement this method
+        return (None, False, "not_found")
 
     def scan(self, start: str, end: str, limit: int = 100) -> List[Tuple[str, bytes, int]]:
-        """Scan a range of keys."""
-        with self.lock:
-            results = {}
+        """
+        Scan a range of keys.
 
-            # Scan MemTable
-            for key, value, seq in self.memtable.scan(start, end):
-                results[key] = (value, seq)
-
-            # Scan Immutable
-            if self.immutable_memtable:
-                for key, value, seq in self.immutable_memtable.scan(start, end):
-                    if key not in results or results[key][1] < seq:
-                        results[key] = (value, seq)
-
-            # Sort and limit
-            sorted_results = sorted(results.items())[:limit]
-            return [(k, v, s) for k, (v, s) in sorted_results]
+        TODO: Implement scan:
+        1. Scan MemTable
+        2. Scan Immutable MemTable
+        3. Merge results (newer sequence wins)
+        4. Return sorted, limited results
+        """
+        # TODO: Implement this method
+        return []
 
     def _rotate_memtable(self):
-        """Make current memtable immutable and create a new one."""
-        if self.immutable_memtable is not None:
-            # Flush immutable to SSTable first
-            self._flush_immutable()
+        """
+        Make current memtable immutable and create a new one.
 
-        self.immutable_memtable = self.memtable
-        self.memtable = MemTable()
+        TODO: Implement rotation:
+        1. If immutable exists, flush it first
+        2. Move current memtable to immutable
+        3. Create new empty memtable
+        """
+        # TODO: Implement this method
+        pass
 
     def _flush_immutable(self):
-        """Flush immutable memtable to SSTable."""
-        if self.immutable_memtable is None:
-            return
+        """
+        Flush immutable memtable to SSTable.
 
-        # Create SSTable metadata
-        sstable = SSTableInfo(
-            id=str(uuid.uuid4())[:8],
-            level=0,
-            filename=f"l0_{uuid.uuid4()}.sst",
-            size_bytes=self.immutable_memtable.size_bytes,
-            entry_count=len(self.immutable_memtable.data),
-            min_key=min(self.immutable_memtable.data.keys()) if self.immutable_memtable.data else "",
-            max_key=max(self.immutable_memtable.data.keys()) if self.immutable_memtable.data else "",
-            min_sequence=self.immutable_memtable.oldest_sequence,
-            max_sequence=self.immutable_memtable.newest_sequence,
-            created_at=self._current_time_ms(),
-        )
-
-        self.levels[0].append(sstable)
-        self.immutable_memtable = None
-
-        # Check if L0 needs compaction
-        if len(self.levels[0]) >= 4:
-            self._compact_level(0)
+        TODO: Implement flush:
+        1. Create SSTable from immutable memtable data
+        2. Add SSTable to L0
+        3. Clear immutable memtable
+        4. Trigger compaction if L0 has too many SSTables
+        """
+        # TODO: Implement this method
+        pass
 
     def _compact_level(self, level: int):
-        """Compact a level."""
-        self.compaction_count += 1
-        # Simplified: just merge L0 into L1
-        if level == 0 and self.levels[0]:
-            total_size = sum(s.size_bytes for s in self.levels[0])
-            if self.levels[0]:
-                merged = SSTableInfo(
-                    id=str(uuid.uuid4())[:8],
-                    level=1,
-                    filename=f"l1_{uuid.uuid4()}.sst",
-                    size_bytes=total_size,
-                    entry_count=sum(s.entry_count for s in self.levels[0]),
-                    min_key=min(s.min_key for s in self.levels[0]),
-                    max_key=max(s.max_key for s in self.levels[0]),
-                    min_sequence=min(s.min_sequence for s in self.levels[0]),
-                    max_sequence=max(s.max_sequence for s in self.levels[0]),
-                    created_at=self._current_time_ms(),
-                )
-                self.bytes_compacted += total_size
-                self.levels[1].append(merged)
-                self.levels[0] = []
+        """
+        Compact a level.
+
+        TODO: Implement compaction:
+        1. Merge SSTables at this level
+        2. Write merged SSTable to next level
+        3. Remove old SSTables
+        """
+        # TODO: Implement this method
+        pass
 
     def flush(self) -> Optional[str]:
-        """Force flush MemTable to disk."""
-        with self.lock:
-            if self.memtable.data:
-                self._rotate_memtable()
-            if self.immutable_memtable:
-                self._flush_immutable()
-            return self.levels[0][-1].id if self.levels[0] else None
+        """
+        Force flush MemTable to disk.
+
+        TODO: Implement flush:
+        1. Rotate memtable if it has data
+        2. Flush immutable if it exists
+        3. Return ID of new SSTable
+        """
+        # TODO: Implement this method
+        return None
 
 
 class KVStoreNode:

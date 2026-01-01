@@ -118,14 +118,8 @@ class FixedWindowRateLimiter:
         1. Align to window size boundaries
         2. Return (window_start, window_end)
         """
-        if timestamp_ms is None:
-            timestamp_ms = self._current_time_ms()
-
-        # Align to window boundaries
-        window_start = (timestamp_ms // window_size_ms) * window_size_ms
-        window_end = window_start + window_size_ms
-
-        return (window_start, window_end)
+        # TODO: Implement this method
+        return (0, 0)
 
     def maybe_rotate_window(self, window: WindowState) -> bool:
         """
@@ -137,16 +131,7 @@ class FixedWindowRateLimiter:
         3. Reset counter to 0
         4. Return True if rotated, False otherwise
         """
-        now = self._current_time_ms()
-
-        if now >= window.window_end:
-            # Rotate to new window
-            new_start, new_end = self.get_window_boundaries(window.window_size_ms, now)
-            window.window_start = new_start
-            window.window_end = new_end
-            window.current_count = 0
-            return True
-
+        # TODO: Implement this method
         return False
 
     def check_and_increment(self, window: WindowState, cost: int = 1) -> tuple:
@@ -162,19 +147,8 @@ class FixedWindowRateLimiter:
         Returns:
             Tuple of (allowed, current_count, remaining)
         """
-        with self.lock:
-            self.maybe_rotate_window(window)
-
-            window.total_requests += 1
-
-            if window.current_count + cost <= window.max_requests:
-                window.current_count += cost
-                window.total_allowed += 1
-                remaining = window.max_requests - window.current_count
-                return (True, window.current_count, remaining)
-            else:
-                window.total_rejected += 1
-                return (False, window.current_count, 0)
+        # TODO: Implement this method
+        return (False, 0, 0)
 
     def get_or_create_window(
         self,
@@ -182,19 +156,23 @@ class FixedWindowRateLimiter:
         max_requests: int = DEFAULT_MAX_REQUESTS,
         window_size_ms: int = DEFAULT_WINDOW_SIZE_MS
     ) -> WindowState:
-        """Get an existing window or create a new one."""
-        with self.lock:
-            if limit_id not in self.windows:
-                window_start, window_end = self.get_window_boundaries(window_size_ms)
-                self.windows[limit_id] = WindowState(
-                    limit_id=limit_id,
-                    max_requests=max_requests,
-                    window_size_ms=window_size_ms,
-                    window_start=window_start,
-                    window_end=window_end,
-                )
-                logger.info(f"Created window {limit_id} with max={max_requests}, size={window_size_ms}ms")
-            return self.windows[limit_id]
+        """
+        Get an existing window or create a new one.
+
+        TODO: Implement window management:
+        1. Check if window exists
+        2. If not, create new window with given config
+        3. Return the window
+        """
+        # TODO: Implement this method
+        # For now, return a placeholder window
+        return WindowState(
+            limit_id=limit_id,
+            max_requests=max_requests,
+            window_size_ms=window_size_ms,
+            window_start=0,
+            window_end=0,
+        )
 
 
 class RateLimiterServicer(fixed_window_counter_pb2_grpc.RateLimiterServiceServicer):

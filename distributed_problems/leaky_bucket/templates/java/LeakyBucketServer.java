@@ -95,21 +95,8 @@ public class LeakyBucketServer {
          * 4. Update last leak time
          */
         public void leak(BucketState bucket) {
-            bucket.lock.lock();
-            try {
-                long now = System.currentTimeMillis();
-                double elapsed = (now - bucket.lastLeakTime) / 1000.0;
-
-                // TODO: Calculate how many items have leaked
-                double leaked = elapsed * bucket.leakRate;
-
-                // TODO: Reduce queue size, but don't go below 0
-                bucket.queueSize = Math.max(0, bucket.queueSize - leaked);
-
-                bucket.lastLeakTime = now;
-            } finally {
-                bucket.lock.unlock();
-            }
+            // TODO: Implement this method
+            throw new UnsupportedOperationException("leak not implemented");
         }
 
         /**
@@ -122,19 +109,8 @@ public class LeakyBucketServer {
          * 4. If no, return false (request should be rejected)
          */
         public boolean tryEnqueue(BucketState bucket, double count) {
-            leak(bucket);
-
-            bucket.lock.lock();
-            try {
-                // TODO: Check if there's room in the queue
-                if (bucket.queueSize + count <= bucket.capacity) {
-                    bucket.queueSize += count;
-                    return true;
-                }
-                return false;
-            } finally {
-                bucket.lock.unlock();
-            }
+            // TODO: Implement this method
+            throw new UnsupportedOperationException("tryEnqueue not implemented");
         }
 
         // =========================================================================

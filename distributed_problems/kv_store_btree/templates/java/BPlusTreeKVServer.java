@@ -280,164 +280,39 @@ public class BPlusTreeKVServer {
 
         /**
          * Search for a key.
+         * TODO: Traverse tree to find key
          */
         public String search(String key) throws IOException {
-            lock.readLock().lock();
-            try {
-                BPlusTreeNode node = readPage(rootPageId);
-                if (node == null) return null;
-
-                while (!node.isLeaf) {
-                    int childIdx = findChildIndex(node, key);
-                    node = readPage(node.children.get(childIdx));
-                    if (node == null) return null;
-                }
-
-                int idx = Collections.binarySearch(node.keys, key);
-                if (idx >= 0) {
-                    return node.values.get(idx);
-                }
-                return null;
-            } finally {
-                lock.readLock().unlock();
-            }
+            // TODO: Implement this method
+            return null;
         }
 
         /**
          * Insert a key-value pair.
+         * TODO: Insert key-value, handle splits if needed
          */
         public void insert(String key, String value) throws IOException {
-            lock.writeLock().lock();
-            try {
-                writeWAL((byte) 0, key, value);
-
-                BPlusTreeNode root = readPage(rootPageId);
-                if (root == null) {
-                    root = new BPlusTreeNode(0, true);
-                    bufferPool.put(root);
-                }
-
-                if (root.keys.size() >= MAX_KEYS) {
-                    BPlusTreeNode newRoot = new BPlusTreeNode(allocatePage(), false);
-                    newRoot.children.add(rootPageId);
-                    splitChild(newRoot, 0);
-                    bufferPool.put(newRoot);
-                    writePage(newRoot);
-                    rootPageId = newRoot.pageId;
-                    saveMetadata();
-                }
-
-                insertNonFull(rootPageId, key, value);
-            } finally {
-                lock.writeLock().unlock();
-            }
+            // TODO: Implement this method
+            throw new UnsupportedOperationException("insert not implemented");
         }
 
         private void insertNonFull(int pageId, String key, String value) throws IOException {
-            BPlusTreeNode node = readPage(pageId);
-            if (node == null) return;
-
-            if (node.isLeaf) {
-                int idx = Collections.binarySearch(node.keys, key);
-                if (idx >= 0) {
-                    node.values.set(idx, value);
-                } else {
-                    idx = -(idx + 1);
-                    node.keys.add(idx, key);
-                    node.values.add(idx, value);
-                }
-                node.dirty = true;
-                writePage(node);
-            } else {
-                int childIdx = findChildIndex(node, key);
-                BPlusTreeNode child = readPage(node.children.get(childIdx));
-
-                if (child != null && child.keys.size() >= MAX_KEYS) {
-                    splitChild(node, childIdx);
-                    writePage(node);
-                    if (key.compareTo(node.keys.get(childIdx)) > 0) {
-                        childIdx++;
-                    }
-                }
-
-                insertNonFull(node.children.get(childIdx), key, value);
-            }
+            // TODO: Implement this method (helper for insert)
+            throw new UnsupportedOperationException("insertNonFull not implemented");
         }
 
         private void splitChild(BPlusTreeNode parent, int childIdx) throws IOException {
-            BPlusTreeNode child = readPage(parent.children.get(childIdx));
-            if (child == null) return;
-
-            int mid = child.keys.size() / 2;
-            BPlusTreeNode newNode = new BPlusTreeNode(allocatePage(), child.isLeaf);
-
-            if (child.isLeaf) {
-                for (int i = mid; i < child.keys.size(); i++) {
-                    newNode.keys.add(child.keys.get(i));
-                    newNode.values.add(child.values.get(i));
-                }
-                newNode.next = child.next;
-                child.next = newNode.pageId;
-
-                while (child.keys.size() > mid) {
-                    child.keys.remove(child.keys.size() - 1);
-                    child.values.remove(child.values.size() - 1);
-                }
-
-                parent.keys.add(childIdx, newNode.keys.get(0));
-            } else {
-                String promoteKey = child.keys.get(mid);
-
-                for (int i = mid + 1; i < child.keys.size(); i++) {
-                    newNode.keys.add(child.keys.get(i));
-                }
-                for (int i = mid + 1; i < child.children.size(); i++) {
-                    newNode.children.add(child.children.get(i));
-                }
-
-                while (child.keys.size() > mid) {
-                    child.keys.remove(child.keys.size() - 1);
-                }
-                while (child.children.size() > mid + 1) {
-                    child.children.remove(child.children.size() - 1);
-                }
-
-                parent.keys.add(childIdx, promoteKey);
-            }
-
-            parent.children.add(childIdx + 1, newNode.pageId);
-            bufferPool.put(newNode);
-            writePage(child);
-            writePage(newNode);
-            parent.dirty = true;
+            // TODO: Implement this method (helper for insert)
+            throw new UnsupportedOperationException("splitChild not implemented");
         }
 
         /**
          * Delete a key.
+         * TODO: Find and remove key from leaf node
          */
         public void delete(String key) throws IOException {
-            lock.writeLock().lock();
-            try {
-                writeWAL((byte) 1, key, "");
-
-                BPlusTreeNode node = readPage(rootPageId);
-                while (node != null && !node.isLeaf) {
-                    int childIdx = findChildIndex(node, key);
-                    node = readPage(node.children.get(childIdx));
-                }
-
-                if (node != null) {
-                    int idx = Collections.binarySearch(node.keys, key);
-                    if (idx >= 0) {
-                        node.keys.remove(idx);
-                        node.values.remove(idx);
-                        node.dirty = true;
-                        writePage(node);
-                    }
-                }
-            } finally {
-                lock.writeLock().unlock();
-            }
+            // TODO: Implement this method
+            throw new UnsupportedOperationException("delete not implemented");
         }
 
         private void writeWAL(byte op, String key, String value) throws IOException {

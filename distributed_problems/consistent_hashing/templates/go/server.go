@@ -134,13 +134,13 @@ func (r *ConsistentHashRing) Initialize() error {
 // - Return a value in the ring's hash space
 // - Must be deterministic (same key always hashes to same position)
 func (r *ConsistentHashRing) Hash(key string) uint64 {
-	h := md5.Sum([]byte(key))
-	return binary.BigEndian.Uint64(h[:8])
+	// TODO: Implement this method
+	return 0
 }
 
 func (r *ConsistentHashRing) getVNodeHash(nodeID string, virtualID uint32) uint64 {
-	key := fmt.Sprintf("%s:%d", nodeID, virtualID)
-	return r.Hash(key)
+	// TODO: Implement this method
+	return 0
 }
 
 // AddNodeInternal adds a node to the hash ring
@@ -150,41 +150,8 @@ func (r *ConsistentHashRing) getVNodeHash(nodeID string, virtualID uint32) uint6
 // 2. Insert virtual nodes into the ring (maintain sorted order)
 // 3. Return list of added virtual nodes
 func (r *ConsistentHashRing) AddNodeInternal(nodeID, address string, numVNodes uint32) []VirtualNode {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	// Check if node already exists
-	if _, exists := r.state.Nodes[nodeID]; exists {
-		return nil
-	}
-
-	// Create node info
-	r.state.Nodes[nodeID] = &NodeInfo{
-		NodeID:       nodeID,
-		Address:      address,
-		VirtualNodes: numVNodes,
-		IsHealthy:    true,
-	}
-
-	// Create virtual nodes
-	addedVNodes := make([]VirtualNode, 0, numVNodes)
-	for i := uint32(0); i < numVNodes; i++ {
-		vnode := VirtualNode{
-			NodeID:    nodeID,
-			VirtualID: i,
-			HashValue: r.getVNodeHash(nodeID, i),
-		}
-		addedVNodes = append(addedVNodes, vnode)
-		r.state.VNodes = append(r.state.VNodes, vnode)
-	}
-
-	// Sort virtual nodes by hash value
-	sort.Slice(r.state.VNodes, func(i, j int) bool {
-		return r.state.VNodes[i].HashValue < r.state.VNodes[j].HashValue
-	})
-
-	log.Printf("Added node %s with %d virtual nodes", nodeID, numVNodes)
-	return addedVNodes
+	// TODO: Implement this method
+	return nil
 }
 
 // RemoveNodeInternal removes a node from the hash ring
@@ -194,25 +161,8 @@ func (r *ConsistentHashRing) AddNodeInternal(nodeID, address string, numVNodes u
 // 2. Update the ring structure
 // 3. Return True if successful
 func (r *ConsistentHashRing) RemoveNodeInternal(nodeID string) bool {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	if _, exists := r.state.Nodes[nodeID]; !exists {
-		return false
-	}
-
-	// Remove virtual nodes
-	newVNodes := make([]VirtualNode, 0, len(r.state.VNodes))
-	for _, vnode := range r.state.VNodes {
-		if vnode.NodeID != nodeID {
-			newVNodes = append(newVNodes, vnode)
-		}
-	}
-	r.state.VNodes = newVNodes
-	delete(r.state.Nodes, nodeID)
-
-	log.Printf("Removed node %s", nodeID)
-	return true
+	// TODO: Implement this method
+	return false
 }
 
 // GetNodeForKey returns the node responsible for a key
@@ -222,27 +172,8 @@ func (r *ConsistentHashRing) RemoveNodeInternal(nodeID string) bool {
 // 2. Find the first node clockwise from that position
 // 3. Handle wrap-around (if key hash > max vnode hash, use first node)
 func (r *ConsistentHashRing) GetNodeForKey(key string) *NodeInfo {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	if len(r.state.VNodes) == 0 {
-		return nil
-	}
-
-	keyHash := r.Hash(key)
-
-	// Binary search to find first vnode with hash >= keyHash
-	idx := sort.Search(len(r.state.VNodes), func(i int) bool {
-		return r.state.VNodes[i].HashValue >= keyHash
-	})
-
-	// Wrap around if necessary
-	if idx >= len(r.state.VNodes) {
-		idx = 0
-	}
-
-	vnode := r.state.VNodes[idx]
-	return r.state.Nodes[vnode.NodeID]
+	// TODO: Implement this method
+	return nil
 }
 
 // GetNodesForKey returns multiple nodes for a key (for replication)
@@ -252,33 +183,8 @@ func (r *ConsistentHashRing) GetNodeForKey(key string) *NodeInfo {
 // 2. Walk clockwise to find additional unique physical nodes
 // 3. Return up to 'count' unique physical nodes
 func (r *ConsistentHashRing) GetNodesForKey(key string, count int) []*NodeInfo {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	if len(r.state.VNodes) == 0 {
-		return nil
-	}
-
-	keyHash := r.Hash(key)
-	idx := sort.Search(len(r.state.VNodes), func(i int) bool {
-		return r.state.VNodes[i].HashValue >= keyHash
-	})
-
-	result := make([]*NodeInfo, 0, count)
-	seenNodes := make(map[string]bool)
-
-	ringSize := len(r.state.VNodes)
-	for i := 0; i < ringSize && len(result) < count; i++ {
-		vnode := r.state.VNodes[(idx+i)%ringSize]
-		if !seenNodes[vnode.NodeID] {
-			seenNodes[vnode.NodeID] = true
-			if node, exists := r.state.Nodes[vnode.NodeID]; exists {
-				result = append(result, node)
-			}
-		}
-	}
-
-	return result
+	// TODO: Implement this method
+	return nil
 }
 
 // =============================================================================

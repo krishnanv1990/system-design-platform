@@ -137,30 +137,7 @@ func (s *LogStructuredStore) Initialize() error {
 // 2. Read each segment and rebuild keyDir
 // 3. Handle tombstones (deleted keys)
 func (s *LogStructuredStore) recover() error {
-	files, err := filepath.Glob(filepath.Join(s.dataDir, "segment_*.log"))
-	if err != nil {
-		return err
-	}
-
-	for _, path := range files {
-		var segmentID uint32
-		fmt.Sscanf(filepath.Base(path), "segment_%d.log", &segmentID)
-
-		segment, err := s.openSegment(segmentID, path)
-		if err != nil {
-			log.Printf("Warning: Failed to open segment %d: %v", segmentID, err)
-			continue
-		}
-
-		// Read all entries and rebuild keyDir
-		if err := s.rebuildFromSegment(segment); err != nil {
-			log.Printf("Warning: Failed to rebuild from segment %d: %v", segmentID, err)
-		}
-
-		s.segments[segmentID] = segment
-		s.activeSegment = segment
-	}
-
+	// TODO: Implement this method
 	return nil
 }
 
@@ -273,66 +250,7 @@ func (s *LogStructuredStore) createNewSegment() error {
 // 3. Update keyDir with new position
 // 4. Rotate segment if needed
 func (s *LogStructuredStore) Append(key, value string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	entry := &LogEntry{
-		Timestamp: uint64(time.Now().UnixNano()),
-		KeySize:   uint32(len(key)),
-		ValueSize: uint32(len(value)),
-		Key:       key,
-		Value:     value,
-	}
-
-	// Calculate CRC
-	data := make([]byte, 16+len(key)+len(value))
-	binary.LittleEndian.PutUint64(data[0:8], entry.Timestamp)
-	binary.LittleEndian.PutUint32(data[8:12], entry.KeySize)
-	binary.LittleEndian.PutUint32(data[12:16], entry.ValueSize)
-	copy(data[16:], key)
-	copy(data[16+len(key):], value)
-	entry.CRC = crc32.ChecksumIEEE(data)
-
-	// Write entry
-	s.activeSegment.mu.Lock()
-	offset := s.activeSegment.Size
-
-	header := make([]byte, 20)
-	binary.LittleEndian.PutUint32(header[0:4], entry.CRC)
-	binary.LittleEndian.PutUint64(header[4:12], entry.Timestamp)
-	binary.LittleEndian.PutUint32(header[12:16], entry.KeySize)
-	binary.LittleEndian.PutUint32(header[16:20], entry.ValueSize)
-
-	if _, err := s.activeSegment.File.Write(header); err != nil {
-		s.activeSegment.mu.Unlock()
-		return err
-	}
-	if _, err := s.activeSegment.File.WriteString(key); err != nil {
-		s.activeSegment.mu.Unlock()
-		return err
-	}
-	if _, err := s.activeSegment.File.WriteString(value); err != nil {
-		s.activeSegment.mu.Unlock()
-		return err
-	}
-
-	entrySize := uint64(20 + len(key) + len(value))
-	s.activeSegment.Size += entrySize
-	s.activeSegment.mu.Unlock()
-
-	// Update keyDir
-	s.keyDir[key] = &KeyDirEntry{
-		SegmentID: s.activeSegment.ID,
-		Offset:    offset,
-		Size:      uint32(entrySize),
-		Timestamp: entry.Timestamp,
-	}
-
-	// Rotate if needed
-	if s.activeSegment.Size >= MaxSegmentSize {
-		s.createNewSegment()
-	}
-
+	// TODO: Implement this method
 	return nil
 }
 
@@ -343,34 +261,8 @@ func (s *LogStructuredStore) Append(key, value string) error {
 // 2. Seek to position in segment file
 // 3. Read and return value
 func (s *LogStructuredStore) Get(key string) (string, bool, error) {
-	s.mu.RLock()
-	entry, exists := s.keyDir[key]
-	if !exists {
-		s.mu.RUnlock()
-		return "", false, nil
-	}
-
-	segment, ok := s.segments[entry.SegmentID]
-	s.mu.RUnlock()
-
-	if !ok {
-		return "", false, fmt.Errorf("segment not found")
-	}
-
-	segment.mu.Lock()
-	defer segment.mu.Unlock()
-
-	segment.File.Seek(int64(entry.Offset), 0)
-	logEntry, err := s.readEntry(segment.File)
-	if err != nil {
-		return "", false, err
-	}
-
-	if logEntry.Value == TombstoneValue {
-		return "", false, nil
-	}
-
-	return logEntry.Value, true, nil
+	// TODO: Implement this method
+	return "", false, nil
 }
 
 // Delete marks a key as deleted with a tombstone
@@ -387,69 +279,7 @@ func (s *LogStructuredStore) Delete(key string) error {
 // 4. Update keyDir to point to new segment
 // 5. Delete old segments
 func (s *LogStructuredStore) Compact() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	// Create new compacted segment
-	segmentID := uint32(len(s.segments))
-	path := filepath.Join(s.dataDir, fmt.Sprintf("segment_%06d.log", segmentID))
-
-	file, err := os.OpenFile(path, os.O_RDWR|os.O_APPEND|os.O_CREATE, 0644)
-	if err != nil {
-		return err
-	}
-
-	newSegment := &Segment{
-		ID:   segmentID,
-		File: file,
-		Path: path,
-		Size: 0,
-	}
-
-	// Write all live keys
-	newKeyDir := make(map[string]*KeyDirEntry)
-	for key, entry := range s.keyDir {
-		segment := s.segments[entry.SegmentID]
-
-		segment.File.Seek(int64(entry.Offset), 0)
-		logEntry, err := s.readEntry(segment.File)
-		if err != nil {
-			continue
-		}
-
-		if logEntry.Value == TombstoneValue {
-			continue
-		}
-
-		// Write to new segment
-		offset := newSegment.Size
-
-		header := make([]byte, 20)
-		binary.LittleEndian.PutUint32(header[0:4], logEntry.CRC)
-		binary.LittleEndian.PutUint64(header[4:12], logEntry.Timestamp)
-		binary.LittleEndian.PutUint32(header[12:16], logEntry.KeySize)
-		binary.LittleEndian.PutUint32(header[16:20], logEntry.ValueSize)
-
-		newSegment.File.Write(header)
-		newSegment.File.WriteString(logEntry.Key)
-		newSegment.File.WriteString(logEntry.Value)
-
-		entrySize := uint64(20 + len(logEntry.Key) + len(logEntry.Value))
-		newSegment.Size += entrySize
-
-		newKeyDir[key] = &KeyDirEntry{
-			SegmentID: segmentID,
-			Offset:    offset,
-			Size:      uint32(entrySize),
-			Timestamp: logEntry.Timestamp,
-		}
-	}
-
-	// Update state
-	s.keyDir = newKeyDir
-	s.segments[segmentID] = newSegment
-	s.activeSegment = newSegment
-
+	// TODO: Implement this method
 	return nil
 }
 

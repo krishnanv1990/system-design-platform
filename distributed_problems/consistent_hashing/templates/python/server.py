@@ -151,37 +151,8 @@ class ConsistentHashRing:
         Returns:
             List of VirtualNode objects that were added
         """
-        with self.lock:
-            # Check if node already exists
-            if node_id in self.state.nodes:
-                return []
-
-            # Create node info
-            node_info = NodeInfo(
-                node_id=node_id,
-                address=address,
-                virtual_nodes=num_vnodes,
-            )
-            self.state.nodes[node_id] = node_info
-
-            # Create virtual nodes
-            added_vnodes = []
-            for i in range(num_vnodes):
-                vnode_hash = self._get_vnode_hash(node_id, i)
-                vnode = VirtualNode(
-                    node_id=node_id,
-                    virtual_id=i,
-                    hash_value=vnode_hash,
-                )
-                added_vnodes.append(vnode)
-
-                # Insert maintaining sorted order
-                idx = bisect.bisect_left(self.state.vnode_hashes, vnode_hash)
-                self.state.vnode_hashes.insert(idx, vnode_hash)
-                self.state.vnodes.insert(idx, vnode)
-
-            logger.info(f"Added node {node_id} with {num_vnodes} virtual nodes")
-            return added_vnodes
+        # TODO: Implement this method
+        return []
 
     def remove_node(self, node_id: str) -> bool:
         """
@@ -198,24 +169,8 @@ class ConsistentHashRing:
         Returns:
             True if node was removed, False if not found
         """
-        with self.lock:
-            if node_id not in self.state.nodes:
-                return False
-
-            # Remove virtual nodes
-            new_vnodes = []
-            new_hashes = []
-            for vnode, h in zip(self.state.vnodes, self.state.vnode_hashes):
-                if vnode.node_id != node_id:
-                    new_vnodes.append(vnode)
-                    new_hashes.append(h)
-
-            self.state.vnodes = new_vnodes
-            self.state.vnode_hashes = new_hashes
-            del self.state.nodes[node_id]
-
-            logger.info(f"Removed node {node_id}")
-            return True
+        # TODO: Implement this method
+        return False
 
     def get_node(self, key: str) -> Optional[NodeInfo]:
         """
@@ -232,21 +187,8 @@ class ConsistentHashRing:
         Returns:
             NodeInfo for the responsible node, or None if ring is empty
         """
-        with self.lock:
-            if not self.state.vnodes:
-                return None
-
-            key_hash = self.hash(key)
-
-            # Binary search to find first vnode with hash >= key_hash
-            idx = bisect.bisect_left(self.state.vnode_hashes, key_hash)
-
-            # Wrap around if necessary
-            if idx >= len(self.state.vnodes):
-                idx = 0
-
-            vnode = self.state.vnodes[idx]
-            return self.state.nodes.get(vnode.node_id)
+        # TODO: Implement this method
+        return None
 
     def get_nodes(self, key: str, count: int = 3) -> List[NodeInfo]:
         """
@@ -264,29 +206,8 @@ class ConsistentHashRing:
         Returns:
             List of NodeInfo for responsible nodes
         """
-        with self.lock:
-            if not self.state.vnodes:
-                return []
-
-            key_hash = self.hash(key)
-            idx = bisect.bisect_left(self.state.vnode_hashes, key_hash)
-
-            result = []
-            seen_nodes = set()
-
-            # Walk around the ring until we have enough unique nodes
-            ring_size = len(self.state.vnodes)
-            for i in range(ring_size):
-                vnode = self.state.vnodes[(idx + i) % ring_size]
-                if vnode.node_id not in seen_nodes:
-                    seen_nodes.add(vnode.node_id)
-                    node_info = self.state.nodes.get(vnode.node_id)
-                    if node_info:
-                        result.append(node_info)
-                    if len(result) >= count:
-                        break
-
-            return result
+        # TODO: Implement this method
+        return []
 
     def get_key_hash(self, key: str) -> int:
         """Get the hash value for a key."""

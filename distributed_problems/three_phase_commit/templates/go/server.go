@@ -105,167 +105,12 @@ func (n *ThreePhaseCommitNode) Initialize() error {
 // 3. If all acknowledge, Phase 3 (DoCommit): Tell all to commit
 // 4. Handle failures and timeouts appropriately
 func (n *ThreePhaseCommitNode) ExecuteTransaction(txID string, data map[string]string, participants []string) (bool, string) {
-	// Create transaction record
-	tx := &Transaction{
-		TransactionID: txID,
-		State:         StateWaiting,
-		Data:          data,
-		Participants:  participants,
-		Timestamp:     time.Now(),
-	}
-
-	n.mu.Lock()
-	n.transactions[txID] = tx
-	n.mu.Unlock()
-
-	// TODO: Phase 1 - CanCommit
-	// Ask all participants if they can commit
-	canCommitResponses := make(chan bool, len(participants))
-	for _, participant := range participants {
-		go func(p string) {
-			client, exists := n.peerClients[p]
-			if !exists {
-				canCommitResponses <- false
-				return
-			}
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-
-			resp, err := client.CanCommit(ctx, &pb.CanCommitRequest{
-				TransactionId: txID,
-				Data:          data,
-			})
-			if err != nil || !resp.Vote {
-				canCommitResponses <- false
-				return
-			}
-			canCommitResponses <- true
-		}(participant)
-	}
-
-	// Collect votes
-	allCanCommit := true
-	for i := 0; i < len(participants); i++ {
-		if !<-canCommitResponses {
-			allCanCommit = false
-		}
-	}
-
-	if !allCanCommit {
-		// Abort transaction
-		n.abortTransaction(tx)
-		return false, "Not all participants can commit"
-	}
-
-	// TODO: Phase 2 - PreCommit
-	preCommitResponses := make(chan bool, len(participants))
-	for _, participant := range participants {
-		go func(p string) {
-			client, exists := n.peerClients[p]
-			if !exists {
-				preCommitResponses <- false
-				return
-			}
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-
-			resp, err := client.PreCommit(ctx, &pb.PreCommitRequest{
-				TransactionId: txID,
-			})
-			if err != nil || !resp.Acknowledged {
-				preCommitResponses <- false
-				return
-			}
-			preCommitResponses <- true
-		}(participant)
-	}
-
-	// Collect acknowledgments
-	allPreCommitted := true
-	for i := 0; i < len(participants); i++ {
-		if !<-preCommitResponses {
-			allPreCommitted = false
-		}
-	}
-
-	if !allPreCommitted {
-		n.abortTransaction(tx)
-		return false, "Not all participants pre-committed"
-	}
-
-	// TODO: Phase 3 - DoCommit
-	tx.mu.Lock()
-	tx.State = StatePreCommitted
-	tx.mu.Unlock()
-
-	commitResponses := make(chan bool, len(participants))
-	for _, participant := range participants {
-		go func(p string) {
-			client, exists := n.peerClients[p]
-			if !exists {
-				commitResponses <- false
-				return
-			}
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-
-			resp, err := client.DoCommit(ctx, &pb.DoCommitRequest{
-				TransactionId: txID,
-			})
-			if err != nil || !resp.Success {
-				commitResponses <- false
-				return
-			}
-			commitResponses <- true
-		}(participant)
-	}
-
-	// Collect results
-	allCommitted := true
-	for i := 0; i < len(participants); i++ {
-		if !<-commitResponses {
-			allCommitted = false
-		}
-	}
-
-	if allCommitted {
-		tx.mu.Lock()
-		tx.State = StateCommitted
-		tx.mu.Unlock()
-
-		// Commit locally
-		n.mu.Lock()
-		for k, v := range data {
-			n.dataStore[k] = v
-		}
-		n.mu.Unlock()
-
-		return true, ""
-	}
-
-	return false, "Some participants failed to commit"
+	// TODO: Implement this method
+	return false, "Not implemented"
 }
 
 func (n *ThreePhaseCommitNode) abortTransaction(tx *Transaction) {
-	tx.mu.Lock()
-	tx.State = StateAborted
-	tx.mu.Unlock()
-
-	// Send abort to all participants
-	for _, participant := range tx.Participants {
-		go func(p string) {
-			client, exists := n.peerClients[p]
-			if !exists {
-				return
-			}
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-
-			client.Abort(ctx, &pb.AbortRequest{
-				TransactionId: tx.TransactionID,
-			})
-		}(participant)
-	}
+	// TODO: Implement this method
 }
 
 // =============================================================================
@@ -327,90 +172,32 @@ func (n *ThreePhaseCommitNode) GetTransactionStatus(ctx context.Context, req *pb
 func (n *ThreePhaseCommitNode) CanCommit(ctx context.Context, req *pb.CanCommitRequest) (*pb.CanCommitResponse, error) {
 	// TODO: Check if we can commit this transaction
 	// In a real implementation, check for conflicts, locks, etc.
-
-	n.mu.Lock()
-	tx := &Transaction{
-		TransactionID: req.TransactionId,
-		State:         StateWaiting,
-		Data:          req.Data,
-		Timestamp:     time.Now(),
-	}
-	n.transactions[req.TransactionId] = tx
-	n.mu.Unlock()
-
 	return &pb.CanCommitResponse{
-		Vote:   true,
+		Vote:   false,
 		NodeId: n.nodeID,
 	}, nil
 }
 
 func (n *ThreePhaseCommitNode) PreCommit(ctx context.Context, req *pb.PreCommitRequest) (*pb.PreCommitResponse, error) {
-	n.mu.RLock()
-	tx, exists := n.transactions[req.TransactionId]
-	n.mu.RUnlock()
-
-	if !exists {
-		return &pb.PreCommitResponse{
-			Acknowledged: false,
-			Error:        "Transaction not found",
-		}, nil
-	}
-
-	tx.mu.Lock()
-	tx.State = StatePreCommitted
-	tx.mu.Unlock()
-
+	// TODO: Implement pre-commit phase
 	return &pb.PreCommitResponse{
-		Acknowledged: true,
+		Acknowledged: false,
 		NodeId:       n.nodeID,
 	}, nil
 }
 
 func (n *ThreePhaseCommitNode) DoCommit(ctx context.Context, req *pb.DoCommitRequest) (*pb.DoCommitResponse, error) {
-	n.mu.Lock()
-	tx, exists := n.transactions[req.TransactionId]
-	if !exists {
-		n.mu.Unlock()
-		return &pb.DoCommitResponse{
-			Success: false,
-			Error:   "Transaction not found",
-		}, nil
-	}
-
-	// Apply the data
-	for k, v := range tx.Data {
-		n.dataStore[k] = v
-	}
-	n.mu.Unlock()
-
-	tx.mu.Lock()
-	tx.State = StateCommitted
-	tx.mu.Unlock()
-
+	// TODO: Implement do-commit phase
 	return &pb.DoCommitResponse{
-		Success: true,
+		Success: false,
 		NodeId:  n.nodeID,
 	}, nil
 }
 
 func (n *ThreePhaseCommitNode) Abort(ctx context.Context, req *pb.AbortRequest) (*pb.AbortResponse, error) {
-	n.mu.RLock()
-	tx, exists := n.transactions[req.TransactionId]
-	n.mu.RUnlock()
-
-	if !exists {
-		return &pb.AbortResponse{
-			Acknowledged: true,
-			NodeId:       n.nodeID,
-		}, nil
-	}
-
-	tx.mu.Lock()
-	tx.State = StateAborted
-	tx.mu.Unlock()
-
+	// TODO: Implement abort phase
 	return &pb.AbortResponse{
-		Acknowledged: true,
+		Acknowledged: false,
 		NodeId:       n.nodeID,
 	}, nil
 }

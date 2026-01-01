@@ -49,12 +49,8 @@ public class CRDTServer {
          * TODO: Only increment this node's counter
          */
         public void increment(String nodeId, long amount) {
-            lock.writeLock().lock();
-            try {
-                counts.merge(nodeId, amount, Long::sum);
-            } finally {
-                lock.writeLock().unlock();
-            }
+            // TODO: Implement this method
+            throw new UnsupportedOperationException("increment not implemented");
         }
 
         /**
@@ -62,12 +58,8 @@ public class CRDTServer {
          * TODO: Sum all node counters
          */
         public long value() {
-            lock.readLock().lock();
-            try {
-                return counts.values().stream().mapToLong(Long::longValue).sum();
-            } finally {
-                lock.readLock().unlock();
-            }
+            // TODO: Implement this method
+            return 0;
         }
 
         /**
@@ -75,14 +67,8 @@ public class CRDTServer {
          * TODO: Take maximum of each node's counter
          */
         public void merge(Map<String, Long> other) {
-            lock.writeLock().lock();
-            try {
-                for (Map.Entry<String, Long> entry : other.entrySet()) {
-                    counts.merge(entry.getKey(), entry.getValue(), Math::max);
-                }
-            } finally {
-                lock.writeLock().unlock();
-            }
+            // TODO: Implement this method
+            throw new UnsupportedOperationException("merge not implemented");
         }
 
         public Map<String, Long> getCounts() {
@@ -177,17 +163,8 @@ public class CRDTServer {
          * TODO: Only update if new timestamp > current timestamp
          */
         public boolean set(String value, long timestamp) {
-            lock.writeLock().lock();
-            try {
-                if (timestamp > this.timestamp) {
-                    this.value = value;
-                    this.timestamp = timestamp;
-                    return true;
-                }
-                return false;
-            } finally {
-                lock.writeLock().unlock();
-            }
+            // TODO: Implement this method
+            return false;
         }
 
         public String getValue() {

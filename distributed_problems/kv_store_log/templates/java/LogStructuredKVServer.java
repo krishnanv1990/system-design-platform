@@ -176,54 +176,8 @@ public class LogStructuredKVServer {
          * TODO: Create entry, write to segment, update keyDir
          */
         public void append(String key, String value) throws IOException {
-            lock.writeLock().lock();
-            try {
-                long timestamp = System.nanoTime();
-                byte[] keyBytes = key.getBytes();
-                byte[] valueBytes = value.getBytes();
-
-                // Calculate CRC
-                CRC32 crc = new CRC32();
-                ByteBuffer headerBuf = ByteBuffer.allocate(16);
-                headerBuf.putLong(timestamp);
-                headerBuf.putInt(keyBytes.length);
-                headerBuf.putInt(valueBytes.length);
-                crc.update(headerBuf.array());
-                crc.update(keyBytes);
-                crc.update(valueBytes);
-
-                activeSegment.lock.writeLock().lock();
-                try {
-                    long offset = activeSegment.size;
-
-                    // Write entry
-                    activeSegment.file.writeInt((int) crc.getValue());
-                    activeSegment.file.writeLong(timestamp);
-                    activeSegment.file.writeInt(keyBytes.length);
-                    activeSegment.file.writeInt(valueBytes.length);
-                    activeSegment.file.write(keyBytes);
-                    activeSegment.file.write(valueBytes);
-
-                    int entrySize = 20 + keyBytes.length + valueBytes.length;
-                    activeSegment.size += entrySize;
-
-                    // Update keyDir
-                    if (!TOMBSTONE.equals(value)) {
-                        keyDir.put(key, new KeyDirEntry(activeSegment.id, offset, entrySize, timestamp));
-                    } else {
-                        keyDir.remove(key);
-                    }
-
-                    // Rotate if needed
-                    if (activeSegment.size >= MAX_SEGMENT_SIZE) {
-                        createNewSegment();
-                    }
-                } finally {
-                    activeSegment.lock.writeLock().unlock();
-                }
-            } finally {
-                lock.writeLock().unlock();
-            }
+            // TODO: Implement this method
+            throw new UnsupportedOperationException("append not implemented");
         }
 
         /**
@@ -231,41 +185,8 @@ public class LogStructuredKVServer {
          * TODO: Lookup in keyDir, seek to position, read value
          */
         public String get(String key) throws IOException {
-            KeyDirEntry entry = keyDir.get(key);
-            if (entry == null) {
-                return null;
-            }
-
-            Segment segment = segments.get(entry.segmentId);
-            if (segment == null) {
-                return null;
-            }
-
-            segment.lock.readLock().lock();
-            try {
-                segment.file.seek(entry.offset);
-
-                // Skip header
-                segment.file.readInt(); // crc
-                segment.file.readLong(); // timestamp
-                int keySize = segment.file.readInt();
-                int valueSize = segment.file.readInt();
-
-                // Skip key
-                segment.file.skipBytes(keySize);
-
-                // Read value
-                byte[] valueBytes = new byte[valueSize];
-                segment.file.readFully(valueBytes);
-                String value = new String(valueBytes);
-
-                if (TOMBSTONE.equals(value)) {
-                    return null;
-                }
-                return value;
-            } finally {
-                segment.lock.readLock().unlock();
-            }
+            // TODO: Implement this method
+            return null;
         }
 
         /**
@@ -280,56 +201,8 @@ public class LogStructuredKVServer {
          * TODO: Create new segment with only live keys
          */
         public void compact() throws IOException {
-            lock.writeLock().lock();
-            try {
-                int newSegmentId = segments.size();
-                Path newPath = dataDir.resolve(String.format("segment_%06d.log", newSegmentId));
-                Segment newSegment = new Segment(newSegmentId, newPath);
-
-                Map<String, KeyDirEntry> newKeyDir = new HashMap<>();
-
-                for (Map.Entry<String, KeyDirEntry> entry : keyDir.entrySet()) {
-                    String key = entry.getKey();
-                    String value = get(key);
-
-                    if (value != null) {
-                        long timestamp = System.nanoTime();
-                        byte[] keyBytes = key.getBytes();
-                        byte[] valueBytes = value.getBytes();
-
-                        CRC32 crc = new CRC32();
-                        ByteBuffer headerBuf = ByteBuffer.allocate(16);
-                        headerBuf.putLong(timestamp);
-                        headerBuf.putInt(keyBytes.length);
-                        headerBuf.putInt(valueBytes.length);
-                        crc.update(headerBuf.array());
-                        crc.update(keyBytes);
-                        crc.update(valueBytes);
-
-                        long offset = newSegment.size;
-
-                        newSegment.file.writeInt((int) crc.getValue());
-                        newSegment.file.writeLong(timestamp);
-                        newSegment.file.writeInt(keyBytes.length);
-                        newSegment.file.writeInt(valueBytes.length);
-                        newSegment.file.write(keyBytes);
-                        newSegment.file.write(valueBytes);
-
-                        int entrySize = 20 + keyBytes.length + valueBytes.length;
-                        newSegment.size += entrySize;
-
-                        newKeyDir.put(key, new KeyDirEntry(newSegmentId, offset, entrySize, timestamp));
-                    }
-                }
-
-                keyDir.clear();
-                keyDir.putAll(newKeyDir);
-                segments.put(newSegmentId, newSegment);
-                activeSegment = newSegment;
-
-            } finally {
-                lock.writeLock().unlock();
-            }
+            // TODO: Implement this method
+            throw new UnsupportedOperationException("compact not implemented");
         }
 
         // =========================================================================

@@ -119,19 +119,8 @@ class TokenBucketRateLimiter:
         3. Cap tokens at bucket capacity
         4. Update last_refill_time
         """
-        now = self._current_time_ms()
-        elapsed_ms = now - bucket.last_refill_time
-        elapsed_seconds = elapsed_ms / 1000.0
-
-        # Calculate tokens to add
-        tokens_to_add = elapsed_seconds * bucket.refill_rate
-
-        # Add tokens, capped at capacity
-        bucket.current_tokens = min(
-            bucket.capacity,
-            bucket.current_tokens + tokens_to_add
-        )
-        bucket.last_refill_time = now
+        # TODO: Implement this method
+        pass
 
     def try_consume(self, bucket: BucketState, tokens: int) -> bool:
         """
@@ -150,19 +139,8 @@ class TokenBucketRateLimiter:
         Returns:
             True if tokens were consumed, False otherwise
         """
-        with self.lock:
-            # Refill tokens first
-            self.refill_tokens(bucket)
-
-            bucket.total_requests += 1
-
-            if bucket.current_tokens >= tokens:
-                bucket.current_tokens -= tokens
-                bucket.allowed_requests += 1
-                return True
-            else:
-                bucket.rejected_requests += 1
-                return False
+        # TODO: Implement this method
+        return False
 
     def get_or_create_bucket(
         self,
@@ -178,17 +156,15 @@ class TokenBucketRateLimiter:
         2. If not, create new bucket with given config
         3. Return the bucket
         """
-        with self.lock:
-            if bucket_id not in self.buckets:
-                self.buckets[bucket_id] = BucketState(
-                    bucket_id=bucket_id,
-                    capacity=capacity,
-                    refill_rate=refill_rate,
-                    current_tokens=float(capacity),  # Start full
-                    last_refill_time=self._current_time_ms(),
-                )
-                logger.info(f"Created bucket {bucket_id} with capacity={capacity}, refill_rate={refill_rate}")
-            return self.buckets[bucket_id]
+        # TODO: Implement this method
+        # For now, return a placeholder bucket
+        return BucketState(
+            bucket_id=bucket_id,
+            capacity=capacity,
+            refill_rate=refill_rate,
+            current_tokens=0.0,
+            last_refill_time=0,
+        )
 
     def calculate_retry_after(self, bucket: BucketState, tokens_needed: int) -> int:
         """

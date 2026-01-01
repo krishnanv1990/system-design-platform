@@ -172,20 +172,8 @@ public class LSMTreeKVServer {
          * TODO: Write to WAL, then MemTable, flush if needed
          */
         public void put(String key, String value) throws IOException {
-            lock.writeLock().lock();
-            try {
-                long timestamp = System.nanoTime();
-                writeToWAL((byte) 0, key, value, timestamp);
-
-                memTable.put(key, new MemTableEntry(key, value, timestamp, false));
-                memTableSize += key.length() + value.length();
-
-                if (memTableSize >= MEMTABLE_MAX_SIZE) {
-                    flush();
-                }
-            } finally {
-                lock.writeLock().unlock();
-            }
+            // TODO: Implement this method
+            throw new UnsupportedOperationException("put not implemented");
         }
 
         /**
@@ -193,38 +181,8 @@ public class LSMTreeKVServer {
          * TODO: Check MemTable, immutable, then SSTables
          */
         public String get(String key) throws IOException {
-            lock.readLock().lock();
-            try {
-                // Check MemTable
-                MemTableEntry entry = memTable.get(key);
-                if (entry != null) {
-                    return entry.deleted ? null : entry.value;
-                }
-
-                // Check immutable MemTable
-                if (immutableMemTable != null) {
-                    entry = immutableMemTable.get(key);
-                    if (entry != null) {
-                        return entry.deleted ? null : entry.value;
-                    }
-                }
-
-                // Check SSTables (L0 first, then other levels)
-                for (int level = 0; level <= 5; level++) {
-                    List<SSTableInfo> tables = sstables.getOrDefault(level, Collections.emptyList());
-                    for (int i = tables.size() - 1; i >= 0; i--) {
-                        SSTableInfo info = tables.get(i);
-                        String value = searchSSTable(info, key);
-                        if (value != null) {
-                            return "__DELETED__".equals(value) ? null : value;
-                        }
-                    }
-                }
-
-                return null;
-            } finally {
-                lock.readLock().unlock();
-            }
+            // TODO: Implement this method
+            return null;
         }
 
         private String searchSSTable(SSTableInfo info, String key) throws IOException {
@@ -268,136 +226,17 @@ public class LSMTreeKVServer {
          * TODO: Write sorted entries to SSTable file
          */
         public void flush() throws IOException {
-            if (memTable.isEmpty()) {
-                return;
-            }
-
-            // Make current MemTable immutable
-            immutableMemTable = memTable;
-            memTable = new ConcurrentSkipListMap<>();
-            memTableSize = 0;
-
-            // Write SSTable
-            int ssId = nextSSTableId++;
-            Path path = dataDir.resolve("sst").resolve(String.format("sst_%06d_L0.sst", ssId));
-
-            try (RandomAccessFile file = new RandomAccessFile(path.toFile(), "rw")) {
-                String minKey = null, maxKey = null;
-                long entryCount = 0;
-
-                for (MemTableEntry entry : immutableMemTable.values()) {
-                    if (minKey == null) minKey = entry.key;
-                    maxKey = entry.key;
-
-                    byte[] keyBytes = entry.key.getBytes();
-                    byte[] valueBytes = entry.value.getBytes();
-
-                    file.writeByte(entry.deleted ? 1 : 0);
-                    file.writeInt(keyBytes.length);
-                    file.writeInt(valueBytes.length);
-                    file.writeInt((int) entry.timestamp);
-                    file.write(keyBytes);
-                    file.write(valueBytes);
-                    entryCount++;
-                }
-
-                SSTableInfo info = new SSTableInfo(ssId, 0, path);
-                info.minKey = minKey;
-                info.maxKey = maxKey;
-                info.entryCount = entryCount;
-                info.size = file.length();
-
-                sstables.computeIfAbsent(0, k -> new ArrayList<>()).add(info);
-            }
-
-            immutableMemTable = null;
-
-            // Clear WAL
-            walFile.setLength(0);
-
-            // Check if compaction needed
-            List<SSTableInfo> l0Tables = sstables.getOrDefault(0, Collections.emptyList());
-            if (l0Tables.size() >= LEVEL0_MAX_FILES) {
-                compact(0);
-            }
+            // TODO: Implement this method
+            throw new UnsupportedOperationException("flush not implemented");
         }
 
         /**
          * Compact SSTables at a level.
+         * TODO: Merge SSTables and write to next level
          */
         public void compact(int level) throws IOException {
-            List<SSTableInfo> tables = sstables.getOrDefault(level, Collections.emptyList());
-            if (tables.size() < 2) {
-                return;
-            }
-
-            // Read and merge all entries
-            Map<String, MemTableEntry> allEntries = new TreeMap<>();
-            for (SSTableInfo table : tables) {
-                try (RandomAccessFile file = new RandomAccessFile(table.path.toFile(), "r")) {
-                    while (file.getFilePointer() < file.length()) {
-                        byte deleted = file.readByte();
-                        int keyLen = file.readInt();
-                        int valueLen = file.readInt();
-                        int timestamp = file.readInt();
-
-                        byte[] keyBytes = new byte[keyLen];
-                        file.readFully(keyBytes);
-                        byte[] valueBytes = new byte[valueLen];
-                        file.readFully(valueBytes);
-
-                        String key = new String(keyBytes);
-                        String value = new String(valueBytes);
-
-                        MemTableEntry existing = allEntries.get(key);
-                        if (existing == null || timestamp > existing.timestamp) {
-                            allEntries.put(key, new MemTableEntry(key, value, timestamp, deleted == 1));
-                        }
-                    }
-                }
-            }
-
-            // Write new SSTable at next level
-            int ssId = nextSSTableId++;
-            int nextLevel = level + 1;
-            Path path = dataDir.resolve("sst").resolve(String.format("sst_%06d_L%d.sst", ssId, nextLevel));
-
-            try (RandomAccessFile file = new RandomAccessFile(path.toFile(), "rw")) {
-                String minKey = null, maxKey = null;
-                long entryCount = 0;
-
-                for (MemTableEntry entry : allEntries.values()) {
-                    if (entry.deleted) continue;
-
-                    if (minKey == null) minKey = entry.key;
-                    maxKey = entry.key;
-
-                    byte[] keyBytes = entry.key.getBytes();
-                    byte[] valueBytes = entry.value.getBytes();
-
-                    file.writeByte(0);
-                    file.writeInt(keyBytes.length);
-                    file.writeInt(valueBytes.length);
-                    file.writeInt((int) entry.timestamp);
-                    file.write(keyBytes);
-                    file.write(valueBytes);
-                    entryCount++;
-                }
-
-                SSTableInfo info = new SSTableInfo(ssId, nextLevel, path);
-                info.minKey = minKey;
-                info.maxKey = maxKey;
-                info.entryCount = entryCount;
-                info.size = file.length();
-
-                sstables.computeIfAbsent(nextLevel, k -> new ArrayList<>()).add(info);
-            }
-
-            // Remove old SSTables
-            for (SSTableInfo table : tables) {
-                Files.deleteIfExists(table.path);
-            }
-            sstables.put(level, new ArrayList<>());
+            // TODO: Implement this method
+            throw new UnsupportedOperationException("compact not implemented");
         }
 
         // =========================================================================

@@ -139,25 +139,8 @@ class LeakyBucketRateLimiter:
         Returns:
             Number of requests processed (leaked)
         """
-        now = self._current_time_ms()
-        elapsed_ms = now - bucket.last_leak_time
-        elapsed_seconds = elapsed_ms / 1000.0
-
-        # Calculate how many requests should leak
-        requests_to_leak = int(elapsed_seconds * bucket.leak_rate)
-
-        if requests_to_leak <= 0:
-            return 0
-
-        # Leak requests from the queue
-        leaked = 0
-        while leaked < requests_to_leak and bucket.queue:
-            bucket.queue.popleft()
-            bucket.processed_requests += 1
-            leaked += 1
-
-        bucket.last_leak_time = now
-        return leaked
+        # TODO: Implement this method
+        return 0
 
     def try_enqueue(self, bucket: BucketState, request_id: Optional[str] = None) -> tuple:
         """
@@ -172,33 +155,8 @@ class LeakyBucketRateLimiter:
         Returns:
             Tuple of (allowed, queue_position, estimated_wait_ms)
         """
-        with self.lock:
-            # First, process any pending leaks
-            self.leak(bucket)
-
-            bucket.total_requests += 1
-
-            # Check if queue is full
-            if len(bucket.queue) >= bucket.capacity:
-                bucket.rejected_requests += 1
-                return (False, 0, 0)
-
-            # Add to queue
-            if not request_id:
-                request_id = str(uuid.uuid4())
-
-            queued_req = QueuedRequest(
-                request_id=request_id,
-                enqueue_time=self._current_time_ms(),
-            )
-            bucket.queue.append(queued_req)
-            bucket.allowed_requests += 1
-
-            # Calculate position and estimated wait
-            position = len(bucket.queue)
-            estimated_wait_ms = int((position / bucket.leak_rate) * 1000)
-
-            return (True, position, estimated_wait_ms)
+        # TODO: Implement this method
+        return (False, 0, 0)
 
     def get_or_create_bucket(
         self,
@@ -206,17 +164,22 @@ class LeakyBucketRateLimiter:
         capacity: int = DEFAULT_CAPACITY,
         leak_rate: float = DEFAULT_LEAK_RATE
     ) -> BucketState:
-        """Get an existing bucket or create a new one."""
-        with self.lock:
-            if bucket_id not in self.buckets:
-                self.buckets[bucket_id] = BucketState(
-                    bucket_id=bucket_id,
-                    capacity=capacity,
-                    leak_rate=leak_rate,
-                    last_leak_time=self._current_time_ms(),
-                )
-                logger.info(f"Created bucket {bucket_id} with capacity={capacity}, leak_rate={leak_rate}")
-            return self.buckets[bucket_id]
+        """
+        Get an existing bucket or create a new one.
+
+        TODO: Implement bucket management:
+        1. Check if bucket exists
+        2. If not, create new bucket with given config
+        3. Return the bucket
+        """
+        # TODO: Implement this method
+        # For now, return a placeholder bucket
+        return BucketState(
+            bucket_id=bucket_id,
+            capacity=capacity,
+            leak_rate=leak_rate,
+            last_leak_time=0,
+        )
 
     async def _background_leak(self):
         """Background task to continuously process leaks."""

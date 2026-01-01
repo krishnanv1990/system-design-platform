@@ -99,8 +99,8 @@ public class FixedWindowCounterServer {
          * 3. Return window start: window_start = window_num * window_size
          */
         public long getCurrentWindowStart(long windowSizeMs) {
-            long now = System.currentTimeMillis();
-            return (now / windowSizeMs) * windowSizeMs;
+            // TODO: Implement this method
+            throw new UnsupportedOperationException("getCurrentWindowStart not implemented");
         }
 
         /**
@@ -112,19 +112,8 @@ public class FixedWindowCounterServer {
          * 3. Update window start time
          */
         public void checkAndRotateWindow(WindowState counter) {
-            counter.lock.lock();
-            try {
-                long currentWindow = getCurrentWindowStart(counter.windowSizeMs);
-
-                // TODO: Check if we've moved to a new window
-                if (currentWindow > counter.windowStart) {
-                    // Reset counter for new window
-                    counter.windowStart = currentWindow;
-                    counter.requestCount = 0;
-                }
-            } finally {
-                counter.lock.unlock();
-            }
+            // TODO: Implement this method
+            throw new UnsupportedOperationException("checkAndRotateWindow not implemented");
         }
 
         /**
@@ -137,19 +126,8 @@ public class FixedWindowCounterServer {
          * 4. If would exceed, return false
          */
         public boolean tryIncrement(WindowState counter, long count) {
-            checkAndRotateWindow(counter);
-
-            counter.lock.lock();
-            try {
-                // TODO: Check if request would exceed limit
-                if (counter.requestCount + count <= counter.requestLimit) {
-                    counter.requestCount += count;
-                    return true;
-                }
-                return false;
-            } finally {
-                counter.lock.unlock();
-            }
+            // TODO: Implement this method
+            throw new UnsupportedOperationException("tryIncrement not implemented");
         }
 
         // =========================================================================

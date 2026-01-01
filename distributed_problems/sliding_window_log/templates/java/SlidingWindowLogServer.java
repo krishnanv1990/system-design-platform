@@ -92,24 +92,8 @@ public class SlidingWindowLogServer {
          * 3. Maintain sorted order for efficient cleanup
          */
         public void cleanupOldTimestamps(WindowState counter) {
-            counter.lock.lock();
-            try {
-                long now = System.currentTimeMillis();
-                long windowStart = now - counter.windowSizeMs;
-
-                // TODO: Remove old timestamps using binary search
-                int idx = Collections.binarySearch(counter.timestamps, windowStart);
-                if (idx < 0) {
-                    idx = -(idx + 1);
-                }
-
-                // TODO: Remove old timestamps
-                if (idx > 0) {
-                    counter.timestamps.subList(0, idx).clear();
-                }
-            } finally {
-                counter.lock.unlock();
-            }
+            // TODO: Implement this method
+            throw new UnsupportedOperationException("cleanupOldTimestamps not implemented");
         }
 
         /**
@@ -120,14 +104,8 @@ public class SlidingWindowLogServer {
          * 2. Return the count of remaining timestamps
          */
         public long countRequestsInWindow(WindowState counter) {
-            cleanupOldTimestamps(counter);
-
-            counter.lock.lock();
-            try {
-                return counter.timestamps.size();
-            } finally {
-                counter.lock.unlock();
-            }
+            // TODO: Implement this method
+            throw new UnsupportedOperationException("countRequestsInWindow not implemented");
         }
 
         /**
@@ -140,25 +118,8 @@ public class SlidingWindowLogServer {
          * 4. If would exceed, return false
          */
         public boolean tryRecord(WindowState counter, long count) {
-            cleanupOldTimestamps(counter);
-
-            counter.lock.lock();
-            try {
-                // TODO: Check if requests would exceed limit
-                if (counter.timestamps.size() + count > counter.requestLimit) {
-                    return false;
-                }
-
-                // TODO: Record new timestamps
-                long now = System.currentTimeMillis();
-                for (int i = 0; i < count; i++) {
-                    counter.timestamps.add(now);
-                }
-
-                return true;
-            } finally {
-                counter.lock.unlock();
-            }
+            // TODO: Implement this method
+            throw new UnsupportedOperationException("tryRecord not implemented");
         }
 
         // =========================================================================

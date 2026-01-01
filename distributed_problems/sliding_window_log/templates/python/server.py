@@ -127,19 +127,8 @@ class SlidingWindowLogRateLimiter:
         3. Remove all entries before that point
         4. Return number of entries removed
         """
-        if now is None:
-            now = self._current_time_ms()
-
-        window_start = now - log.window_size_ms
-
-        # Binary search for cutoff point
-        cutoff_idx = bisect.bisect_left(log.entries, window_start)
-
-        # Remove old entries
-        removed = cutoff_idx
-        log.entries = log.entries[cutoff_idx:]
-
-        return removed
+        # TODO: Implement this method
+        return 0
 
     def check_and_add(self, log: LogState, timestamp: Optional[int] = None) -> tuple:
         """
@@ -154,25 +143,8 @@ class SlidingWindowLogRateLimiter:
         Returns:
             Tuple of (allowed, current_count, remaining)
         """
-        with self.lock:
-            if timestamp is None:
-                timestamp = self._current_time_ms()
-
-            # Clean up old entries
-            self.cleanup_old_entries(log, timestamp)
-
-            log.total_requests += 1
-            current_count = len(log.entries)
-
-            if current_count < log.max_requests:
-                # Use bisect to insert in sorted order
-                bisect.insort(log.entries, timestamp)
-                log.total_allowed += 1
-                remaining = log.max_requests - len(log.entries)
-                return (True, len(log.entries), remaining)
-            else:
-                log.total_rejected += 1
-                return (False, current_count, 0)
+        # TODO: Implement this method
+        return (False, 0, 0)
 
     def get_or_create_log(
         self,
@@ -180,16 +152,21 @@ class SlidingWindowLogRateLimiter:
         max_requests: int = DEFAULT_MAX_REQUESTS,
         window_size_ms: int = DEFAULT_WINDOW_SIZE_MS
     ) -> LogState:
-        """Get an existing log or create a new one."""
-        with self.lock:
-            if limit_id not in self.logs:
-                self.logs[limit_id] = LogState(
-                    limit_id=limit_id,
-                    max_requests=max_requests,
-                    window_size_ms=window_size_ms,
-                )
-                logger.info(f"Created log {limit_id} with max={max_requests}, window={window_size_ms}ms")
-            return self.logs[limit_id]
+        """
+        Get an existing log or create a new one.
+
+        TODO: Implement log management:
+        1. Check if log exists
+        2. If not, create new log with given config
+        3. Return the log
+        """
+        # TODO: Implement this method
+        # For now, return a placeholder log
+        return LogState(
+            limit_id=limit_id,
+            max_requests=max_requests,
+            window_size_ms=window_size_ms,
+        )
 
 
 class RateLimiterServicer(sliding_window_log_pb2_grpc.RateLimiterServiceServicer):

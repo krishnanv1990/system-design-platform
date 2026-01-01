@@ -107,19 +107,7 @@ func (r *LeakyBucketRateLimiter) GetOrCreateBucket(bucketID string, capacity, le
 // 3. Reduce queue size by leaked amount (minimum 0)
 // 4. Update last leak time
 func (r *LeakyBucketRateLimiter) Leak(bucket *BucketState) {
-	bucket.mu.Lock()
-	defer bucket.mu.Unlock()
-
-	now := time.Now()
-	elapsed := now.Sub(bucket.LastLeakTime).Seconds()
-
-	// TODO: Calculate how many items have leaked
-	leaked := elapsed * bucket.LeakRate
-
-	// TODO: Reduce queue size, but don't go below 0
-	bucket.QueueSize = max(0, bucket.QueueSize-leaked)
-
-	bucket.LastLeakTime = now
+	// TODO: Implement this method
 }
 
 // TryEnqueue attempts to add a request to the queue
@@ -130,16 +118,7 @@ func (r *LeakyBucketRateLimiter) Leak(bucket *BucketState) {
 // 3. If yes, increment queue size and return true
 // 4. If no, return false (request should be rejected)
 func (r *LeakyBucketRateLimiter) TryEnqueue(bucket *BucketState, count float64) bool {
-	r.Leak(bucket)
-
-	bucket.mu.Lock()
-	defer bucket.mu.Unlock()
-
-	// TODO: Check if there's room in the queue
-	if bucket.QueueSize+count <= bucket.Capacity {
-		bucket.QueueSize += count
-		return true
-	}
+	// TODO: Implement this method
 	return false
 }
 

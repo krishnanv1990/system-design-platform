@@ -95,21 +95,8 @@ public class TokenBucketServer {
          * 4. Update last refill time
          */
         public void refillTokens(BucketState bucket) {
-            bucket.lock.lock();
-            try {
-                long now = System.currentTimeMillis();
-                double elapsed = (now - bucket.lastRefillTime) / 1000.0;
-
-                // TODO: Calculate tokens to add based on elapsed time and refill rate
-                double tokensToAdd = elapsed * bucket.refillRate;
-
-                // TODO: Add tokens but don't exceed capacity
-                bucket.tokens = Math.min(bucket.tokens + tokensToAdd, bucket.capacity);
-
-                bucket.lastRefillTime = now;
-            } finally {
-                bucket.lock.unlock();
-            }
+            // TODO: Implement this method
+            throw new UnsupportedOperationException("refillTokens not implemented");
         }
 
         /**
@@ -122,19 +109,8 @@ public class TokenBucketServer {
          * 4. If no, return false (request should be rate limited)
          */
         public boolean tryConsume(BucketState bucket, double tokens) {
-            refillTokens(bucket);
-
-            bucket.lock.lock();
-            try {
-                // TODO: Check if enough tokens and consume
-                if (bucket.tokens >= tokens) {
-                    bucket.tokens -= tokens;
-                    return true;
-                }
-                return false;
-            } finally {
-                bucket.lock.unlock();
-            }
+            // TODO: Implement this method
+            throw new UnsupportedOperationException("tryConsume not implemented");
         }
 
         // =========================================================================
