@@ -651,7 +651,6 @@ def get_problem_type_from_id(problem_id: int) -> str:
 @router.get("/problems", response_model=List[DistributedProblemListResponse])
 async def list_distributed_problems(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
 ):
     """
     List all distributed consensus problems.

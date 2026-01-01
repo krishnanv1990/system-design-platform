@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
-from backend.models.problem import Problem, DIFFICULTY_LEVELS
+from backend.models.problem import Problem, DIFFICULTY_LEVELS, ProblemType
 from backend.models.user import User
 from backend.schemas.problem import (
     ProblemCreate,
@@ -124,7 +124,10 @@ async def list_problems(
     Returns:
         List of problems with difficulty level info (L5/L6/L7)
     """
-    query = db.query(Problem)
+    # Only return system_design problems (not distributed_consensus)
+    query = db.query(Problem).filter(
+        Problem.problem_type == ProblemType.SYSTEM_DESIGN.value
+    )
 
     if difficulty:
         query = query.filter(Problem.difficulty == difficulty)
