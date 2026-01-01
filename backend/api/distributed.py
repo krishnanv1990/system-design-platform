@@ -62,7 +62,7 @@ class DistributedProblemListResponse(BaseModel):
     supported_languages: List[str]
     cluster_size: int
     tags: Optional[List[str]] = None
-    created_at: str
+    created_at: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -82,7 +82,7 @@ class DistributedProblemResponse(BaseModel):
     test_scenarios: List[TestScenario]
     hints: Optional[List[str]] = None
     tags: Optional[List[str]] = None
-    created_at: str
+    created_at: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -124,7 +124,7 @@ class DistributedSubmissionResponse(BaseModel):
     build_artifact_url: Optional[str] = None
     cluster_node_urls: Optional[List[str]] = None
     error_message: Optional[str] = None
-    created_at: str
+    created_at: Optional[str] = None
 
     class Config:
         from_attributes = True
