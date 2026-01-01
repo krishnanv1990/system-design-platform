@@ -138,6 +138,187 @@ def seed_distributed_problems():
         db.close()
 
 
+def seed_system_design_problems():
+    """Seed system design problems if they don't exist."""
+    from backend.database import SessionLocal
+    from backend.models.problem import Problem, ProblemType
+    from datetime import datetime
+
+    # System design problems with IDs starting from 101 to avoid conflicts
+    SYSTEM_DESIGN_PROBLEMS = [
+        {
+            "target_id": 101,
+            "title": "Design a URL Shortener",
+            "description": """Design a URL shortening service like TinyURL or bit.ly.
+
+## Requirements
+
+### Functional Requirements
+- Given a URL, generate a shorter and unique alias of it
+- When users access a short link, redirect them to the original URL
+- Users should optionally be able to pick a custom short link
+- Links will expire after a default timespan
+
+### Non-Functional Requirements
+- The system should be highly available
+- URL redirection should happen in real-time with minimal latency
+- Shortened links should not be guessable (not predictable)
+
+## Capacity Estimation
+- 500 million URL shortenings per month
+- 100:1 read to write ratio
+- Assume each URL object is 500 bytes""",
+            "difficulty": "medium",
+            "tags": ["distributed-systems", "caching", "database"],
+        },
+        {
+            "target_id": 102,
+            "title": "Design a Rate Limiter",
+            "description": """Design a rate limiting service that can be used to control the rate of traffic for APIs.
+
+## Requirements
+
+### Functional Requirements
+- Limit the number of requests a client can make within a time window
+- Support different rate limits for different APIs
+- Return appropriate error responses when rate limit is exceeded
+- Support distributed rate limiting across multiple servers
+
+### Non-Functional Requirements
+- Low latency (should not add significant delay to requests)
+- High availability
+- Accurate counting even in distributed environment
+
+## Algorithms to Consider
+- Token Bucket
+- Leaking Bucket
+- Fixed Window Counter
+- Sliding Window Log
+- Sliding Window Counter""",
+            "difficulty": "medium",
+            "tags": ["distributed-systems", "algorithms", "redis"],
+        },
+        {
+            "target_id": 103,
+            "title": "Design a Distributed Cache",
+            "description": """Design a distributed caching system like Redis or Memcached.
+
+## Requirements
+
+### Functional Requirements
+- Store key-value pairs with optional TTL
+- Support GET, SET, DELETE operations
+- Support atomic operations like INCR, DECR
+- Handle cache invalidation
+
+### Non-Functional Requirements
+- Sub-millisecond latency for most operations
+- High availability with replication
+- Horizontal scalability
+- Consistency guarantees (eventual or strong)
+
+## Considerations
+- Cache eviction policies (LRU, LFU, etc.)
+- Data partitioning strategy
+- Replication and failover
+- Memory management
+
+## Scale
+- 1 million operations per second
+- 100GB of cached data""",
+            "difficulty": "hard",
+            "tags": ["distributed-systems", "caching", "high-performance"],
+        },
+        {
+            "target_id": 104,
+            "title": "Design a Notification System",
+            "description": """Design a notification service that can send notifications across multiple channels.
+
+## Requirements
+
+### Functional Requirements
+- Support multiple notification channels (push, email, SMS, in-app)
+- Allow users to set notification preferences
+- Support scheduled notifications
+- Handle notification templates
+- Track delivery status and analytics
+
+### Non-Functional Requirements
+- High throughput (millions of notifications per day)
+- Reliable delivery with retries
+- Low latency for real-time notifications
+- Scalable to handle traffic spikes
+
+## Components to Design
+- Notification service
+- Channel adapters (push, email, SMS)
+- User preference service
+- Template engine
+- Analytics pipeline""",
+            "difficulty": "medium",
+            "tags": ["messaging", "distributed-systems", "microservices"],
+        },
+        {
+            "target_id": 105,
+            "title": "Design a Search Autocomplete System",
+            "description": """Design a real-time search autocomplete/typeahead system like Google Search suggestions.
+
+## Requirements
+
+### Functional Requirements
+- Return top N suggestions based on prefix
+- Suggestions should be ranked by popularity/relevance
+- Support personalized suggestions
+- Handle typos and fuzzy matching
+
+### Non-Functional Requirements
+- Response time under 100ms
+- Support high query volume
+- Update suggestions in near real-time based on search trends
+- Handle international characters
+
+## Data Characteristics
+- 5 billion searches per day
+- Average query length: 4 words
+- Top 10 suggestions per query""",
+            "difficulty": "hard",
+            "tags": ["search", "data-structures", "real-time"],
+        },
+    ]
+
+    db = SessionLocal()
+    try:
+        for prob_data in SYSTEM_DESIGN_PROBLEMS:
+            target_id = prob_data.pop("target_id")
+            existing = db.query(Problem).filter(Problem.id == target_id).first()
+
+            if not existing:
+                from sqlalchemy import text
+                db.execute(
+                    text("""
+                        INSERT INTO problems (id, title, description, problem_type, difficulty, tags, created_at)
+                        VALUES (:id, :title, :description, :problem_type, :difficulty, :tags, :created_at)
+                        ON CONFLICT (id) DO NOTHING
+                    """),
+                    {
+                        "id": target_id,
+                        "title": prob_data["title"],
+                        "description": prob_data["description"],
+                        "problem_type": ProblemType.SYSTEM_DESIGN.value,
+                        "difficulty": prob_data["difficulty"],
+                        "tags": str(prob_data["tags"]).replace("'", '"'),
+                        "created_at": datetime.utcnow(),
+                    }
+                )
+                print(f"Added system design problem: {prob_data['title']} (ID: {target_id})")
+        db.commit()
+    except Exception as e:
+        print(f"Error seeding system design problems: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
@@ -161,6 +342,9 @@ async def lifespan(app: FastAPI):
             # Seed distributed problems
             seed_distributed_problems()
             print("Distributed problems seeded")
+            # Seed system design problems
+            seed_system_design_problems()
+            print("System design problems seeded")
             break
         except Exception as e:
             if i < max_retries - 1:
