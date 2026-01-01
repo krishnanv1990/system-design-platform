@@ -69,7 +69,7 @@ def verify_token(token: str) -> Optional[dict]:
 
 
 def get_or_create_demo_user(db: Session) -> User:
-    """Get or create a demo user for demo mode with admin privileges."""
+    """Get or create a demo user for demo mode."""
     demo_user = db.query(User).filter(User.email == "demo@example.com").first()
     if not demo_user:
         demo_user = User(
@@ -77,14 +77,8 @@ def get_or_create_demo_user(db: Session) -> User:
             email="demo@example.com",
             name="Demo User",
             avatar_url=None,
-            is_admin=True,
         )
         db.add(demo_user)
-        db.commit()
-        db.refresh(demo_user)
-    elif not demo_user.is_admin:
-        # Ensure existing demo user has admin privileges
-        demo_user.is_admin = True
         db.commit()
         db.refresh(demo_user)
     return demo_user
