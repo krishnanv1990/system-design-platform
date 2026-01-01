@@ -1,0 +1,385 @@
+// CRDT (Conflict-free Replicated Data Types) gRPC Service Definition
+// Implements distributed CRDTs for eventual consistency without coordination
+//
+// CRDTs are data structures that can be replicated across nodes where:
+// 1. Updates can happen concurrently on any replica
+// 2. Replicas can merge states without conflicts
+// 3. All replicas converge to the same state eventually
+//
+// This proto defines interfaces for common CRDT types:
+// - G-Counter (grow-only counter)
+// - PN-Counter (positive-negative counter)
+// - G-Set (grow-only set)
+// - OR-Set (observed-remove set)
+// - LWW-Register (last-writer-wins register)
+// - MV-Register (multi-value register)
+//
+// This proto defines the RPC interface for implementing distributed CRDTs.
+
+syntax = "proto3";
+
+package crdt;
+
+option go_package = "github.com/sdp/crdt";
+option java_package = "com.sdp.crdt";
+option java_multiple_files = true;
+
+// ============================================================================
+// CRDT Service (handles client operations)
+// ============================================================================
+
+// CRDTService provides CRDT operations
+service CRDTService {
+    // Counter operations
+    rpc IncrementCounter(IncrementCounterRequest) returns (IncrementCounterResponse);
+    rpc DecrementCounter(DecrementCounterRequest) returns (DecrementCounterResponse);
+    rpc GetCounter(GetCounterRequest) returns (GetCounterResponse);
+
+    // Set operations
+    rpc AddToSet(AddToSetRequest) returns (AddToSetResponse);
+    rpc RemoveFromSet(RemoveFromSetRequest) returns (RemoveFromSetResponse);
+    rpc GetSet(GetSetRequest) returns (GetSetResponse);
+    rpc ContainsInSet(ContainsInSetRequest) returns (ContainsInSetResponse);
+
+    // Register operations
+    rpc SetRegister(SetRegisterRequest) returns (SetRegisterResponse);
+    rpc GetRegister(GetRegisterRequest) returns (GetRegisterResponse);
+
+    // Generic CRDT operations
+    rpc CreateCRDT(CreateCRDTRequest) returns (CreateCRDTResponse);
+    rpc DeleteCRDT(DeleteCRDTRequest) returns (DeleteCRDTResponse);
+    rpc GetCRDTState(GetCRDTStateRequest) returns (GetCRDTStateResponse);
+
+    // Cluster operations
+    rpc GetLeader(GetLeaderRequest) returns (GetLeaderResponse);
+    rpc GetClusterStatus(GetClusterStatusRequest) returns (GetClusterStatusResponse);
+}
+
+// ============================================================================
+// Replication Service (handles node-to-node sync)
+// ============================================================================
+
+// ReplicationService handles CRDT replication between nodes
+service ReplicationService {
+    // Merge merges a CRDT state from another node
+    rpc Merge(MergeRequest) returns (MergeResponse);
+
+    // SyncAll synchronizes all CRDTs with another node
+    rpc SyncAll(SyncAllRequest) returns (SyncAllResponse);
+
+    // Heartbeat for health checking
+    rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+
+    // GetLocalCRDTs returns all CRDTs on this node
+    rpc GetLocalCRDTs(GetLocalCRDTsRequest) returns (GetLocalCRDTsResponse);
+}
+
+// ============================================================================
+// CRDT Types
+// ============================================================================
+
+enum CRDTType {
+    G_COUNTER = 0;          // Grow-only counter
+    PN_COUNTER = 1;         // Positive-negative counter
+    G_SET = 2;              // Grow-only set
+    OR_SET = 3;             // Observed-remove set
+    LWW_REGISTER = 4;       // Last-writer-wins register
+    MV_REGISTER = 5;        // Multi-value register
+}
+
+// VectorClock for tracking causality
+message VectorClock {
+    map<string, uint64> clock = 1;  // node_id -> logical timestamp
+}
+
+// G-Counter state (grow-only counter)
+message GCounterState {
+    map<string, uint64> counts = 1; // node_id -> count increment
+}
+
+// PN-Counter state (positive-negative counter)
+message PNCounterState {
+    map<string, uint64> positive = 1; // node_id -> positive increments
+    map<string, uint64> negative = 2; // node_id -> negative increments
+}
+
+// G-Set state (grow-only set)
+message GSetState {
+    repeated string elements = 1;
+}
+
+// OR-Set element with unique tag
+message ORSetElement {
+    string value = 1;
+    string unique_tag = 2;          // Unique identifier for this add
+    string added_by = 3;            // Node that added this element
+}
+
+// OR-Set state (observed-remove set)
+message ORSetState {
+    repeated ORSetElement elements = 1;
+    repeated string tombstones = 2; // Removed unique_tags
+}
+
+// LWW-Register state (last-writer-wins register)
+message LWWRegisterState {
+    string value = 1;
+    int64 timestamp = 2;            // Write timestamp
+    string writer = 3;              // Node that wrote this value
+}
+
+// MV-Register state (multi-value register)
+message MVRegisterState {
+    repeated MVRegisterValue values = 1;
+}
+
+message MVRegisterValue {
+    string value = 1;
+    VectorClock version = 2;
+}
+
+// Generic CRDT state wrapper
+message CRDTState {
+    string crdt_id = 1;
+    CRDTType type = 2;
+    VectorClock version = 3;
+
+    oneof state {
+        GCounterState g_counter = 10;
+        PNCounterState pn_counter = 11;
+        GSetState g_set = 12;
+        ORSetState or_set = 13;
+        LWWRegisterState lww_register = 14;
+        MVRegisterState mv_register = 15;
+    }
+
+    int64 created_at = 20;
+    int64 last_updated = 21;
+}
+
+// ============================================================================
+// Counter Request/Response Messages
+// ============================================================================
+
+message IncrementCounterRequest {
+    string counter_id = 1;
+    uint64 amount = 2;              // Default: 1
+}
+
+message IncrementCounterResponse {
+    bool success = 1;
+    int64 value = 2;                // Current counter value
+    string error = 3;
+    string served_by = 4;
+}
+
+message DecrementCounterRequest {
+    string counter_id = 1;
+    uint64 amount = 2;              // Default: 1 (only for PN-Counter)
+}
+
+message DecrementCounterResponse {
+    bool success = 1;
+    int64 value = 2;
+    string error = 3;
+    string served_by = 4;
+}
+
+message GetCounterRequest {
+    string counter_id = 1;
+}
+
+message GetCounterResponse {
+    int64 value = 1;
+    bool found = 2;
+    CRDTType type = 3;              // G_COUNTER or PN_COUNTER
+    string error = 4;
+}
+
+// ============================================================================
+// Set Request/Response Messages
+// ============================================================================
+
+message AddToSetRequest {
+    string set_id = 1;
+    string element = 2;
+}
+
+message AddToSetResponse {
+    bool success = 1;
+    uint64 size = 2;                // Current set size
+    string error = 3;
+    string served_by = 4;
+}
+
+message RemoveFromSetRequest {
+    string set_id = 1;
+    string element = 2;             // Only works for OR-Set
+}
+
+message RemoveFromSetResponse {
+    bool success = 1;
+    bool was_present = 2;
+    uint64 size = 3;
+    string error = 4;
+    string served_by = 5;
+}
+
+message GetSetRequest {
+    string set_id = 1;
+}
+
+message GetSetResponse {
+    repeated string elements = 1;
+    uint64 size = 2;
+    bool found = 3;
+    CRDTType type = 4;              // G_SET or OR_SET
+    string error = 5;
+}
+
+message ContainsInSetRequest {
+    string set_id = 1;
+    string element = 2;
+}
+
+message ContainsInSetResponse {
+    bool contains = 1;
+    bool found = 2;
+    string error = 3;
+}
+
+// ============================================================================
+// Register Request/Response Messages
+// ============================================================================
+
+message SetRegisterRequest {
+    string register_id = 1;
+    string value = 2;
+    int64 timestamp = 3;            // Optional: client timestamp for LWW
+}
+
+message SetRegisterResponse {
+    bool success = 1;
+    string error = 2;
+    string served_by = 3;
+}
+
+message GetRegisterRequest {
+    string register_id = 1;
+}
+
+message GetRegisterResponse {
+    repeated string values = 1;     // Single value for LWW, multiple for MV
+    bool found = 2;
+    CRDTType type = 3;
+    string error = 4;
+}
+
+// ============================================================================
+// Generic CRDT Request/Response Messages
+// ============================================================================
+
+message CreateCRDTRequest {
+    string crdt_id = 1;
+    CRDTType type = 2;
+}
+
+message CreateCRDTResponse {
+    bool success = 1;
+    bool already_exists = 2;
+    string error = 3;
+}
+
+message DeleteCRDTRequest {
+    string crdt_id = 1;
+}
+
+message DeleteCRDTResponse {
+    bool success = 1;
+    string error = 2;
+}
+
+message GetCRDTStateRequest {
+    string crdt_id = 1;
+}
+
+message GetCRDTStateResponse {
+    CRDTState state = 1;
+    bool found = 2;
+    string error = 3;
+}
+
+message GetLeaderRequest {}
+
+message GetLeaderResponse {
+    string node_id = 1;
+    string node_address = 2;
+    // Note: CRDTs are leaderless, but we track a coordinator for admin
+    bool is_coordinator = 3;
+}
+
+message GetClusterStatusRequest {}
+
+message GetClusterStatusResponse {
+    string node_id = 1;
+    string node_address = 2;
+    bool is_coordinator = 3;
+    uint32 total_nodes = 4;
+    uint32 healthy_nodes = 5;
+    uint64 total_crdts = 6;
+    uint64 total_merges = 7;
+    repeated NodeInfo members = 8;
+}
+
+message NodeInfo {
+    string node_id = 1;
+    string address = 2;
+    bool is_healthy = 3;
+    uint64 crdts_count = 4;
+    int64 last_heartbeat = 5;
+}
+
+// ============================================================================
+// Replication Messages
+// ============================================================================
+
+message MergeRequest {
+    string source_node = 1;
+    CRDTState state = 2;
+}
+
+message MergeResponse {
+    bool success = 1;
+    CRDTState merged_state = 2;     // Resulting merged state
+    string error = 3;
+}
+
+message SyncAllRequest {
+    string source_node = 1;
+    repeated CRDTState states = 2;
+}
+
+message SyncAllResponse {
+    bool success = 1;
+    uint64 merged_count = 2;
+    uint64 new_count = 3;
+    string error = 4;
+}
+
+message HeartbeatRequest {
+    string node_id = 1;
+    int64 timestamp = 2;
+    uint64 crdts_count = 3;
+}
+
+message HeartbeatResponse {
+    bool acknowledged = 1;
+    int64 timestamp = 2;
+}
+
+message GetLocalCRDTsRequest {}
+
+message GetLocalCRDTsResponse {
+    repeated CRDTState crdts = 1;
+    uint64 total_count = 2;
+}

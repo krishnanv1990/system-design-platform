@@ -1,0 +1,297 @@
+// Three-Phase Commit (3PC) gRPC Service Definition
+// Implements a distributed 3PC protocol for non-blocking atomic commitment
+//
+// Three-Phase Commit improves on 2PC by adding a pre-commit phase:
+// 1. Phase 1 (CanCommit): Coordinator asks if participants can commit
+// 2. Phase 2 (PreCommit): If all agree, coordinator sends pre-commit
+// 3. Phase 3 (DoCommit): Coordinator sends final commit/abort
+//
+// Key difference from 2PC: Participants can recover from coordinator failure
+// by communicating with each other (non-blocking property)
+//
+// This proto defines the RPC interface for implementing 3PC.
+
+syntax = "proto3";
+
+package three_phase_commit;
+
+option go_package = "github.com/sdp/threepc";
+option java_package = "com.sdp.threepc";
+option java_multiple_files = true;
+
+// ============================================================================
+// Coordinator Service (handles client transaction requests)
+// ============================================================================
+
+// CoordinatorService manages distributed transactions
+service CoordinatorService {
+    // BeginTransaction starts a new distributed transaction
+    rpc BeginTransaction(BeginTransactionRequest) returns (BeginTransactionResponse);
+
+    // CommitTransaction attempts to commit a transaction
+    rpc CommitTransaction(CommitTransactionRequest) returns (CommitTransactionResponse);
+
+    // AbortTransaction aborts a transaction
+    rpc AbortTransaction(AbortTransactionRequest) returns (AbortTransactionResponse);
+
+    // GetTransactionStatus returns the current state of a transaction
+    rpc GetTransactionStatus(GetTransactionStatusRequest) returns (GetTransactionStatusResponse);
+
+    // GetLeader returns the current coordinator
+    rpc GetLeader(GetLeaderRequest) returns (GetLeaderResponse);
+
+    // GetClusterStatus returns cluster health information
+    rpc GetClusterStatus(GetClusterStatusRequest) returns (GetClusterStatusResponse);
+}
+
+// ============================================================================
+// Participant Service (handles coordinator requests)
+// ============================================================================
+
+// ParticipantService handles the participant role in 3PC
+service ParticipantService {
+    // CanCommit - Phase 1: Coordinator asks if participant can commit
+    rpc CanCommit(CanCommitRequest) returns (CanCommitResponse);
+
+    // PreCommit - Phase 2: Coordinator sends pre-commit
+    rpc PreCommit(PreCommitRequest) returns (PreCommitResponse);
+
+    // DoCommit - Phase 3: Coordinator sends final commit
+    rpc DoCommit(DoCommitRequest) returns (DoCommitResponse);
+
+    // DoAbort - Coordinator sends abort
+    rpc DoAbort(DoAbortRequest) returns (DoAbortResponse);
+
+    // GetState - Get participant's state for a transaction
+    rpc GetState(GetStateRequest) returns (GetStateResponse);
+}
+
+// ============================================================================
+// Inter-Node Communication Service
+// ============================================================================
+
+// NodeService handles inter-node communication for failure recovery
+service NodeService {
+    // QueryState - Query another participant's state (for recovery)
+    rpc QueryState(QueryStateRequest) returns (QueryStateResponse);
+
+    // Heartbeat for health checking
+    rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+
+    // ElectCoordinator - Participate in coordinator election
+    rpc ElectCoordinator(ElectCoordinatorRequest) returns (ElectCoordinatorResponse);
+}
+
+// ============================================================================
+// Transaction Types
+// ============================================================================
+
+// TransactionState represents the state of a transaction
+enum TransactionState {
+    UNKNOWN = 0;
+    INITIATED = 1;          // Transaction started
+    WAITING = 2;            // Waiting for CanCommit responses
+    PRECOMMIT = 3;          // Pre-commit sent/received
+    COMMITTING = 4;         // DoCommit in progress
+    COMMITTED = 5;          // Transaction committed
+    ABORTING = 6;           // Abort in progress
+    ABORTED = 7;            // Transaction aborted
+}
+
+// ParticipantState represents a participant's local state
+enum ParticipantState {
+    P_UNKNOWN = 0;
+    P_INITIAL = 1;          // Initial state
+    P_UNCERTAIN = 2;        // Received CanCommit, voted YES
+    P_PRECOMMITTED = 3;     // Received PreCommit
+    P_COMMITTED = 4;        // Committed
+    P_ABORTED = 5;          // Aborted
+}
+
+// Transaction contains information about a distributed transaction
+message Transaction {
+    string transaction_id = 1;
+    TransactionState state = 2;
+    repeated string participants = 3;       // Node IDs of participants
+    string coordinator = 4;                 // Coordinator node ID
+    int64 start_time = 5;                   // When transaction started
+    int64 last_update = 6;                  // Last state change
+    map<string, string> data = 7;           // Transaction data/operations
+    uint32 timeout_ms = 8;                  // Transaction timeout
+}
+
+// ParticipantInfo contains information about a participant's state
+message ParticipantInfo {
+    string node_id = 1;
+    string transaction_id = 2;
+    ParticipantState state = 3;
+    bool vote = 4;                          // Vote in CanCommit (true=yes)
+    int64 last_update = 5;
+}
+
+// ============================================================================
+// Coordinator Request/Response Messages
+// ============================================================================
+
+message BeginTransactionRequest {
+    repeated string participants = 1;       // Node IDs to include
+    map<string, string> data = 2;           // Transaction data
+    uint32 timeout_ms = 3;                  // Optional timeout
+}
+
+message BeginTransactionResponse {
+    bool success = 1;
+    string transaction_id = 2;
+    string error = 3;
+}
+
+message CommitTransactionRequest {
+    string transaction_id = 1;
+}
+
+message CommitTransactionResponse {
+    bool success = 1;
+    TransactionState final_state = 2;
+    string error = 3;
+    map<string, ParticipantState> participant_states = 4;
+}
+
+message AbortTransactionRequest {
+    string transaction_id = 1;
+    string reason = 2;
+}
+
+message AbortTransactionResponse {
+    bool success = 1;
+    string error = 2;
+}
+
+message GetTransactionStatusRequest {
+    string transaction_id = 1;
+}
+
+message GetTransactionStatusResponse {
+    Transaction transaction = 1;
+    bool found = 2;
+    string error = 3;
+    map<string, ParticipantState> participant_states = 4;
+}
+
+message GetLeaderRequest {}
+
+message GetLeaderResponse {
+    string node_id = 1;
+    string node_address = 2;
+    bool is_coordinator = 3;
+}
+
+message GetClusterStatusRequest {}
+
+message GetClusterStatusResponse {
+    string node_id = 1;
+    string node_address = 2;
+    bool is_coordinator = 3;
+    uint32 total_nodes = 4;
+    uint32 healthy_nodes = 5;
+    uint64 active_transactions = 6;
+    uint64 committed_transactions = 7;
+    uint64 aborted_transactions = 8;
+    repeated NodeInfo members = 9;
+}
+
+message NodeInfo {
+    string node_id = 1;
+    string address = 2;
+    bool is_healthy = 3;
+    bool is_coordinator = 4;
+    int64 last_heartbeat = 5;
+}
+
+// ============================================================================
+// Participant Request/Response Messages
+// ============================================================================
+
+message CanCommitRequest {
+    string transaction_id = 1;
+    string coordinator = 2;
+    map<string, string> data = 3;           // Transaction data to validate
+    uint32 timeout_ms = 4;
+}
+
+message CanCommitResponse {
+    bool vote = 1;                          // YES (true) or NO (false)
+    string error = 2;                       // Reason if voting NO
+}
+
+message PreCommitRequest {
+    string transaction_id = 1;
+}
+
+message PreCommitResponse {
+    bool acknowledged = 1;
+    string error = 2;
+}
+
+message DoCommitRequest {
+    string transaction_id = 1;
+}
+
+message DoCommitResponse {
+    bool success = 1;
+    string error = 2;
+}
+
+message DoAbortRequest {
+    string transaction_id = 1;
+    string reason = 2;
+}
+
+message DoAbortResponse {
+    bool acknowledged = 1;
+    string error = 2;
+}
+
+message GetStateRequest {
+    string transaction_id = 1;
+}
+
+message GetStateResponse {
+    ParticipantInfo info = 1;
+    bool found = 2;
+}
+
+// ============================================================================
+// Inter-Node Messages
+// ============================================================================
+
+message QueryStateRequest {
+    string transaction_id = 1;
+    string requester = 2;                   // Node requesting the state
+}
+
+message QueryStateResponse {
+    ParticipantState state = 1;
+    bool found = 2;
+}
+
+message HeartbeatRequest {
+    string node_id = 1;
+    int64 timestamp = 2;
+    bool is_coordinator = 3;
+}
+
+message HeartbeatResponse {
+    bool acknowledged = 1;
+    int64 timestamp = 2;
+}
+
+message ElectCoordinatorRequest {
+    string candidate_id = 1;
+    int64 term = 2;                         // Election term
+}
+
+message ElectCoordinatorResponse {
+    bool vote_granted = 1;
+    string current_coordinator = 2;
+    int64 current_term = 3;
+}

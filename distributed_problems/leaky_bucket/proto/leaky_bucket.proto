@@ -1,0 +1,202 @@
+// Leaky Bucket Rate Limiter gRPC Service Definition
+// Implements a distributed leaky bucket algorithm for rate limiting
+//
+// The leaky bucket algorithm works by:
+// 1. Requests enter a queue (bucket) with fixed capacity
+// 2. Requests are processed (leak) at a constant rate
+// 3. If the bucket is full, new requests are rejected
+// 4. Provides smooth, consistent output rate
+//
+// This proto defines the RPC interface for a distributed leaky bucket rate limiter.
+
+syntax = "proto3";
+
+package leaky_bucket;
+
+option go_package = "github.com/sdp/leakybucket";
+option java_package = "com.sdp.leakybucket";
+option java_multiple_files = true;
+
+// ============================================================================
+// Rate Limiter Service
+// ============================================================================
+
+// RateLimiterService provides leaky bucket rate limiting operations
+service RateLimiterService {
+    // AllowRequest checks if a request can be queued and processes it
+    rpc AllowRequest(AllowRequestRequest) returns (AllowRequestResponse);
+
+    // GetBucketStatus returns the current state of a bucket
+    rpc GetBucketStatus(GetBucketStatusRequest) returns (GetBucketStatusResponse);
+
+    // ConfigureBucket creates or updates a bucket configuration
+    rpc ConfigureBucket(ConfigureBucketRequest) returns (ConfigureBucketResponse);
+
+    // DeleteBucket removes a bucket
+    rpc DeleteBucket(DeleteBucketRequest) returns (DeleteBucketResponse);
+
+    // GetLeader returns the current leader node
+    rpc GetLeader(GetLeaderRequest) returns (GetLeaderResponse);
+
+    // GetClusterStatus returns cluster health information
+    rpc GetClusterStatus(GetClusterStatusRequest) returns (GetClusterStatusResponse);
+}
+
+// ============================================================================
+// Inter-Node Communication Service
+// ============================================================================
+
+// NodeService handles inter-node communication for distributed rate limiting
+service NodeService {
+    // SyncBucket synchronizes bucket state between nodes
+    rpc SyncBucket(SyncBucketRequest) returns (SyncBucketResponse);
+
+    // Heartbeat for health checking
+    rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+
+    // GetLocalBuckets returns all buckets on this node
+    rpc GetLocalBuckets(GetLocalBucketsRequest) returns (GetLocalBucketsResponse);
+}
+
+// ============================================================================
+// Bucket Configuration
+// ============================================================================
+
+// BucketConfig defines the configuration for a leaky bucket
+message BucketConfig {
+    string bucket_id = 1;           // Unique identifier (e.g., user_id, api_key)
+    uint64 capacity = 2;            // Maximum queue size (requests in bucket)
+    double leak_rate = 3;           // Requests processed per second
+}
+
+// BucketState represents the current state of a leaky bucket
+message BucketState {
+    string bucket_id = 1;
+    uint64 queue_size = 2;          // Current number of requests in queue
+    uint64 capacity = 3;
+    double leak_rate = 4;
+    int64 last_leak_time = 5;       // Unix timestamp in milliseconds
+    uint64 total_requests = 6;      // Total requests received
+    uint64 allowed_requests = 7;    // Total requests queued
+    uint64 rejected_requests = 8;   // Total requests rejected (overflow)
+    uint64 processed_requests = 9;  // Total requests leaked/processed
+}
+
+// QueuedRequest represents a request waiting in the bucket
+message QueuedRequest {
+    string request_id = 1;
+    int64 enqueue_time = 2;         // When the request was queued
+    int64 estimated_process_time = 3; // When it will be processed
+}
+
+// ============================================================================
+// Rate Limiter Request/Response Messages
+// ============================================================================
+
+message AllowRequestRequest {
+    string bucket_id = 1;           // Bucket to check
+    string request_id = 2;          // Unique request identifier (optional)
+    bool wait_for_processing = 3;   // If true, wait until request is processed
+    uint64 timeout_ms = 4;          // Maximum time to wait
+}
+
+message AllowRequestResponse {
+    bool allowed = 1;               // Whether the request was queued
+    uint64 queue_position = 2;      // Position in queue (if queued)
+    uint64 estimated_wait_ms = 3;   // Estimated time until processing
+    string error = 4;               // Error message if rejected
+    string served_by = 5;           // Node that processed this request
+}
+
+message GetBucketStatusRequest {
+    string bucket_id = 1;
+}
+
+message GetBucketStatusResponse {
+    BucketState bucket = 1;
+    bool found = 2;
+    string error = 3;
+    repeated QueuedRequest queued_requests = 4; // Requests currently in queue
+}
+
+message ConfigureBucketRequest {
+    BucketConfig config = 1;
+    bool overwrite = 2;             // If true, overwrite existing bucket
+}
+
+message ConfigureBucketResponse {
+    bool success = 1;
+    string error = 2;
+    BucketState bucket = 3;
+}
+
+message DeleteBucketRequest {
+    string bucket_id = 1;
+}
+
+message DeleteBucketResponse {
+    bool success = 1;
+    string error = 2;
+}
+
+message GetLeaderRequest {}
+
+message GetLeaderResponse {
+    string node_id = 1;
+    string node_address = 2;
+    bool is_leader = 3;
+}
+
+message GetClusterStatusRequest {}
+
+message GetClusterStatusResponse {
+    string node_id = 1;
+    string node_address = 2;
+    bool is_leader = 3;
+    uint32 total_nodes = 4;
+    uint32 healthy_nodes = 5;
+    uint64 total_buckets = 6;
+    uint64 total_queued_requests = 7;
+    uint64 total_processed_requests = 8;
+    repeated NodeInfo members = 9;
+}
+
+message NodeInfo {
+    string node_id = 1;
+    string address = 2;
+    bool is_healthy = 3;
+    uint64 buckets_count = 4;
+    int64 last_heartbeat = 5;
+}
+
+// ============================================================================
+// Inter-Node Messages
+// ============================================================================
+
+message SyncBucketRequest {
+    string source_node = 1;
+    BucketState bucket = 2;
+}
+
+message SyncBucketResponse {
+    bool success = 1;
+    string error = 2;
+}
+
+message HeartbeatRequest {
+    string node_id = 1;
+    int64 timestamp = 2;
+    uint64 buckets_count = 3;
+}
+
+message HeartbeatResponse {
+    bool acknowledged = 1;
+    int64 timestamp = 2;
+}
+
+message GetLocalBucketsRequest {}
+
+message GetLocalBucketsResponse {
+    repeated BucketState buckets = 1;
+    uint64 total_count = 2;
+}

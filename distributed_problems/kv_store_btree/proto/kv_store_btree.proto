@@ -1,0 +1,410 @@
+// Distributed KV Store with B+ Tree gRPC Service Definition
+// Implements a distributed key-value store using B+ Tree storage
+//
+// B+ Tree Architecture:
+// 1. All values stored in leaf nodes (internal nodes only have keys)
+// 2. Leaf nodes are linked for efficient range scans
+// 3. Balanced tree ensures O(log n) operations
+// 4. Page-based storage with buffer pool for caching
+// 5. WAL for durability, transactions for ACID
+//
+// Similar to: InnoDB, PostgreSQL, SQLite, BoltDB
+//
+// This proto defines the RPC interface for implementing this distributed KV store.
+
+syntax = "proto3";
+
+package kv_store_btree;
+
+option go_package = "github.com/sdp/kvbtree";
+option java_package = "com.sdp.kvbtree";
+option java_multiple_files = true;
+
+// ============================================================================
+// Key-Value Service (handles client operations)
+// ============================================================================
+
+// KVService provides key-value operations
+service KVService {
+    // Get retrieves a value by key
+    rpc Get(GetRequest) returns (GetResponse);
+
+    // Put stores a key-value pair
+    rpc Put(PutRequest) returns (PutResponse);
+
+    // Delete removes a key
+    rpc Delete(DeleteRequest) returns (DeleteResponse);
+
+    // Scan returns key-value pairs in a range (efficient with B+ tree)
+    rpc Scan(ScanRequest) returns (ScanResponse);
+
+    // BeginTransaction starts a new transaction
+    rpc BeginTransaction(BeginTransactionRequest) returns (BeginTransactionResponse);
+
+    // CommitTransaction commits a transaction
+    rpc CommitTransaction(CommitTransactionRequest) returns (CommitTransactionResponse);
+
+    // RollbackTransaction aborts a transaction
+    rpc RollbackTransaction(RollbackTransactionRequest) returns (RollbackTransactionResponse);
+
+    // GetLeader returns the current leader node
+    rpc GetLeader(GetLeaderRequest) returns (GetLeaderResponse);
+
+    // GetClusterStatus returns cluster health information
+    rpc GetClusterStatus(GetClusterStatusRequest) returns (GetClusterStatusResponse);
+}
+
+// ============================================================================
+// Storage Management Service
+// ============================================================================
+
+// StorageService provides B+ tree management operations
+service StorageService {
+    // Checkpoint forces a checkpoint (flush dirty pages)
+    rpc Checkpoint(CheckpointRequest) returns (CheckpointResponse);
+
+    // GetTreeStats returns B+ tree statistics
+    rpc GetTreeStats(GetTreeStatsRequest) returns (GetTreeStatsResponse);
+
+    // GetBufferPoolStats returns buffer pool statistics
+    rpc GetBufferPoolStats(GetBufferPoolStatsRequest) returns (GetBufferPoolStatsResponse);
+
+    // GetStorageStats returns overall storage statistics
+    rpc GetStorageStats(GetStorageStatsRequest) returns (GetStorageStatsResponse);
+}
+
+// ============================================================================
+// Replication Service (handles node-to-node sync)
+// ============================================================================
+
+// ReplicationService handles replication between nodes
+service ReplicationService {
+    // AppendEntries replicates WAL entries to followers
+    rpc AppendEntries(AppendEntriesRequest) returns (AppendEntriesResponse);
+
+    // RequestVote for leader election
+    rpc RequestVote(RequestVoteRequest) returns (RequestVoteResponse);
+
+    // TransferPage transfers a B+ tree page to another node
+    rpc TransferPage(TransferPageRequest) returns (TransferPageResponse);
+
+    // Heartbeat for health checking
+    rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+}
+
+// ============================================================================
+// B+ Tree Types
+// ============================================================================
+
+// PageType indicates the type of B+ tree page
+enum PageType {
+    INTERNAL = 0;                   // Internal node (keys only)
+    LEAF = 1;                       // Leaf node (keys + values)
+    OVERFLOW = 2;                   // Overflow page for large values
+}
+
+// Page represents a B+ tree page
+message Page {
+    uint64 page_id = 1;
+    PageType type = 2;
+    uint32 level = 3;               // 0 = leaf, increases toward root
+    repeated string keys = 4;
+    repeated bytes values = 5;      // Only for leaf pages
+    repeated uint64 children = 6;   // Only for internal pages
+    uint64 next_leaf = 7;           // Only for leaf pages (linked list)
+    uint64 prev_leaf = 8;           // Only for leaf pages
+    bool is_dirty = 9;
+    uint64 lsn = 10;                // Log sequence number
+}
+
+// WAL Entry for durability
+message WALEntry {
+    uint64 lsn = 1;                 // Log sequence number
+    uint64 transaction_id = 2;
+    WALEntryType type = 3;
+    bytes data = 4;                 // Serialized operation
+    uint64 timestamp = 5;
+}
+
+enum WALEntryType {
+    WAL_PUT = 0;
+    WAL_DELETE = 1;
+    WAL_COMMIT = 2;
+    WAL_ROLLBACK = 3;
+    WAL_CHECKPOINT = 4;
+    WAL_PAGE_SPLIT = 5;
+    WAL_PAGE_MERGE = 6;
+}
+
+// Transaction state
+message Transaction {
+    uint64 transaction_id = 1;
+    TransactionState state = 2;
+    uint64 start_lsn = 3;
+    uint64 start_timestamp = 4;
+    repeated string modified_keys = 5;
+    IsolationLevel isolation_level = 6;
+}
+
+enum TransactionState {
+    TX_ACTIVE = 0;
+    TX_COMMITTED = 1;
+    TX_ABORTED = 2;
+}
+
+enum IsolationLevel {
+    READ_UNCOMMITTED = 0;
+    READ_COMMITTED = 1;
+    REPEATABLE_READ = 2;
+    SERIALIZABLE = 3;
+}
+
+// Tree statistics
+message TreeStats {
+    uint64 root_page_id = 1;
+    uint32 height = 2;              // Tree height
+    uint64 total_pages = 3;
+    uint64 internal_pages = 4;
+    uint64 leaf_pages = 5;
+    uint64 overflow_pages = 6;
+    uint64 total_keys = 7;
+    uint32 fill_factor_percent = 8; // Average page fill
+    uint32 branching_factor = 9;    // Keys per internal page
+}
+
+// Buffer pool statistics
+message BufferPoolStats {
+    uint64 pool_size_pages = 1;
+    uint64 pages_in_use = 2;
+    uint64 dirty_pages = 3;
+    uint64 cache_hits = 4;
+    uint64 cache_misses = 5;
+    double hit_ratio = 6;
+    uint64 evictions = 7;
+}
+
+// ============================================================================
+// KV Service Request/Response Messages
+// ============================================================================
+
+message GetRequest {
+    string key = 1;
+    uint64 transaction_id = 2;      // Optional: for transactional read
+}
+
+message GetResponse {
+    bytes value = 1;
+    bool found = 2;
+    string error = 3;
+    string served_by = 4;
+}
+
+message PutRequest {
+    string key = 1;
+    bytes value = 2;
+    uint64 transaction_id = 3;      // Optional: for transactional write
+}
+
+message PutResponse {
+    bool success = 1;
+    uint64 lsn = 2;                 // Log sequence number
+    string error = 3;
+    string served_by = 4;
+}
+
+message DeleteRequest {
+    string key = 1;
+    uint64 transaction_id = 2;
+}
+
+message DeleteResponse {
+    bool success = 1;
+    bool existed = 2;
+    uint64 lsn = 3;
+    string error = 4;
+    string served_by = 5;
+}
+
+message ScanRequest {
+    string start_key = 1;           // Inclusive start
+    string end_key = 2;             // Exclusive end (empty = no limit)
+    uint32 limit = 3;               // Max entries to return
+    bool reverse = 4;               // Scan in reverse order
+    uint64 transaction_id = 5;      // Optional: for transactional scan
+}
+
+message ScanResponse {
+    repeated KeyValue entries = 1;
+    bool has_more = 2;
+    string next_key = 3;            // For pagination
+    string error = 4;
+}
+
+message KeyValue {
+    string key = 1;
+    bytes value = 2;
+}
+
+message BeginTransactionRequest {
+    IsolationLevel isolation_level = 1;
+}
+
+message BeginTransactionResponse {
+    bool success = 1;
+    uint64 transaction_id = 2;
+    string error = 3;
+}
+
+message CommitTransactionRequest {
+    uint64 transaction_id = 1;
+}
+
+message CommitTransactionResponse {
+    bool success = 1;
+    uint64 commit_lsn = 2;
+    string error = 3;
+}
+
+message RollbackTransactionRequest {
+    uint64 transaction_id = 1;
+}
+
+message RollbackTransactionResponse {
+    bool success = 1;
+    string error = 2;
+}
+
+message GetLeaderRequest {}
+
+message GetLeaderResponse {
+    string node_id = 1;
+    string node_address = 2;
+    bool is_leader = 3;
+}
+
+message GetClusterStatusRequest {}
+
+message GetClusterStatusResponse {
+    string node_id = 1;
+    string node_address = 2;
+    bool is_leader = 3;
+    uint32 total_nodes = 4;
+    uint32 healthy_nodes = 5;
+    uint64 total_keys = 6;
+    uint64 current_lsn = 7;
+    repeated NodeInfo members = 8;
+}
+
+message NodeInfo {
+    string node_id = 1;
+    string address = 2;
+    bool is_healthy = 3;
+    bool is_leader = 4;
+    uint64 lsn = 5;
+    int64 last_heartbeat = 6;
+}
+
+// ============================================================================
+// Storage Service Request/Response Messages
+// ============================================================================
+
+message CheckpointRequest {
+    bool wait_for_completion = 1;
+}
+
+message CheckpointResponse {
+    bool success = 1;
+    uint64 checkpoint_lsn = 2;
+    uint64 pages_flushed = 3;
+    string error = 4;
+}
+
+message GetTreeStatsRequest {}
+
+message GetTreeStatsResponse {
+    TreeStats stats = 1;
+    string error = 2;
+}
+
+message GetBufferPoolStatsRequest {}
+
+message GetBufferPoolStatsResponse {
+    BufferPoolStats stats = 1;
+    string error = 2;
+}
+
+message GetStorageStatsRequest {}
+
+message GetStorageStatsResponse {
+    TreeStats tree = 1;
+    BufferPoolStats buffer_pool = 2;
+
+    // WAL stats
+    uint64 wal_size_bytes = 3;
+    uint64 current_lsn = 4;
+    uint64 checkpoint_lsn = 5;
+
+    // Transaction stats
+    uint64 active_transactions = 6;
+    uint64 committed_transactions = 7;
+    uint64 aborted_transactions = 8;
+
+    // I/O stats
+    uint64 pages_read = 9;
+    uint64 pages_written = 10;
+
+    string error = 11;
+}
+
+// ============================================================================
+// Replication Service Request/Response Messages
+// ============================================================================
+
+message AppendEntriesRequest {
+    uint64 term = 1;
+    string leader_id = 2;
+    uint64 prev_lsn = 3;
+    uint64 prev_term = 4;
+    repeated WALEntry entries = 5;
+    uint64 leader_commit_lsn = 6;
+}
+
+message AppendEntriesResponse {
+    uint64 term = 1;
+    bool success = 2;
+    uint64 match_lsn = 3;
+    string error = 4;
+}
+
+message RequestVoteRequest {
+    uint64 term = 1;
+    string candidate_id = 2;
+    uint64 last_lsn = 3;
+    uint64 last_term = 4;
+}
+
+message RequestVoteResponse {
+    uint64 term = 1;
+    bool vote_granted = 2;
+}
+
+message TransferPageRequest {
+    string leader_id = 1;
+    Page page = 2;
+}
+
+message TransferPageResponse {
+    bool success = 1;
+    string error = 2;
+}
+
+message HeartbeatRequest {
+    string node_id = 1;
+    int64 timestamp = 2;
+    uint64 lsn = 3;
+}
+
+message HeartbeatResponse {
+    bool acknowledged = 1;
+    int64 timestamp = 2;
+}

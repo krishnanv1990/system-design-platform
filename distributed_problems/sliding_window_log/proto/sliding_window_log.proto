@@ -1,0 +1,217 @@
+// Sliding Window Log Rate Limiter gRPC Service Definition
+// Implements a distributed sliding window log algorithm for rate limiting
+//
+// The sliding window log algorithm works by:
+// 1. Each request's timestamp is stored in a sorted log
+// 2. When a request arrives, remove entries older than the window
+// 3. Count remaining entries; if under limit, allow and add new entry
+// 4. Provides precise rate limiting with no boundary issues
+//
+// Trade-off: More memory usage (stores all timestamps) but more accurate
+//
+// This proto defines the RPC interface for a distributed sliding window log rate limiter.
+
+syntax = "proto3";
+
+package sliding_window_log;
+
+option go_package = "github.com/sdp/slidinglog";
+option java_package = "com.sdp.slidinglog";
+option java_multiple_files = true;
+
+// ============================================================================
+// Rate Limiter Service
+// ============================================================================
+
+// RateLimiterService provides sliding window log rate limiting operations
+service RateLimiterService {
+    // AllowRequest checks if a request should be allowed
+    rpc AllowRequest(AllowRequestRequest) returns (AllowRequestResponse);
+
+    // GetLogStatus returns the current state of a rate limit log
+    rpc GetLogStatus(GetLogStatusRequest) returns (GetLogStatusResponse);
+
+    // ConfigureLimit creates or updates a rate limit configuration
+    rpc ConfigureLimit(ConfigureLimitRequest) returns (ConfigureLimitResponse);
+
+    // DeleteLimit removes a rate limit
+    rpc DeleteLimit(DeleteLimitRequest) returns (DeleteLimitResponse);
+
+    // GetLeader returns the current leader node
+    rpc GetLeader(GetLeaderRequest) returns (GetLeaderResponse);
+
+    // GetClusterStatus returns cluster health information
+    rpc GetClusterStatus(GetClusterStatusRequest) returns (GetClusterStatusResponse);
+}
+
+// ============================================================================
+// Inter-Node Communication Service
+// ============================================================================
+
+// NodeService handles inter-node communication for distributed rate limiting
+service NodeService {
+    // SyncLog synchronizes log state between nodes
+    rpc SyncLog(SyncLogRequest) returns (SyncLogResponse);
+
+    // AddEntry adds a timestamp entry across nodes
+    rpc AddEntry(AddEntryRequest) returns (AddEntryResponse);
+
+    // Heartbeat for health checking
+    rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+
+    // GetLocalLogs returns all logs on this node
+    rpc GetLocalLogs(GetLocalLogsRequest) returns (GetLocalLogsResponse);
+}
+
+// ============================================================================
+// Configuration
+// ============================================================================
+
+// LimitConfig defines the configuration for a rate limit
+message LimitConfig {
+    string limit_id = 1;            // Unique identifier (e.g., user_id:endpoint)
+    uint64 max_requests = 2;        // Maximum requests per window
+    uint64 window_size_ms = 3;      // Sliding window size in milliseconds
+}
+
+// LogEntry represents a single request timestamp in the log
+message LogEntry {
+    int64 timestamp = 1;            // Request timestamp in milliseconds
+    string request_id = 2;          // Optional request identifier
+}
+
+// LogState represents the current state of a sliding window log
+message LogState {
+    string limit_id = 1;
+    uint64 window_size_ms = 2;      // Window size in milliseconds
+    uint64 max_requests = 3;        // Maximum requests per window
+    repeated LogEntry entries = 4;  // Timestamps within current window
+    uint64 current_count = 5;       // Current number of entries in window
+    uint64 total_requests = 6;      // Total requests across all time
+    uint64 total_allowed = 7;       // Total requests allowed
+    uint64 total_rejected = 8;      // Total requests rejected
+}
+
+// ============================================================================
+// Rate Limiter Request/Response Messages
+// ============================================================================
+
+message AllowRequestRequest {
+    string limit_id = 1;            // Rate limit to check
+    string request_id = 2;          // Optional request identifier
+    int64 timestamp = 3;            // Request timestamp (0 = use current time)
+}
+
+message AllowRequestResponse {
+    bool allowed = 1;               // Whether the request is allowed
+    uint64 current_count = 2;       // Current count in sliding window
+    uint64 remaining = 3;           // Remaining requests in window
+    int64 oldest_entry = 4;         // Oldest entry timestamp (for debugging)
+    string error = 5;               // Error message if any
+    string served_by = 6;           // Node that processed this request
+}
+
+message GetLogStatusRequest {
+    string limit_id = 1;
+    bool include_entries = 2;       // If true, include all log entries
+}
+
+message GetLogStatusResponse {
+    LogState log = 1;
+    bool found = 2;
+    string error = 3;
+}
+
+message ConfigureLimitRequest {
+    LimitConfig config = 1;
+    bool overwrite = 2;             // If true, overwrite existing limit
+}
+
+message ConfigureLimitResponse {
+    bool success = 1;
+    string error = 2;
+    LogState log = 3;
+}
+
+message DeleteLimitRequest {
+    string limit_id = 1;
+}
+
+message DeleteLimitResponse {
+    bool success = 1;
+    string error = 2;
+}
+
+message GetLeaderRequest {}
+
+message GetLeaderResponse {
+    string node_id = 1;
+    string node_address = 2;
+    bool is_leader = 3;
+}
+
+message GetClusterStatusRequest {}
+
+message GetClusterStatusResponse {
+    string node_id = 1;
+    string node_address = 2;
+    bool is_leader = 3;
+    uint32 total_nodes = 4;
+    uint32 healthy_nodes = 5;
+    uint64 total_limits = 6;
+    uint64 total_log_entries = 7;   // Total entries across all logs
+    uint64 total_requests_processed = 8;
+    repeated NodeInfo members = 9;
+}
+
+message NodeInfo {
+    string node_id = 1;
+    string address = 2;
+    bool is_healthy = 3;
+    uint64 limits_count = 4;
+    uint64 entries_count = 5;       // Total log entries on this node
+    int64 last_heartbeat = 6;
+}
+
+// ============================================================================
+// Inter-Node Messages
+// ============================================================================
+
+message SyncLogRequest {
+    string source_node = 1;
+    LogState log = 2;
+}
+
+message SyncLogResponse {
+    bool success = 1;
+    string error = 2;
+}
+
+message AddEntryRequest {
+    string limit_id = 1;
+    LogEntry entry = 2;
+}
+
+message AddEntryResponse {
+    bool success = 1;
+    uint64 new_count = 2;
+    string error = 3;
+}
+
+message HeartbeatRequest {
+    string node_id = 1;
+    int64 timestamp = 2;
+    uint64 limits_count = 3;
+}
+
+message HeartbeatResponse {
+    bool acknowledged = 1;
+    int64 timestamp = 2;
+}
+
+message GetLocalLogsRequest {}
+
+message GetLocalLogsResponse {
+    repeated LogState logs = 1;
+    uint64 total_count = 2;
+}

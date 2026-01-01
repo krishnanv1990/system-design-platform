@@ -1,0 +1,193 @@
+// Token Bucket Rate Limiter gRPC Service Definition
+// Implements a distributed token bucket algorithm for rate limiting
+//
+// The token bucket algorithm works by:
+// 1. A bucket holds tokens up to a maximum capacity
+// 2. Tokens are added at a fixed rate (refill rate)
+// 3. Each request consumes one or more tokens
+// 4. If insufficient tokens, the request is rejected or queued
+//
+// This proto defines the RPC interface for a distributed token bucket rate limiter.
+
+syntax = "proto3";
+
+package token_bucket;
+
+option go_package = "github.com/sdp/tokenbucket";
+option java_package = "com.sdp.tokenbucket";
+option java_multiple_files = true;
+
+// ============================================================================
+// Rate Limiter Service
+// ============================================================================
+
+// RateLimiterService provides token bucket rate limiting operations
+service RateLimiterService {
+    // AllowRequest checks if a request should be allowed and consumes tokens
+    rpc AllowRequest(AllowRequestRequest) returns (AllowRequestResponse);
+
+    // GetBucketStatus returns the current state of a bucket
+    rpc GetBucketStatus(GetBucketStatusRequest) returns (GetBucketStatusResponse);
+
+    // ConfigureBucket creates or updates a bucket configuration
+    rpc ConfigureBucket(ConfigureBucketRequest) returns (ConfigureBucketResponse);
+
+    // DeleteBucket removes a bucket
+    rpc DeleteBucket(DeleteBucketRequest) returns (DeleteBucketResponse);
+
+    // GetLeader returns the current leader node
+    rpc GetLeader(GetLeaderRequest) returns (GetLeaderResponse);
+
+    // GetClusterStatus returns cluster health information
+    rpc GetClusterStatus(GetClusterStatusRequest) returns (GetClusterStatusResponse);
+}
+
+// ============================================================================
+// Inter-Node Communication Service
+// ============================================================================
+
+// NodeService handles inter-node communication for distributed rate limiting
+service NodeService {
+    // SyncBucket synchronizes bucket state between nodes
+    rpc SyncBucket(SyncBucketRequest) returns (SyncBucketResponse);
+
+    // Heartbeat for health checking
+    rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+
+    // GetLocalBuckets returns all buckets on this node
+    rpc GetLocalBuckets(GetLocalBucketsRequest) returns (GetLocalBucketsResponse);
+}
+
+// ============================================================================
+// Bucket Configuration
+// ============================================================================
+
+// BucketConfig defines the configuration for a token bucket
+message BucketConfig {
+    string bucket_id = 1;           // Unique identifier (e.g., user_id, api_key)
+    uint64 capacity = 2;            // Maximum tokens the bucket can hold
+    double refill_rate = 3;         // Tokens added per second
+    uint64 initial_tokens = 4;      // Starting token count (default: capacity)
+}
+
+// BucketState represents the current state of a token bucket
+message BucketState {
+    string bucket_id = 1;
+    double current_tokens = 2;      // Current number of tokens (can be fractional)
+    uint64 capacity = 3;
+    double refill_rate = 4;
+    int64 last_refill_time = 5;     // Unix timestamp in milliseconds
+    uint64 total_requests = 6;      // Total requests received
+    uint64 allowed_requests = 7;    // Total requests allowed
+    uint64 rejected_requests = 8;   // Total requests rejected
+}
+
+// ============================================================================
+// Rate Limiter Request/Response Messages
+// ============================================================================
+
+message AllowRequestRequest {
+    string bucket_id = 1;           // Bucket to check
+    uint64 tokens_requested = 2;    // Number of tokens to consume (default: 1)
+    bool wait_for_tokens = 3;       // If true, wait for tokens instead of rejecting
+    uint64 max_wait_ms = 4;         // Maximum time to wait for tokens (if waiting)
+}
+
+message AllowRequestResponse {
+    bool allowed = 1;               // Whether the request is allowed
+    double tokens_remaining = 2;    // Tokens left after this request
+    uint64 retry_after_ms = 3;      // Suggested retry time if rejected (ms)
+    string error = 4;               // Error message if any
+    string served_by = 5;           // Node that processed this request
+}
+
+message GetBucketStatusRequest {
+    string bucket_id = 1;
+}
+
+message GetBucketStatusResponse {
+    BucketState bucket = 1;
+    bool found = 2;
+    string error = 3;
+}
+
+message ConfigureBucketRequest {
+    BucketConfig config = 1;
+    bool overwrite = 2;             // If true, overwrite existing bucket
+}
+
+message ConfigureBucketResponse {
+    bool success = 1;
+    string error = 2;
+    BucketState bucket = 3;
+}
+
+message DeleteBucketRequest {
+    string bucket_id = 1;
+}
+
+message DeleteBucketResponse {
+    bool success = 1;
+    string error = 2;
+}
+
+message GetLeaderRequest {}
+
+message GetLeaderResponse {
+    string node_id = 1;
+    string node_address = 2;
+    bool is_leader = 3;
+}
+
+message GetClusterStatusRequest {}
+
+message GetClusterStatusResponse {
+    string node_id = 1;
+    string node_address = 2;
+    bool is_leader = 3;
+    uint32 total_nodes = 4;
+    uint32 healthy_nodes = 5;
+    uint64 total_buckets = 6;
+    uint64 total_requests_processed = 7;
+    repeated NodeInfo members = 8;
+}
+
+message NodeInfo {
+    string node_id = 1;
+    string address = 2;
+    bool is_healthy = 3;
+    uint64 buckets_count = 4;
+    int64 last_heartbeat = 5;
+}
+
+// ============================================================================
+// Inter-Node Messages
+// ============================================================================
+
+message SyncBucketRequest {
+    string source_node = 1;
+    BucketState bucket = 2;
+}
+
+message SyncBucketResponse {
+    bool success = 1;
+    string error = 2;
+}
+
+message HeartbeatRequest {
+    string node_id = 1;
+    int64 timestamp = 2;
+    uint64 buckets_count = 3;
+}
+
+message HeartbeatResponse {
+    bool acknowledged = 1;
+    int64 timestamp = 2;
+}
+
+message GetLocalBucketsRequest {}
+
+message GetLocalBucketsResponse {
+    repeated BucketState buckets = 1;
+    uint64 total_count = 2;
+}

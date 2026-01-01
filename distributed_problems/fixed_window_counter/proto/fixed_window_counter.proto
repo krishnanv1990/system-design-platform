@@ -1,0 +1,209 @@
+// Fixed Window Counter Rate Limiter gRPC Service Definition
+// Implements a distributed fixed window counter algorithm for rate limiting
+//
+// The fixed window counter algorithm works by:
+// 1. Time is divided into fixed windows (e.g., 1 minute each)
+// 2. Each window has a counter that tracks requests
+// 3. When a new window starts, the counter resets to zero
+// 4. Requests are rejected when counter exceeds the limit
+//
+// Note: This algorithm has the "boundary problem" - traffic can spike at window edges
+//
+// This proto defines the RPC interface for a distributed fixed window rate limiter.
+
+syntax = "proto3";
+
+package fixed_window_counter;
+
+option go_package = "github.com/sdp/fixedwindow";
+option java_package = "com.sdp.fixedwindow";
+option java_multiple_files = true;
+
+// ============================================================================
+// Rate Limiter Service
+// ============================================================================
+
+// RateLimiterService provides fixed window rate limiting operations
+service RateLimiterService {
+    // AllowRequest checks if a request should be allowed
+    rpc AllowRequest(AllowRequestRequest) returns (AllowRequestResponse);
+
+    // GetWindowStatus returns the current state of a rate limit window
+    rpc GetWindowStatus(GetWindowStatusRequest) returns (GetWindowStatusResponse);
+
+    // ConfigureLimit creates or updates a rate limit configuration
+    rpc ConfigureLimit(ConfigureLimitRequest) returns (ConfigureLimitResponse);
+
+    // DeleteLimit removes a rate limit
+    rpc DeleteLimit(DeleteLimitRequest) returns (DeleteLimitResponse);
+
+    // GetLeader returns the current leader node
+    rpc GetLeader(GetLeaderRequest) returns (GetLeaderResponse);
+
+    // GetClusterStatus returns cluster health information
+    rpc GetClusterStatus(GetClusterStatusRequest) returns (GetClusterStatusResponse);
+}
+
+// ============================================================================
+// Inter-Node Communication Service
+// ============================================================================
+
+// NodeService handles inter-node communication for distributed rate limiting
+service NodeService {
+    // SyncWindow synchronizes window state between nodes
+    rpc SyncWindow(SyncWindowRequest) returns (SyncWindowResponse);
+
+    // IncrementCounter atomically increments a counter across nodes
+    rpc IncrementCounter(IncrementCounterRequest) returns (IncrementCounterResponse);
+
+    // Heartbeat for health checking
+    rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+
+    // GetLocalWindows returns all windows on this node
+    rpc GetLocalWindows(GetLocalWindowsRequest) returns (GetLocalWindowsResponse);
+}
+
+// ============================================================================
+// Configuration
+// ============================================================================
+
+// LimitConfig defines the configuration for a rate limit
+message LimitConfig {
+    string limit_id = 1;            // Unique identifier (e.g., user_id:endpoint)
+    uint64 max_requests = 2;        // Maximum requests per window
+    uint64 window_size_ms = 3;      // Window size in milliseconds
+}
+
+// WindowState represents the current state of a fixed window
+message WindowState {
+    string limit_id = 1;
+    uint64 window_start = 2;        // Window start timestamp (ms)
+    uint64 window_end = 3;          // Window end timestamp (ms)
+    uint64 current_count = 4;       // Current request count
+    uint64 max_requests = 5;        // Maximum allowed requests
+    uint64 window_size_ms = 6;      // Window size in milliseconds
+    uint64 total_requests = 7;      // Total requests across all windows
+    uint64 total_allowed = 8;       // Total requests allowed
+    uint64 total_rejected = 9;      // Total requests rejected
+}
+
+// ============================================================================
+// Rate Limiter Request/Response Messages
+// ============================================================================
+
+message AllowRequestRequest {
+    string limit_id = 1;            // Rate limit to check
+    uint64 cost = 2;                // Request cost (default: 1)
+}
+
+message AllowRequestResponse {
+    bool allowed = 1;               // Whether the request is allowed
+    uint64 current_count = 2;       // Current count after this request
+    uint64 remaining = 3;           // Remaining requests in this window
+    uint64 reset_at = 4;            // When the window resets (Unix ms)
+    string error = 5;               // Error message if any
+    string served_by = 6;           // Node that processed this request
+}
+
+message GetWindowStatusRequest {
+    string limit_id = 1;
+}
+
+message GetWindowStatusResponse {
+    WindowState window = 1;
+    bool found = 2;
+    string error = 3;
+}
+
+message ConfigureLimitRequest {
+    LimitConfig config = 1;
+    bool overwrite = 2;             // If true, overwrite existing limit
+}
+
+message ConfigureLimitResponse {
+    bool success = 1;
+    string error = 2;
+    WindowState window = 3;
+}
+
+message DeleteLimitRequest {
+    string limit_id = 1;
+}
+
+message DeleteLimitResponse {
+    bool success = 1;
+    string error = 2;
+}
+
+message GetLeaderRequest {}
+
+message GetLeaderResponse {
+    string node_id = 1;
+    string node_address = 2;
+    bool is_leader = 3;
+}
+
+message GetClusterStatusRequest {}
+
+message GetClusterStatusResponse {
+    string node_id = 1;
+    string node_address = 2;
+    bool is_leader = 3;
+    uint32 total_nodes = 4;
+    uint32 healthy_nodes = 5;
+    uint64 total_limits = 6;
+    uint64 total_requests_processed = 7;
+    repeated NodeInfo members = 8;
+}
+
+message NodeInfo {
+    string node_id = 1;
+    string address = 2;
+    bool is_healthy = 3;
+    uint64 limits_count = 4;
+    int64 last_heartbeat = 5;
+}
+
+// ============================================================================
+// Inter-Node Messages
+// ============================================================================
+
+message SyncWindowRequest {
+    string source_node = 1;
+    WindowState window = 2;
+}
+
+message SyncWindowResponse {
+    bool success = 1;
+    string error = 2;
+}
+
+message IncrementCounterRequest {
+    string limit_id = 1;
+    uint64 window_start = 2;        // Ensures we're incrementing the same window
+    uint64 increment = 3;
+}
+
+message IncrementCounterResponse {
+    bool success = 1;
+    uint64 new_count = 2;
+    string error = 3;
+}
+
+message HeartbeatRequest {
+    string node_id = 1;
+    int64 timestamp = 2;
+    uint64 limits_count = 3;
+}
+
+message HeartbeatResponse {
+    bool acknowledged = 1;
+    int64 timestamp = 2;
+}
+
+message GetLocalWindowsRequest {}
+
+message GetLocalWindowsResponse {
+    repeated WindowState windows = 1;
+    uint64 total_count = 2;
+}

@@ -1,0 +1,339 @@
+// Distributed KV Store with Append-Only Log and Compaction gRPC Service Definition
+// Implements a distributed key-value store using log-structured storage
+//
+// Architecture:
+// 1. All writes are appended to an immutable log (fast writes)
+// 2. An in-memory hash table maps keys to log offsets (fast reads)
+// 3. Compaction removes outdated entries to reclaim space
+// 4. Segments: log is divided into segments for easier management
+//
+// Similar to: Bitcask (used by Riak), early versions of Kafka
+//
+// This proto defines the RPC interface for implementing this distributed KV store.
+
+syntax = "proto3";
+
+package kv_store_log;
+
+option go_package = "github.com/sdp/kvlog";
+option java_package = "com.sdp.kvlog";
+option java_multiple_files = true;
+
+// ============================================================================
+// Key-Value Service (handles client operations)
+// ============================================================================
+
+// KVService provides key-value operations
+service KVService {
+    // Get retrieves a value by key
+    rpc Get(GetRequest) returns (GetResponse);
+
+    // Put stores a key-value pair
+    rpc Put(PutRequest) returns (PutResponse);
+
+    // Delete removes a key (writes tombstone to log)
+    rpc Delete(DeleteRequest) returns (DeleteResponse);
+
+    // Scan returns key-value pairs in a range
+    rpc Scan(ScanRequest) returns (ScanResponse);
+
+    // BatchPut stores multiple key-value pairs atomically
+    rpc BatchPut(BatchPutRequest) returns (BatchPutResponse);
+
+    // GetLeader returns the current leader node
+    rpc GetLeader(GetLeaderRequest) returns (GetLeaderResponse);
+
+    // GetClusterStatus returns cluster health information
+    rpc GetClusterStatus(GetClusterStatusRequest) returns (GetClusterStatusResponse);
+}
+
+// ============================================================================
+// Storage Management Service
+// ============================================================================
+
+// StorageService provides storage management operations
+service StorageService {
+    // TriggerCompaction starts a compaction process
+    rpc TriggerCompaction(TriggerCompactionRequest) returns (TriggerCompactionResponse);
+
+    // GetCompactionStatus returns current compaction status
+    rpc GetCompactionStatus(GetCompactionStatusRequest) returns (GetCompactionStatusResponse);
+
+    // GetStorageStats returns storage statistics
+    rpc GetStorageStats(GetStorageStatsRequest) returns (GetStorageStatsResponse);
+
+    // GetSegments returns information about log segments
+    rpc GetSegments(GetSegmentsRequest) returns (GetSegmentsResponse);
+}
+
+// ============================================================================
+// Replication Service (handles node-to-node sync)
+// ============================================================================
+
+// ReplicationService handles log replication between nodes
+service ReplicationService {
+    // AppendEntries replicates log entries to followers
+    rpc AppendEntries(AppendEntriesRequest) returns (AppendEntriesResponse);
+
+    // RequestVote for leader election
+    rpc RequestVote(RequestVoteRequest) returns (RequestVoteResponse);
+
+    // InstallSnapshot sends a compacted snapshot to a follower
+    rpc InstallSnapshot(InstallSnapshotRequest) returns (InstallSnapshotResponse);
+
+    // Heartbeat for health checking
+    rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+}
+
+// ============================================================================
+// Log Types
+// ============================================================================
+
+// EntryType indicates the type of log entry
+enum EntryType {
+    PUT = 0;                        // Key-value write
+    DELETE = 1;                     // Tombstone (key deletion)
+}
+
+// LogEntry represents a single entry in the append-only log
+message LogEntry {
+    uint64 offset = 1;              // Position in the log
+    uint64 timestamp = 2;           // Write timestamp
+    EntryType type = 3;
+    string key = 4;
+    bytes value = 5;                // Empty for DELETE
+    uint32 checksum = 6;            // CRC32 for data integrity
+}
+
+// Segment represents a log segment file
+message Segment {
+    uint64 id = 1;                  // Segment identifier
+    string filename = 2;            // Segment file path
+    uint64 start_offset = 3;        // First entry offset
+    uint64 end_offset = 4;          // Last entry offset
+    uint64 size_bytes = 5;          // File size in bytes
+    uint64 entry_count = 6;         // Number of entries
+    bool is_active = 7;             // True if this is the active segment
+    bool is_compacted = 8;          // True if segment has been compacted
+    int64 created_at = 9;
+    int64 last_modified = 10;
+}
+
+// KeyDir is the in-memory index mapping keys to log offsets
+message KeyDirEntry {
+    string key = 1;
+    uint64 segment_id = 2;
+    uint64 offset = 3;
+    uint64 size = 4;
+    uint64 timestamp = 5;
+}
+
+// ============================================================================
+// KV Service Request/Response Messages
+// ============================================================================
+
+message GetRequest {
+    string key = 1;
+}
+
+message GetResponse {
+    bytes value = 1;
+    bool found = 2;
+    uint64 timestamp = 3;           // When the value was written
+    string error = 4;
+    string served_by = 5;
+}
+
+message PutRequest {
+    string key = 1;
+    bytes value = 2;
+    uint64 ttl_ms = 3;              // Optional: time-to-live in milliseconds
+}
+
+message PutResponse {
+    bool success = 1;
+    uint64 offset = 2;              // Offset in the log
+    string error = 3;
+    string served_by = 4;
+}
+
+message DeleteRequest {
+    string key = 1;
+}
+
+message DeleteResponse {
+    bool success = 1;
+    bool existed = 2;               // True if key existed before deletion
+    string error = 3;
+    string served_by = 4;
+}
+
+message ScanRequest {
+    string start_key = 1;           // Inclusive start
+    string end_key = 2;             // Exclusive end (empty = no limit)
+    uint32 limit = 3;               // Max entries to return
+}
+
+message ScanResponse {
+    repeated KeyValue entries = 1;
+    bool has_more = 2;
+    string next_key = 3;            // For pagination
+    string error = 4;
+}
+
+message KeyValue {
+    string key = 1;
+    bytes value = 2;
+    uint64 timestamp = 3;
+}
+
+message BatchPutRequest {
+    repeated KeyValue entries = 1;
+}
+
+message BatchPutResponse {
+    bool success = 1;
+    uint64 entries_written = 2;
+    string error = 3;
+}
+
+message GetLeaderRequest {}
+
+message GetLeaderResponse {
+    string node_id = 1;
+    string node_address = 2;
+    bool is_leader = 3;
+}
+
+message GetClusterStatusRequest {}
+
+message GetClusterStatusResponse {
+    string node_id = 1;
+    string node_address = 2;
+    bool is_leader = 3;
+    uint32 total_nodes = 4;
+    uint32 healthy_nodes = 5;
+    uint64 total_keys = 6;
+    uint64 total_segments = 7;
+    uint64 storage_bytes = 8;
+    repeated NodeInfo members = 9;
+}
+
+message NodeInfo {
+    string node_id = 1;
+    string address = 2;
+    bool is_healthy = 3;
+    bool is_leader = 4;
+    uint64 keys_count = 5;
+    uint64 log_offset = 6;          // Latest log offset
+    int64 last_heartbeat = 7;
+}
+
+// ============================================================================
+// Storage Service Request/Response Messages
+// ============================================================================
+
+message TriggerCompactionRequest {
+    bool force = 1;                 // Force compaction even if not needed
+    repeated uint64 segment_ids = 2; // Specific segments to compact (empty = auto)
+}
+
+message TriggerCompactionResponse {
+    bool started = 1;
+    string compaction_id = 2;
+    string error = 3;
+}
+
+message GetCompactionStatusRequest {
+    string compaction_id = 1;       // Optional: specific compaction job
+}
+
+message GetCompactionStatusResponse {
+    bool is_running = 1;
+    double progress_percent = 2;
+    uint64 entries_processed = 3;
+    uint64 entries_removed = 4;
+    uint64 bytes_reclaimed = 5;
+    int64 started_at = 6;
+    int64 completed_at = 7;
+    string error = 8;
+}
+
+message GetStorageStatsRequest {}
+
+message GetStorageStatsResponse {
+    uint64 total_keys = 1;
+    uint64 total_entries = 2;       // Including tombstones
+    uint64 total_segments = 3;
+    uint64 active_segment_size = 4;
+    uint64 total_storage_bytes = 5;
+    uint64 live_data_bytes = 6;     // Excluding dead entries
+    double space_amplification = 7; // total / live ratio
+    int64 last_compaction = 8;
+    uint64 compaction_count = 9;
+}
+
+message GetSegmentsRequest {}
+
+message GetSegmentsResponse {
+    repeated Segment segments = 1;
+    uint64 total_count = 2;
+}
+
+// ============================================================================
+// Replication Service Request/Response Messages
+// ============================================================================
+
+message AppendEntriesRequest {
+    uint64 term = 1;                // Leader's term
+    string leader_id = 2;
+    uint64 prev_log_offset = 3;     // Offset of log entry before new ones
+    uint64 prev_log_term = 4;       // Term of prev_log_offset entry
+    repeated LogEntry entries = 5;  // Log entries to replicate
+    uint64 leader_commit = 6;       // Leader's commit offset
+}
+
+message AppendEntriesResponse {
+    uint64 term = 1;                // Current term for leader to update
+    bool success = 2;
+    uint64 match_offset = 3;        // Highest offset matched
+    string error = 4;
+}
+
+message RequestVoteRequest {
+    uint64 term = 1;
+    string candidate_id = 2;
+    uint64 last_log_offset = 3;
+    uint64 last_log_term = 4;
+}
+
+message RequestVoteResponse {
+    uint64 term = 1;
+    bool vote_granted = 2;
+}
+
+message InstallSnapshotRequest {
+    uint64 term = 1;
+    string leader_id = 2;
+    uint64 last_included_offset = 3;
+    uint64 last_included_term = 4;
+    bytes data = 5;                 // Snapshot chunk
+    uint64 offset = 6;              // Byte offset in snapshot
+    bool done = 7;                  // True if this is the last chunk
+}
+
+message InstallSnapshotResponse {
+    uint64 term = 1;
+    bool success = 2;
+}
+
+message HeartbeatRequest {
+    string node_id = 1;
+    int64 timestamp = 2;
+    uint64 log_offset = 3;
+}
+
+message HeartbeatResponse {
+    bool acknowledged = 1;
+    int64 timestamp = 2;
+}

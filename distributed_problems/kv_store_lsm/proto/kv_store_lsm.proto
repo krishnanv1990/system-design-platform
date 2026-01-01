@@ -1,0 +1,391 @@
+// Distributed KV Store with LSM Tree gRPC Service Definition
+// Implements a distributed key-value store using Log-Structured Merge Tree
+//
+// LSM Tree Architecture:
+// 1. MemTable: In-memory sorted structure (e.g., red-black tree, skip list)
+// 2. WAL: Write-ahead log for durability
+// 3. SSTables: Immutable sorted string tables on disk
+// 4. Levels: SSTables organized in levels (L0, L1, ..., Ln)
+// 5. Compaction: Merge SSTables across levels to reduce read amplification
+//
+// Similar to: LevelDB, RocksDB, Cassandra, HBase
+//
+// This proto defines the RPC interface for implementing this distributed KV store.
+
+syntax = "proto3";
+
+package kv_store_lsm;
+
+option go_package = "github.com/sdp/kvlsm";
+option java_package = "com.sdp.kvlsm";
+option java_multiple_files = true;
+
+// ============================================================================
+// Key-Value Service (handles client operations)
+// ============================================================================
+
+// KVService provides key-value operations
+service KVService {
+    // Get retrieves a value by key
+    rpc Get(GetRequest) returns (GetResponse);
+
+    // Put stores a key-value pair
+    rpc Put(PutRequest) returns (PutResponse);
+
+    // Delete removes a key (writes tombstone)
+    rpc Delete(DeleteRequest) returns (DeleteResponse);
+
+    // Scan returns key-value pairs in a range
+    rpc Scan(ScanRequest) returns (ScanResponse);
+
+    // BatchWrite performs multiple operations atomically
+    rpc BatchWrite(BatchWriteRequest) returns (BatchWriteResponse);
+
+    // GetLeader returns the current leader node
+    rpc GetLeader(GetLeaderRequest) returns (GetLeaderResponse);
+
+    // GetClusterStatus returns cluster health information
+    rpc GetClusterStatus(GetClusterStatusRequest) returns (GetClusterStatusResponse);
+}
+
+// ============================================================================
+// Storage Management Service
+// ============================================================================
+
+// StorageService provides LSM tree management operations
+service StorageService {
+    // FlushMemTable forces memtable to be written to disk
+    rpc FlushMemTable(FlushMemTableRequest) returns (FlushMemTableResponse);
+
+    // TriggerCompaction starts a compaction process
+    rpc TriggerCompaction(TriggerCompactionRequest) returns (TriggerCompactionResponse);
+
+    // GetCompactionStatus returns current compaction status
+    rpc GetCompactionStatus(GetCompactionStatusRequest) returns (GetCompactionStatusResponse);
+
+    // GetStorageStats returns storage statistics
+    rpc GetStorageStats(GetStorageStatsRequest) returns (GetStorageStatsResponse);
+
+    // GetLevels returns information about LSM levels
+    rpc GetLevels(GetLevelsRequest) returns (GetLevelsResponse);
+}
+
+// ============================================================================
+// Replication Service (handles node-to-node sync)
+// ============================================================================
+
+// ReplicationService handles replication between nodes
+service ReplicationService {
+    // AppendEntries replicates WAL entries to followers
+    rpc AppendEntries(AppendEntriesRequest) returns (AppendEntriesResponse);
+
+    // RequestVote for leader election
+    rpc RequestVote(RequestVoteRequest) returns (RequestVoteResponse);
+
+    // TransferSSTable transfers an SSTable to another node
+    rpc TransferSSTable(TransferSSTableRequest) returns (TransferSSTableResponse);
+
+    // Heartbeat for health checking
+    rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+}
+
+// ============================================================================
+// LSM Tree Types
+// ============================================================================
+
+// WriteType indicates the type of write operation
+enum WriteType {
+    PUT = 0;
+    DELETE = 1;                     // Tombstone
+}
+
+// WAL Entry represents a write-ahead log entry
+message WALEntry {
+    uint64 sequence_number = 1;
+    WriteType type = 2;
+    string key = 3;
+    bytes value = 4;                // Empty for DELETE
+    uint64 timestamp = 5;
+}
+
+// SSTable metadata
+message SSTableInfo {
+    string id = 1;                  // SSTable identifier
+    uint32 level = 2;               // Level in LSM tree (0 = newest)
+    string filename = 3;
+    uint64 size_bytes = 4;
+    uint64 entry_count = 5;
+    string min_key = 6;             // First key in SSTable
+    string max_key = 7;             // Last key in SSTable
+    uint64 min_sequence = 8;
+    uint64 max_sequence = 9;
+    bool has_bloom_filter = 10;
+    int64 created_at = 11;
+}
+
+// Level information
+message LevelInfo {
+    uint32 level = 1;
+    repeated SSTableInfo sstables = 2;
+    uint64 total_size_bytes = 3;
+    uint64 total_entries = 4;
+    uint64 target_size_bytes = 5;   // Size threshold for compaction
+}
+
+// MemTable state
+message MemTableState {
+    uint64 entry_count = 1;
+    uint64 size_bytes = 2;
+    uint64 max_size_bytes = 3;
+    uint64 oldest_sequence = 4;
+    uint64 newest_sequence = 5;
+}
+
+// BloomFilter for SSTable
+message BloomFilter {
+    bytes bits = 1;
+    uint32 num_hash_functions = 2;
+    uint64 num_elements = 3;
+}
+
+// ============================================================================
+// KV Service Request/Response Messages
+// ============================================================================
+
+message GetRequest {
+    string key = 1;
+    bool read_from_memtable_only = 2; // For debugging
+}
+
+message GetResponse {
+    bytes value = 1;
+    bool found = 2;
+    uint64 sequence_number = 3;
+    string source = 4;              // memtable, l0, l1, etc.
+    string error = 5;
+    string served_by = 6;
+}
+
+message PutRequest {
+    string key = 1;
+    bytes value = 2;
+    bool sync = 3;                  // If true, sync WAL before returning
+}
+
+message PutResponse {
+    bool success = 1;
+    uint64 sequence_number = 2;
+    string error = 3;
+    string served_by = 4;
+}
+
+message DeleteRequest {
+    string key = 1;
+    bool sync = 2;
+}
+
+message DeleteResponse {
+    bool success = 1;
+    uint64 sequence_number = 2;
+    string error = 3;
+    string served_by = 4;
+}
+
+message ScanRequest {
+    string start_key = 1;           // Inclusive start
+    string end_key = 2;             // Exclusive end (empty = no limit)
+    uint32 limit = 3;               // Max entries to return
+    bool reverse = 4;               // Scan in reverse order
+}
+
+message ScanResponse {
+    repeated KeyValue entries = 1;
+    bool has_more = 2;
+    string next_key = 3;            // For pagination
+    string error = 4;
+}
+
+message KeyValue {
+    string key = 1;
+    bytes value = 2;
+    uint64 sequence_number = 3;
+}
+
+message BatchWriteRequest {
+    repeated WriteOperation operations = 1;
+    bool sync = 2;                  // If true, sync WAL before returning
+}
+
+message WriteOperation {
+    WriteType type = 1;
+    string key = 2;
+    bytes value = 3;                // Ignored for DELETE
+}
+
+message BatchWriteResponse {
+    bool success = 1;
+    uint64 sequence_number = 2;     // Sequence of last operation
+    uint64 operations_count = 3;
+    string error = 4;
+}
+
+message GetLeaderRequest {}
+
+message GetLeaderResponse {
+    string node_id = 1;
+    string node_address = 2;
+    bool is_leader = 3;
+}
+
+message GetClusterStatusRequest {}
+
+message GetClusterStatusResponse {
+    string node_id = 1;
+    string node_address = 2;
+    bool is_leader = 3;
+    uint32 total_nodes = 4;
+    uint32 healthy_nodes = 5;
+    uint64 total_keys = 6;
+    uint64 sequence_number = 7;
+    repeated NodeInfo members = 8;
+}
+
+message NodeInfo {
+    string node_id = 1;
+    string address = 2;
+    bool is_healthy = 3;
+    bool is_leader = 4;
+    uint64 sequence_number = 5;
+    int64 last_heartbeat = 6;
+}
+
+// ============================================================================
+// Storage Service Request/Response Messages
+// ============================================================================
+
+message FlushMemTableRequest {
+    bool wait_for_completion = 1;
+}
+
+message FlushMemTableResponse {
+    bool success = 1;
+    string sstable_id = 2;          // ID of created SSTable
+    string error = 3;
+}
+
+message TriggerCompactionRequest {
+    uint32 level = 1;               // Level to compact (0 = auto-select)
+    bool force = 2;                 // Force compaction even if not needed
+}
+
+message TriggerCompactionResponse {
+    bool started = 1;
+    string compaction_id = 2;
+    string error = 3;
+}
+
+message GetCompactionStatusRequest {
+    string compaction_id = 1;       // Optional: specific compaction job
+}
+
+message GetCompactionStatusResponse {
+    bool is_running = 1;
+    uint32 current_level = 2;       // Level being compacted
+    double progress_percent = 3;
+    uint64 input_bytes = 4;
+    uint64 output_bytes = 5;
+    uint64 entries_processed = 6;
+    int64 started_at = 7;
+    int64 completed_at = 8;
+    string error = 9;
+}
+
+message GetStorageStatsRequest {}
+
+message GetStorageStatsResponse {
+    uint64 total_keys = 1;
+    uint64 sequence_number = 2;
+
+    // MemTable stats
+    MemTableState memtable = 3;
+    MemTableState immutable_memtable = 4;
+
+    // SSTable stats
+    uint64 total_sstables = 5;
+    uint64 total_storage_bytes = 6;
+    uint64 live_data_bytes = 7;
+
+    // Amplification metrics
+    double write_amplification = 8;
+    double read_amplification = 9;
+    double space_amplification = 10;
+
+    // Compaction stats
+    int64 last_compaction = 11;
+    uint64 compaction_count = 12;
+    uint64 bytes_compacted = 13;
+}
+
+message GetLevelsRequest {}
+
+message GetLevelsResponse {
+    repeated LevelInfo levels = 1;
+    MemTableState memtable = 2;
+    uint64 total_sstables = 3;
+}
+
+// ============================================================================
+// Replication Service Request/Response Messages
+// ============================================================================
+
+message AppendEntriesRequest {
+    uint64 term = 1;
+    string leader_id = 2;
+    uint64 prev_sequence = 3;
+    uint64 prev_term = 4;
+    repeated WALEntry entries = 5;
+    uint64 leader_commit = 6;
+}
+
+message AppendEntriesResponse {
+    uint64 term = 1;
+    bool success = 2;
+    uint64 match_sequence = 3;
+    string error = 4;
+}
+
+message RequestVoteRequest {
+    uint64 term = 1;
+    string candidate_id = 2;
+    uint64 last_sequence = 3;
+    uint64 last_term = 4;
+}
+
+message RequestVoteResponse {
+    uint64 term = 1;
+    bool vote_granted = 2;
+}
+
+message TransferSSTableRequest {
+    string leader_id = 1;
+    SSTableInfo metadata = 2;
+    bytes data = 3;                 // SSTable chunk
+    uint64 offset = 4;              // Byte offset in file
+    bool done = 5;                  // True if this is the last chunk
+}
+
+message TransferSSTableResponse {
+    bool success = 1;
+    string error = 2;
+}
+
+message HeartbeatRequest {
+    string node_id = 1;
+    int64 timestamp = 2;
+    uint64 sequence_number = 3;
+}
+
+message HeartbeatResponse {
+    bool acknowledged = 1;
+    int64 timestamp = 2;
+}
