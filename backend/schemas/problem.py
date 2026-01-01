@@ -85,7 +85,7 @@ class ProblemResponse(BaseModel):
     expected_api_spec: Optional[Dict[str, Any]]
     hints: Optional[List[str]]
     tags: Optional[List[str]]
-    created_at: datetime
+    created_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
@@ -99,7 +99,7 @@ class ProblemListResponse(BaseModel):
     difficulty: str
     difficulty_info: Optional[DifficultyLevelInfo] = None
     tags: Optional[List[str]]
-    created_at: datetime
+    created_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True

@@ -110,10 +110,11 @@ def seed_distributed_problems():
             else:
                 # Insert with specific ID using raw SQL
                 from sqlalchemy import text
+                from datetime import datetime
                 db.execute(
                     text("""
-                        INSERT INTO problems (id, title, description, problem_type, difficulty, cluster_size, supported_languages, tags)
-                        VALUES (:id, :title, :description, :problem_type, :difficulty, :cluster_size, :supported_languages, :tags)
+                        INSERT INTO problems (id, title, description, problem_type, difficulty, cluster_size, supported_languages, tags, created_at)
+                        VALUES (:id, :title, :description, :problem_type, :difficulty, :cluster_size, :supported_languages, :tags, :created_at)
                         ON CONFLICT (id) DO NOTHING
                     """),
                     {
@@ -125,6 +126,7 @@ def seed_distributed_problems():
                         "cluster_size": prob_data["cluster_size"],
                         "supported_languages": str(prob_data["supported_languages"]).replace("'", '"'),
                         "tags": str(prob_data["tags"]).replace("'", '"'),
+                        "created_at": datetime.utcnow(),
                     }
                 )
                 print(f"Added distributed problem: {prob_data['title']} (ID: {target_id})")
