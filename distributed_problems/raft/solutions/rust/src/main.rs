@@ -6,6 +6,15 @@
 //! - Heartbeat mechanism for leader authority
 //! - Key-value store as the state machine
 //!
+//! For the full Raft specification, see: https://raft.github.io/raft.pdf
+//!
+//! Key Raft Properties:
+//! - Election Safety: At most one leader per term
+//! - Leader Append-Only: Leader never overwrites/deletes log entries
+//! - Log Matching: Same index+term means identical prefix
+//! - Leader Completeness: Committed entries appear in future leaders
+//! - State Machine Safety: Same commands applied in same order
+//!
 //! Usage:
 //!     cargo run -- --node-id node1 --port 50051 --peers node2:50052,node3:50053
 
@@ -18,6 +27,7 @@ use tonic::{transport::Server, Request, Response, Status};
 use rand::Rng;
 use clap::Parser;
 
+// Include generated protobuf code
 pub mod raft {
     tonic::include_proto!("raft");
 }
@@ -27,11 +37,14 @@ use raft::key_value_service_server::{KeyValueService, KeyValueServiceServer};
 use raft::raft_service_client::RaftServiceClient;
 use raft::*;
 
+// =============================================================================
+// Node States - A node can be in one of three states
+// =============================================================================
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum NodeState {
-    Follower,
-    Candidate,
-    Leader,
+    Follower,   // Default state, receives entries from leader
+    Candidate,  // Seeking votes to become leader
+    Leader,     // Manages log replication
 }
 
 impl NodeState {
@@ -44,22 +57,33 @@ impl NodeState {
     }
 }
 
+// =============================================================================
+// Log Entry - Represents a single entry in the replicated log
+// =============================================================================
 #[derive(Clone)]
 struct LogEntryData {
-    index: u64,
-    term: u64,
-    command: Vec<u8>,
-    command_type: String,
+    index: u64,          // Position in log (1-indexed)
+    term: u64,           // Term when entry was received
+    command: Vec<u8>,    // Command to apply to state machine
+    command_type: String, // Type of command (put/delete)
 }
 
+// =============================================================================
+// Raft State - Persistent and volatile state per Raft paper
+// =============================================================================
 struct RaftStateStore {
-    current_term: u64,
-    voted_for: Option<String>,
-    log: Vec<LogEntryData>,
-    commit_index: u64,
-    last_applied: u64,
-    next_index: HashMap<String, u64>,
-    match_index: HashMap<String, u64>,
+    // Persistent state on all servers (updated before responding to RPCs)
+    current_term: u64,              // Latest term server has seen
+    voted_for: Option<String>,      // CandidateId that received vote in current term
+    log: Vec<LogEntryData>,         // Log entries
+
+    // Volatile state on all servers
+    commit_index: u64,              // Index of highest log entry known to be committed
+    last_applied: u64,              // Index of highest log entry applied to state machine
+
+    // Volatile state on leaders (reinitialized after election)
+    next_index: HashMap<String, u64>,   // For each peer, next log index to send
+    match_index: HashMap<String, u64>,  // For each peer, highest replicated index
 }
 
 impl RaftStateStore {
@@ -73,7 +97,7 @@ impl RaftStateStore {
             next_index: HashMap::new(),
             match_index: HashMap::new(),
         };
-        // Dummy entry at index 0
+        // Dummy entry at index 0 (Raft logs are 1-indexed)
         state.log.push(LogEntryData {
             index: 0,
             term: 0,
@@ -84,6 +108,9 @@ impl RaftStateStore {
     }
 }
 
+// =============================================================================
+// Raft Node Implementation
+// =============================================================================
 struct RaftNode {
     node_id: String,
     port: u16,
@@ -91,14 +118,22 @@ struct RaftNode {
     state: RwLock<RaftStateStore>,
     node_state: RwLock<NodeState>,
     leader_id: RwLock<String>,
+
+    // Key-value store (state machine)
     kv_store: RwLock<HashMap<String, String>>,
+
+    // Election timer
     election_deadline: Mutex<Instant>,
+
+    // Notification for applied entries
     apply_notify: Notify,
+
+    // Stop flag for graceful shutdown
     stop_flag: RwLock<bool>,
 }
 
 impl RaftNode {
-    fn new(node_id: String, port: u16, peers: Vec<String>) -> Self {
+    pub fn new(node_id: String, port: u16, peers: Vec<String>) -> Self {
         Self {
             node_id,
             port,
@@ -113,6 +148,12 @@ impl RaftNode {
         }
     }
 
+    // =========================================================================
+    // Helper Methods
+    // =========================================================================
+
+    /// Generate a random election timeout between 150-300ms.
+    /// This prevents split votes by randomizing when candidates start elections.
     fn random_timeout() -> Duration {
         let mut rng = rand::thread_rng();
         Duration::from_millis(rng.gen_range(150..300))
@@ -128,11 +169,18 @@ impl RaftNode {
         state.log.last().map(|e| e.term).unwrap_or(0)
     }
 
+    // =========================================================================
+    // Election Timer Management
+    // =========================================================================
+
+    /// Reset the election timeout with a random duration.
     async fn reset_election_timer(&self) {
         let mut deadline = self.election_deadline.lock().await;
         *deadline = Instant::now() + Self::random_timeout();
     }
 
+    /// Step down to follower state when we see a higher term.
+    /// This is a key safety property in Raft.
     async fn step_down(&self, new_term: u64) {
         let mut state = self.state.write().await;
         let mut node_state = self.node_state.write().await;
@@ -144,6 +192,8 @@ impl RaftNode {
         self.reset_election_timer().await;
     }
 
+    /// Election timer loop - monitors for election timeout.
+    /// If timeout elapses without hearing from leader, start election.
     async fn election_timer_loop(self: Arc<Self>) {
         self.reset_election_timer().await;
         loop {
@@ -162,6 +212,20 @@ impl RaftNode {
         }
     }
 
+    // =========================================================================
+    // Leader Election
+    // =========================================================================
+
+    /// Start a new leader election.
+    ///
+    /// Per Raft specification:
+    /// 1. Increment currentTerm
+    /// 2. Vote for self
+    /// 3. Reset election timer
+    /// 4. Send RequestVote RPCs to all other servers
+    /// 5. If votes received from majority: become leader
+    /// 6. If AppendEntries received from new leader: convert to follower
+    /// 7. If election timeout elapses: start new election
     async fn start_election(self: &Arc<Self>) {
         {
             let mut state = self.state.write().await;
@@ -181,11 +245,12 @@ impl RaftNode {
 
         println!("Node {} starting election for term {}", self.node_id, term);
 
-        let votes_received = Arc::new(tokio::sync::Mutex::new(1_usize));
+        let votes_received = Arc::new(tokio::sync::Mutex::new(1_usize)); // Vote for self
         let majority = (self.peers.len() + 1) / 2 + 1;
 
         let mut handles = vec![];
 
+        // Send RequestVote RPCs to all peers in parallel
         for peer in &self.peers {
             let peer = peer.clone();
             let node = Arc::clone(self);
@@ -193,7 +258,13 @@ impl RaftNode {
             let node_id = self.node_id.clone();
 
             handles.push(tokio::spawn(async move {
-                let addr = format!("http://{}", peer);
+                // Cloud Run URLs require HTTPS for secure communication
+                let addr = if peer.contains(".run.app") {
+                    format!("https://{}", peer)
+                } else {
+                    format!("http://{}", peer)
+                };
+
                 if let Ok(mut client) = RaftServiceClient::connect(addr).await {
                     let request = RequestVoteRequest {
                         term,
@@ -211,12 +282,14 @@ impl RaftNode {
 
                             let current_term = node.state.read().await.current_term;
                             if resp.term > current_term {
+                                // Discovered higher term, step down
                                 node.step_down(resp.term).await;
                             } else {
                                 let node_state = *node.node_state.read().await;
                                 let state_term = node.state.read().await.current_term;
 
                                 if node_state == NodeState::Candidate && resp.vote_granted && term == state_term {
+                                    // Count vote and check for majority
                                     let mut votes = votes.lock().await;
                                     *votes += 1;
                                     if *votes >= majority {
@@ -235,6 +308,8 @@ impl RaftNode {
         }
     }
 
+    /// Transition to leader state after winning election.
+    /// Initialize nextIndex and matchIndex for all peers.
     async fn become_leader(&self) {
         let mut node_state = self.node_state.write().await;
         if *node_state != NodeState::Candidate {
@@ -247,6 +322,7 @@ impl RaftNode {
 
         let last_idx = self.get_last_log_index().await;
 
+        // Initialize leader volatile state
         let mut state = self.state.write().await;
         for peer in &self.peers {
             state.next_index.insert(peer.clone(), last_idx + 1);
@@ -256,6 +332,11 @@ impl RaftNode {
         println!("Node {} became leader for term {}", self.node_id, state.current_term);
     }
 
+    // =========================================================================
+    // Heartbeat and Log Replication
+    // =========================================================================
+
+    /// Heartbeat loop - sends periodic AppendEntries to maintain leadership.
     async fn heartbeat_loop(self: Arc<Self>) {
         loop {
             time::sleep(Duration::from_millis(50)).await;
@@ -270,6 +351,8 @@ impl RaftNode {
         }
     }
 
+    /// Send AppendEntries RPCs to all peers.
+    /// Handles both heartbeats (empty entries) and log replication.
     async fn send_append_entries_to_all(&self) {
         for peer in &self.peers {
             let peer = peer.clone();
@@ -285,6 +368,7 @@ impl RaftNode {
                     0
                 };
 
+                // Build entries to replicate
                 let entries: Vec<LogEntry> = state.log.iter()
                     .skip(next_idx as usize)
                     .map(|e| LogEntry {
@@ -299,10 +383,15 @@ impl RaftNode {
             };
 
             let entries_len = entries.len() as u64;
-            let state = Arc::new(RwLock::new(&self.state));
             let node_state_ref = &self.node_state;
 
-            let addr = format!("http://{}", peer);
+            // Cloud Run URLs require HTTPS for secure communication
+            let addr = if peer.contains(".run.app") {
+                format!("https://{}", peer)
+            } else {
+                format!("http://{}", peer)
+            };
+
             if let Ok(mut client) = RaftServiceClient::connect(addr).await {
                 let request = AppendEntriesRequest {
                     term,
@@ -326,11 +415,13 @@ impl RaftNode {
                         } else if *node_state_ref.read().await == NodeState::Leader {
                             let mut state = self.state.write().await;
                             if resp.success {
+                                // Update nextIndex and matchIndex for follower
                                 state.next_index.insert(peer.clone(), prev_idx + entries_len + 1);
                                 state.match_index.insert(peer.clone(), prev_idx + entries_len);
                                 drop(state);
                                 self.update_commit_index().await;
                             } else {
+                                // Decrement nextIndex and retry
                                 let next = state.next_index.get(&peer).copied().unwrap_or(1);
                                 state.next_index.insert(peer, next.saturating_sub(1).max(1));
                             }
@@ -341,26 +432,31 @@ impl RaftNode {
         }
     }
 
+    /// Update commitIndex based on matchIndex of peers.
+    /// An entry is committed when replicated on a majority of servers.
     async fn update_commit_index(&self) {
         let mut state = self.state.write().await;
         let log_len = state.log.len() as u64;
 
         for n in (state.commit_index + 1)..log_len {
+            // Only commit entries from current term (Raft safety property)
             if state.log[n as usize].term != state.current_term {
                 continue;
             }
-            let mut count = 1;
+
+            let mut count = 1; // Self
             for peer in &self.peers {
                 if *state.match_index.get(peer).unwrap_or(&0) >= n {
                     count += 1;
                 }
             }
+
             if count >= (self.peers.len() + 1) / 2 + 1 {
                 state.commit_index = n;
             }
         }
 
-        // Apply to state machine
+        // Apply committed entries to state machine (key-value store)
         while state.last_applied < state.commit_index {
             state.last_applied += 1;
             let entry = &state.log[state.last_applied as usize];
@@ -382,18 +478,29 @@ impl RaftNode {
             }
         }
 
+        // Signal waiting threads that entries have been applied
         self.apply_notify.notify_waiters();
     }
 }
 
+// =============================================================================
+// RaftService RPC Implementation
+// =============================================================================
 #[tonic::async_trait]
 impl RaftService for Arc<RaftNode> {
+    /// Handle RequestVote RPC from a candidate.
+    ///
+    /// Per Raft specification:
+    /// 1. Reply false if term < currentTerm
+    /// 2. If votedFor is null or candidateId, and candidate's log is at
+    ///    least as up-to-date as receiver's log, grant vote
     async fn request_vote(
         &self,
         request: Request<RequestVoteRequest>,
     ) -> Result<Response<RequestVoteResponse>, Status> {
         let req = request.into_inner();
 
+        // Update term if we see a higher term
         {
             let current_term = self.state.read().await.current_term;
             if req.term > current_term {
@@ -405,6 +512,7 @@ impl RaftService for Arc<RaftNode> {
         let last_log_term = self.get_last_log_term().await;
         let last_log_index = self.get_last_log_index().await;
 
+        // Check if candidate's log is at least as up-to-date as ours
         let log_ok = req.last_log_term > last_log_term ||
             (req.last_log_term == last_log_term && req.last_log_index >= last_log_index);
 
@@ -421,12 +529,21 @@ impl RaftService for Arc<RaftNode> {
         Ok(Response::new(RequestVoteResponse { term, vote_granted }))
     }
 
+    /// Handle AppendEntries RPC from leader.
+    ///
+    /// Per Raft specification:
+    /// 1. Reply false if term < currentTerm
+    /// 2. Reply false if log doesn't contain entry at prevLogIndex with prevLogTerm
+    /// 3. If existing entry conflicts with new one, delete it and all that follow
+    /// 4. Append any new entries not already in the log
+    /// 5. If leaderCommit > commitIndex, set commitIndex = min(leaderCommit, last new entry index)
     async fn append_entries(
         &self,
         request: Request<AppendEntriesRequest>,
     ) -> Result<Response<AppendEntriesResponse>, Status> {
         let req = request.into_inner();
 
+        // Update term if we see a higher term
         {
             let current_term = self.state.read().await.current_term;
             if req.term > current_term {
@@ -434,6 +551,7 @@ impl RaftService for Arc<RaftNode> {
             }
         }
 
+        // Reply false if term < currentTerm
         let current_term = self.state.read().await.current_term;
         if req.term < current_term {
             return Ok(Response::new(AppendEntriesResponse {
@@ -443,6 +561,7 @@ impl RaftService for Arc<RaftNode> {
             }));
         }
 
+        // Valid AppendEntries from leader - update state
         *self.leader_id.write().await = req.leader_id;
         *self.node_state.write().await = NodeState::Follower;
         self.reset_election_timer().await;
@@ -459,10 +578,11 @@ impl RaftService for Arc<RaftNode> {
             }));
         }
 
-        // Append entries
+        // Append new entries
         let mut log_ptr = (req.prev_log_index + 1) as usize;
         for entry in req.entries {
             if log_ptr < state.log.len() {
+                // Conflict detection - delete conflicting entries
                 if state.log[log_ptr].term != entry.term {
                     state.log.truncate(log_ptr);
                 }
@@ -497,6 +617,8 @@ impl RaftService for Arc<RaftNode> {
         }))
     }
 
+    /// Handle InstallSnapshot RPC from leader.
+    /// Used when leader needs to bring a far-behind follower up to date.
     async fn install_snapshot(
         &self,
         request: Request<InstallSnapshotRequest>,
@@ -514,8 +636,13 @@ impl RaftService for Arc<RaftNode> {
     }
 }
 
+// =============================================================================
+// KeyValueService RPC Implementation
+// =============================================================================
 #[tonic::async_trait]
 impl KeyValueService for Arc<RaftNode> {
+    /// Handle Get RPC - reads from local key-value store.
+    /// Reads can be served by any node (eventual consistency).
     async fn get(&self, request: Request<GetRequest>) -> Result<Response<GetResponse>, Status> {
         let req = request.into_inner();
         let kv = self.kv_store.read().await;
@@ -535,9 +662,12 @@ impl KeyValueService for Arc<RaftNode> {
         }
     }
 
+    /// Handle Put RPC - stores key-value pair through consensus.
+    /// Only the leader can accept writes.
     async fn put(&self, request: Request<PutRequest>) -> Result<Response<PutResponse>, Status> {
         let req = request.into_inner();
 
+        // Redirect to leader if we're not the leader
         if *self.node_state.read().await != NodeState::Leader {
             return Ok(Response::new(PutResponse {
                 success: false,
@@ -546,6 +676,7 @@ impl KeyValueService for Arc<RaftNode> {
             }));
         }
 
+        // Append to log
         let wait_idx = {
             let mut state = self.state.write().await;
             let index = state.log.last().map(|e| e.index).unwrap_or(0) + 1;
@@ -558,6 +689,7 @@ impl KeyValueService for Arc<RaftNode> {
             index
         };
 
+        // Wait for entry to be committed and applied
         loop {
             let last_applied = self.state.read().await.last_applied;
             if last_applied >= wait_idx {
@@ -578,9 +710,12 @@ impl KeyValueService for Arc<RaftNode> {
         }
     }
 
+    /// Handle Delete RPC - removes key through consensus.
+    /// Only the leader can accept writes.
     async fn delete(&self, request: Request<DeleteRequest>) -> Result<Response<DeleteResponse>, Status> {
         let req = request.into_inner();
 
+        // Redirect to leader if we're not the leader
         if *self.node_state.read().await != NodeState::Leader {
             return Ok(Response::new(DeleteResponse {
                 success: false,
@@ -589,6 +724,7 @@ impl KeyValueService for Arc<RaftNode> {
             }));
         }
 
+        // Append to log
         let wait_idx = {
             let mut state = self.state.write().await;
             let index = state.log.last().map(|e| e.index).unwrap_or(0) + 1;
@@ -601,6 +737,7 @@ impl KeyValueService for Arc<RaftNode> {
             index
         };
 
+        // Wait for entry to be committed and applied
         loop {
             let last_applied = self.state.read().await.last_applied;
             if last_applied >= wait_idx {
@@ -621,6 +758,7 @@ impl KeyValueService for Arc<RaftNode> {
         }
     }
 
+    /// Handle GetLeader RPC - returns current leader information.
     async fn get_leader(&self, _request: Request<GetLeaderRequest>) -> Result<Response<GetLeaderResponse>, Status> {
         let leader_id = self.leader_id.read().await.clone();
         let is_leader = *self.node_state.read().await == NodeState::Leader;
@@ -644,6 +782,7 @@ impl KeyValueService for Arc<RaftNode> {
         }))
     }
 
+    /// Handle GetClusterStatus RPC - returns detailed cluster state.
     async fn get_cluster_status(&self, _request: Request<GetClusterStatusRequest>) -> Result<Response<GetClusterStatusResponse>, Status> {
         let state = self.state.read().await;
         let node_state = *self.node_state.read().await;
@@ -678,19 +817,28 @@ impl KeyValueService for Arc<RaftNode> {
     }
 }
 
+// =============================================================================
+// Command Line Arguments
+// =============================================================================
 #[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
+#[command(author, version, about = "Raft Consensus Server", long_about = None)]
 struct Args {
+    /// Unique node identifier
     #[arg(long)]
     node_id: String,
 
+    /// Port to listen on
     #[arg(long, default_value_t = 50051)]
     port: u16,
 
+    /// Comma-separated list of peer addresses
     #[arg(long)]
     peers: String,
 }
 
+// =============================================================================
+// Main Entry Point
+// =============================================================================
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
@@ -701,9 +849,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .filter(|s| !s.is_empty())
         .collect();
 
+    println!("Node {} initializing with peers: {:?}", args.node_id, peers);
+
     let node = Arc::new(RaftNode::new(args.node_id.clone(), args.port, peers));
 
-    // Start background tasks
+    // Start background tasks for election and heartbeat
     let election_node = Arc::clone(&node);
     tokio::spawn(async move {
         election_node.election_timer_loop().await;
