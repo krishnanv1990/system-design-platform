@@ -20,6 +20,122 @@ from backend.websocket import websocket_router
 settings = get_settings()
 
 
+def seed_distributed_problems():
+    """Seed distributed consensus problems if they don't exist."""
+    from backend.database import SessionLocal
+    from backend.models.problem import Problem, ProblemType
+
+    # Define the 6 distributed problems with specific IDs
+    # Using IDs 1-6 for distributed problems (assuming distributed problems are primary)
+    DISTRIBUTED_PROBLEMS = [
+        {
+            "target_id": 1,
+            "title": "Implement Raft Consensus",
+            "description": "Implement the Raft consensus algorithm for leader election and log replication.",
+            "problem_type": ProblemType.DISTRIBUTED_CONSENSUS.value,
+            "difficulty": "hard",
+            "cluster_size": 3,
+            "supported_languages": ["python", "go", "java", "cpp", "rust"],
+            "tags": ["distributed-systems", "consensus", "raft"],
+        },
+        {
+            "target_id": 2,
+            "title": "Implement Paxos Consensus",
+            "description": "Implement the Multi-Paxos consensus algorithm.",
+            "problem_type": ProblemType.DISTRIBUTED_CONSENSUS.value,
+            "difficulty": "hard",
+            "cluster_size": 3,
+            "supported_languages": ["python", "go", "java", "cpp", "rust"],
+            "tags": ["distributed-systems", "consensus", "paxos"],
+        },
+        {
+            "target_id": 3,
+            "title": "Implement Two-Phase Commit",
+            "description": "Implement the Two-Phase Commit (2PC) protocol for distributed transactions.",
+            "problem_type": ProblemType.DISTRIBUTED_CONSENSUS.value,
+            "difficulty": "medium",
+            "cluster_size": 3,
+            "supported_languages": ["python", "go", "java", "cpp", "rust"],
+            "tags": ["distributed-systems", "transactions", "2pc"],
+        },
+        {
+            "target_id": 4,
+            "title": "Implement Chandy-Lamport Snapshot",
+            "description": "Implement the Chandy-Lamport distributed snapshot algorithm.",
+            "problem_type": ProblemType.DISTRIBUTED_CONSENSUS.value,
+            "difficulty": "medium",
+            "cluster_size": 3,
+            "supported_languages": ["python", "go", "java", "cpp", "rust"],
+            "tags": ["distributed-systems", "snapshots", "chandy-lamport"],
+        },
+        {
+            "target_id": 5,
+            "title": "Implement Consistent Hashing",
+            "description": "Implement consistent hashing with virtual nodes for distributed key-value storage.",
+            "problem_type": ProblemType.DISTRIBUTED_CONSENSUS.value,
+            "difficulty": "medium",
+            "cluster_size": 3,
+            "supported_languages": ["python", "go", "java", "cpp", "rust"],
+            "tags": ["distributed-systems", "hashing", "consistent-hashing"],
+        },
+        {
+            "target_id": 6,
+            "title": "Implement Rendezvous Hashing",
+            "description": "Implement rendezvous hashing (HRW) for distributed key-to-node mapping.",
+            "problem_type": ProblemType.DISTRIBUTED_CONSENSUS.value,
+            "difficulty": "medium",
+            "cluster_size": 3,
+            "supported_languages": ["python", "go", "java", "cpp", "rust"],
+            "tags": ["distributed-systems", "hashing", "rendezvous-hashing"],
+        },
+    ]
+
+    db = SessionLocal()
+    try:
+        for prob_data in DISTRIBUTED_PROBLEMS:
+            target_id = prob_data.pop("target_id")
+            existing = db.query(Problem).filter(Problem.id == target_id).first()
+
+            if existing:
+                # Update to distributed_consensus if it's a different type
+                if existing.problem_type != ProblemType.DISTRIBUTED_CONSENSUS.value:
+                    existing.title = prob_data["title"]
+                    existing.description = prob_data["description"]
+                    existing.problem_type = prob_data["problem_type"]
+                    existing.difficulty = prob_data["difficulty"]
+                    existing.cluster_size = prob_data["cluster_size"]
+                    existing.supported_languages = prob_data["supported_languages"]
+                    existing.tags = prob_data["tags"]
+                    print(f"Updated problem {target_id} to: {prob_data['title']}")
+            else:
+                # Insert with specific ID using raw SQL
+                from sqlalchemy import text
+                db.execute(
+                    text("""
+                        INSERT INTO problems (id, title, description, problem_type, difficulty, cluster_size, supported_languages, tags)
+                        VALUES (:id, :title, :description, :problem_type, :difficulty, :cluster_size, :supported_languages, :tags)
+                        ON CONFLICT (id) DO NOTHING
+                    """),
+                    {
+                        "id": target_id,
+                        "title": prob_data["title"],
+                        "description": prob_data["description"],
+                        "problem_type": prob_data["problem_type"],
+                        "difficulty": prob_data["difficulty"],
+                        "cluster_size": prob_data["cluster_size"],
+                        "supported_languages": str(prob_data["supported_languages"]).replace("'", '"'),
+                        "tags": str(prob_data["tags"]).replace("'", '"'),
+                    }
+                )
+                print(f"Added distributed problem: {prob_data['title']} (ID: {target_id})")
+        db.commit()
+    except Exception as e:
+        print(f"Error seeding distributed problems: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
@@ -40,6 +156,9 @@ async def lifespan(app: FastAPI):
             # Create tables if they don't exist
             init_db()
             print("Database tables initialized")
+            # Seed distributed problems
+            seed_distributed_problems()
+            print("Distributed problems seeded")
             break
         except Exception as e:
             if i < max_retries - 1:

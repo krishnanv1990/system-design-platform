@@ -44,6 +44,7 @@ RUN ls -la /usr/local/bin/chaos 2>/dev/null || echo "chaos not in /usr/local/bin
 # Copy application code
 COPY backend/ ./backend/
 COPY tests/ ./tests/
+COPY distributed_problems/ ./distributed_problems/
 
 # Set tests directory path as environment variable
 ENV TESTS_DIR=/app/tests

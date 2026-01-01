@@ -1,0 +1,157 @@
+syntax = "proto3";
+
+package rendezvous_hashing;
+
+option java_package = "com.systemdesign.rendezvous";
+option java_outer_classname = "RendezvousHashingProto";
+option go_package = "rendezvous_hashing";
+
+// Service for managing the rendezvous hashing node registry
+service NodeRegistryService {
+    // Add a node to the registry
+    rpc AddNode(AddNodeRequest) returns (AddNodeResponse);
+
+    // Remove a node from the registry
+    rpc RemoveNode(RemoveNodeRequest) returns (RemoveNodeResponse);
+
+    // List all nodes in the registry
+    rpc ListNodes(ListNodesRequest) returns (ListNodesResponse);
+
+    // Get node info
+    rpc GetNodeInfo(GetNodeInfoRequest) returns (GetNodeInfoResponse);
+}
+
+// Service for key-to-node mapping using rendezvous hashing
+service RendezvousService {
+    // Get the node responsible for a key (highest weight)
+    rpc GetNodeForKey(GetNodeForKeyRequest) returns (GetNodeForKeyResponse);
+
+    // Get top N nodes for a key (for replication)
+    rpc GetNodesForKey(GetNodesForKeyRequest) returns (GetNodesForKeyResponse);
+
+    // Calculate weight for a key-node pair
+    rpc CalculateWeight(CalculateWeightRequest) returns (CalculateWeightResponse);
+}
+
+// Service for key-value operations
+service KeyValueService {
+    // Put a key-value pair
+    rpc Put(PutRequest) returns (PutResponse);
+
+    // Get a value by key
+    rpc Get(GetRequest) returns (GetResponse);
+
+    // Delete a key
+    rpc Delete(DeleteRequest) returns (DeleteResponse);
+}
+
+// Node information
+message NodeInfo {
+    string node_id = 1;
+    string address = 2;
+    int32 port = 3;
+    double capacity_weight = 4;  // Weight modifier for node capacity
+    bool is_active = 5;
+}
+
+// Node registry messages
+message AddNodeRequest {
+    string node_id = 1;
+    string address = 2;
+    int32 port = 3;
+    double capacity_weight = 4;
+}
+
+message AddNodeResponse {
+    bool success = 1;
+    string message = 2;
+}
+
+message RemoveNodeRequest {
+    string node_id = 1;
+}
+
+message RemoveNodeResponse {
+    bool success = 1;
+    string message = 2;
+    int32 keys_to_redistribute = 3;
+}
+
+message ListNodesRequest {}
+
+message ListNodesResponse {
+    repeated NodeInfo nodes = 1;
+}
+
+message GetNodeInfoRequest {
+    string node_id = 1;
+}
+
+message GetNodeInfoResponse {
+    NodeInfo node = 1;
+    bool found = 2;
+}
+
+// Rendezvous hashing messages
+message GetNodeForKeyRequest {
+    string key = 1;
+}
+
+message GetNodeForKeyResponse {
+    string node_id = 1;
+    double weight = 2;
+}
+
+message GetNodesForKeyRequest {
+    string key = 1;
+    int32 count = 2;  // Number of nodes to return
+}
+
+message GetNodesForKeyResponse {
+    repeated NodeWithWeight nodes = 1;
+}
+
+message NodeWithWeight {
+    string node_id = 1;
+    double weight = 2;
+}
+
+message CalculateWeightRequest {
+    string key = 1;
+    string node_id = 2;
+}
+
+message CalculateWeightResponse {
+    double weight = 1;
+}
+
+// Key-value messages
+message PutRequest {
+    string key = 1;
+    bytes value = 2;
+    int32 replication_factor = 3;
+}
+
+message PutResponse {
+    bool success = 1;
+    repeated string stored_on_nodes = 2;
+}
+
+message GetRequest {
+    string key = 1;
+}
+
+message GetResponse {
+    bool found = 1;
+    bytes value = 2;
+    string served_by_node = 3;
+}
+
+message DeleteRequest {
+    string key = 1;
+}
+
+message DeleteResponse {
+    bool success = 1;
+    int32 deleted_from_nodes = 2;
+}

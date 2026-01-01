@@ -57,13 +57,14 @@ class DistributedBuildService:
         self.region = settings.gcp_region
         self.enable_security_analysis = enable_security_analysis
 
-    def get_cloudbuild_config(self, language: str, submission_id: int) -> Dict:
+    def get_cloudbuild_config(self, language: str, submission_id: int, problem_type: str = "raft") -> Dict:
         """
         Generate Cloud Build configuration for a specific language.
 
         Args:
             language: Programming language (python, go, java, cpp, rust)
             submission_id: Submission ID for artifact naming
+            problem_type: Problem type (raft, paxos, 2pc, chandy_lamport, consistent_hashing, rendezvous_hashing)
 
         Returns:
             Cloud Build configuration dict
@@ -71,21 +72,32 @@ class DistributedBuildService:
         artifact_name = f"raft-{submission_id}-{language}"
         image_name = f"gcr.io/{self.project_id}/{artifact_name}"
 
+        # Problem type to proto file mapping
+        PROTO_FILES = {
+            "raft": "raft.proto",
+            "paxos": "paxos.proto",
+            "2pc": "two_phase_commit.proto",
+            "chandy_lamport": "chandy_lamport.proto",
+            "consistent_hashing": "consistent_hashing.proto",
+            "rendezvous_hashing": "rendezvous_hashing.proto",
+        }
+        proto_file = PROTO_FILES.get(problem_type, "raft.proto")
+
         # Build steps vary by language
         if language == "python":
-            return self._python_build_config(image_name, submission_id)
+            return self._python_build_config(image_name, submission_id, proto_file)
         elif language == "go":
-            return self._go_build_config(image_name, submission_id)
+            return self._go_build_config(image_name, submission_id, proto_file)
         elif language == "java":
-            return self._java_build_config(image_name, submission_id)
+            return self._java_build_config(image_name, submission_id, proto_file)
         elif language == "cpp":
-            return self._cpp_build_config(image_name, submission_id)
+            return self._cpp_build_config(image_name, submission_id, proto_file)
         elif language == "rust":
-            return self._rust_build_config(image_name, submission_id)
+            return self._rust_build_config(image_name, submission_id, proto_file)
         else:
             raise ValueError(f"Unsupported language: {language}")
 
-    def _python_build_config(self, image_name: str, submission_id: int) -> Dict:
+    def _python_build_config(self, image_name: str, submission_id: int, proto_file: str = "raft.proto") -> Dict:
         """
         Cloud Build config for Python with security analysis.
 
@@ -96,7 +108,7 @@ class DistributedBuildService:
         """
         build_cmd = (
             "pip install grpcio grpcio-tools bandit safety pylint && "
-            "python -m grpc_tools.protoc -I. --python_out=. --grpc_python_out=. raft.proto && "
+            f"python -m grpc_tools.protoc -I. --python_out=. --grpc_python_out=. {proto_file} && "
             "echo '=== Running Bandit (Security Analysis) ===' && "
             "bandit -r server.py 2>&1 | tee /workspace/security_analysis.log || true && "
             "echo '=== Checking for Vulnerable Dependencies ===' && "
@@ -126,7 +138,7 @@ class DistributedBuildService:
             "timeout": "600s",
         }
 
-    def _go_build_config(self, image_name: str, submission_id: int) -> Dict:
+    def _go_build_config(self, image_name: str, submission_id: int, proto_file: str = "raft.proto") -> Dict:
         """
         Cloud Build config for Go with race detection.
 
@@ -138,7 +150,7 @@ class DistributedBuildService:
         build_cmd = (
             "go install google.golang.org/protobuf/cmd/protoc-gen-go@latest && "
             "go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest && "
-            "protoc --go_out=. --go-grpc_out=. raft.proto && "
+            f"protoc --go_out=. --go-grpc_out=. {proto_file} && "
             "echo '=== Running Go Vet (static analysis) ===' && "
             "go vet ./... 2>&1 | tee /workspace/security_analysis.log || true && "
             "echo '=== Building with race detector for testing ===' && "
@@ -167,7 +179,7 @@ class DistributedBuildService:
             "timeout": "600s",
         }
 
-    def _java_build_config(self, image_name: str, submission_id: int) -> Dict:
+    def _java_build_config(self, image_name: str, submission_id: int, proto_file: str = "raft.proto") -> Dict:
         """
         Cloud Build config for Java with SpotBugs security analysis.
 
@@ -175,7 +187,7 @@ class DistributedBuildService:
         - SpotBugs for concurrency issues and bug detection
         - FindSecBugs for security vulnerabilities
         """
-        # Build with SpotBugs analysis
+        # Build with SpotBugs analysis (Gradle handles proto compilation via build.gradle)
         build_cmd = (
             "echo '=== Running Gradle Build with SpotBugs ===' && "
             "./gradlew build spotbugsMain --continue 2>&1 | tee /workspace/security_analysis.log || true && "
@@ -203,7 +215,7 @@ class DistributedBuildService:
             "timeout": "900s",
         }
 
-    def _cpp_build_config(self, image_name: str, submission_id: int) -> Dict:
+    def _cpp_build_config(self, image_name: str, submission_id: int, proto_file: str = "raft.proto") -> Dict:
         """
         Cloud Build config for C++ using prebuilt base image.
 
@@ -272,7 +284,7 @@ class DistributedBuildService:
             "timeout": "300s",  # Reduced from 900s since we use prebuilt deps
         }
 
-    def _rust_build_config(self, image_name: str, submission_id: int) -> Dict:
+    def _rust_build_config(self, image_name: str, submission_id: int, proto_file: str = "raft.proto") -> Dict:
         """
         Cloud Build config for Rust with Clippy and safety checks.
 
@@ -319,6 +331,7 @@ class DistributedBuildService:
         language: str,
         source_code: str,
         build_modifications: Optional[Dict] = None,
+        problem_type: str = "raft",
     ) -> str:
         """
         Start a Cloud Build job for a submission.
@@ -328,6 +341,7 @@ class DistributedBuildService:
             language: Programming language
             source_code: User's source code
             build_modifications: Optional AI-generated build file modifications
+            problem_type: Problem type (raft, paxos, 2pc, chandy_lamport, consistent_hashing, rendezvous_hashing)
 
         Returns:
             Build ID
@@ -338,7 +352,7 @@ class DistributedBuildService:
 
         # Create source archive with optional build modifications
         source_archive = self._create_source_archive(
-            language, source_code, submission_id, build_modifications
+            language, source_code, submission_id, build_modifications, problem_type
         )
 
         # Upload to GCS
@@ -350,7 +364,7 @@ class DistributedBuildService:
         # Start Cloud Build
         build_client = cloudbuild_v1.CloudBuildClient()
 
-        build_config = self.get_cloudbuild_config(language, submission_id)
+        build_config = self.get_cloudbuild_config(language, submission_id, problem_type)
 
         # Convert steps from dict to BuildStep objects
         steps = []
@@ -386,6 +400,7 @@ class DistributedBuildService:
         source_code: str,
         submission_id: int,
         build_modifications: Optional[Dict] = None,
+        problem_type: str = "raft",
     ) -> bytes:
         """
         Create a tarball with the source code and proto file.
@@ -395,6 +410,7 @@ class DistributedBuildService:
             source_code: User's source code
             submission_id: Submission ID
             build_modifications: Optional AI-generated build file modifications
+            problem_type: Problem type (raft, paxos, 2pc, chandy_lamport, consistent_hashing, rendezvous_hashing)
 
         Returns:
             Tar.gz bytes
@@ -402,27 +418,38 @@ class DistributedBuildService:
         import io
         import tarfile
 
+        # Problem type to directory and proto file mapping
+        PROBLEM_CONFIG = {
+            "raft": {"directory": "raft", "proto_file": "raft.proto"},
+            "paxos": {"directory": "paxos", "proto_file": "paxos.proto"},
+            "2pc": {"directory": "2pc", "proto_file": "two_phase_commit.proto"},
+            "chandy_lamport": {"directory": "chandy_lamport", "proto_file": "chandy_lamport.proto"},
+            "consistent_hashing": {"directory": "consistent_hashing", "proto_file": "consistent_hashing.proto"},
+            "rendezvous_hashing": {"directory": "rendezvous_hashing", "proto_file": "rendezvous_hashing.proto"},
+        }
+        config = PROBLEM_CONFIG.get(problem_type, PROBLEM_CONFIG["raft"])
+
         # Create in-memory tarball
         buffer = io.BytesIO()
 
         with tarfile.open(fileobj=buffer, mode="w:gz") as tar:
             # Add source code
-            source_file = self._get_source_filename(language)
+            source_file = self._get_source_filename(language, problem_type)
             source_info = tarfile.TarInfo(name=source_file)
             source_data = source_code.encode("utf-8")
             source_info.size = len(source_data)
             tar.addfile(source_info, io.BytesIO(source_data))
 
-            # Add proto file
+            # Add proto file based on problem type
             proto_path = os.path.join(
                 os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
                 "distributed_problems",
-                "raft",
+                config["directory"],
                 "proto",
-                "raft.proto"
+                config["proto_file"]
             )
             if os.path.exists(proto_path):
-                tar.add(proto_path, arcname="raft.proto")
+                tar.add(proto_path, arcname=config["proto_file"])
 
             # Add Dockerfile
             dockerfile = self._get_dockerfile(language)
@@ -442,12 +469,24 @@ class DistributedBuildService:
         buffer.seek(0)
         return buffer.read()
 
-    def _get_source_filename(self, language: str) -> str:
-        """Get the source file name for a language."""
+    def _get_source_filename(self, language: str, problem_type: str = "raft") -> str:
+        """Get the source file name for a language and problem type."""
+        # Java class names vary by problem type
+        JAVA_CLASS_NAMES = {
+            "raft": "RaftServer.java",
+            "paxos": "PaxosServer.java",
+            "2pc": "TwoPhaseCommitServer.java",
+            "chandy_lamport": "ChandyLamportServer.java",
+            "consistent_hashing": "ConsistentHashingServer.java",
+            "rendezvous_hashing": "RendezvousHashingServer.java",
+        }
+
+        if language == "java":
+            return JAVA_CLASS_NAMES.get(problem_type, "RaftServer.java")
+
         filenames = {
             "python": "server.py",
             "go": "server.go",
-            "java": "RaftServer.java",
             "cpp": "server.cpp",
             "rust": "src/main.rs",
         }

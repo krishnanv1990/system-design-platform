@@ -139,7 +139,7 @@ class BuildLogsResponse(BaseModel):
 # Background Build Task
 # ============================================================================
 
-async def run_distributed_build(submission_id: int, language: str, source_code: str):
+async def run_distributed_build(submission_id: int, language: str, source_code: str, problem_id: int):
     """
     Background task to run the distributed build process.
 
@@ -161,19 +161,23 @@ async def run_distributed_build(submission_id: int, language: str, source_code: 
         ai_service = AIService()
         project_id = settings.gcp_project_id
 
+        # Get problem type from problem_id
+        problem_type = get_problem_type_from_id(problem_id)
+        config = PROBLEM_TYPE_CONFIG.get(problem_type, PROBLEM_TYPE_CONFIG["raft"])
+
         # Update status to building
         submission.status = SubmissionStatus.BUILDING.value
-        submission.build_logs = "Analyzing code and preparing build...\n"
+        submission.build_logs = f"Analyzing code and preparing build for {problem_type}...\n"
         db.commit()
 
         try:
-            # Load the proto spec
+            # Load the proto spec based on problem type
             proto_path = os.path.join(
                 os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
                 "distributed_problems",
-                "raft",
+                config["directory"],
                 "proto",
-                "raft.proto"
+                config["proto_file"]
             )
             proto_spec = ""
             if os.path.exists(proto_path):
@@ -181,12 +185,12 @@ async def run_distributed_build(submission_id: int, language: str, source_code: 
                     proto_spec = f.read()
 
             # Analyze code using Claude AI for spec validation and dependency detection
-            logger.info(f"Analyzing code for submission {submission_id}, language: {language}")
+            logger.info(f"Analyzing code for submission {submission_id}, language: {language}, problem_type: {problem_type}")
             analysis_result = await ai_service.analyze_distributed_code(
                 source_code=source_code,
                 language=language,
                 proto_spec=proto_spec,
-                problem_type="raft",
+                problem_type=problem_type,
             )
 
             # Log analysis results
@@ -202,9 +206,9 @@ async def run_distributed_build(submission_id: int, language: str, source_code: 
             db.commit()
 
             # Start the Cloud Build with AI-generated build modifications
-            logger.info(f"Starting build for submission {submission_id}, language: {language}")
+            logger.info(f"Starting build for submission {submission_id}, language: {language}, problem_type: {problem_type}")
             build_id = await build_service.start_build(
-                submission_id, language, source_code, build_modifications
+                submission_id, language, source_code, build_modifications, problem_type
             )
 
             submission.build_logs = f"Build started. Build ID: {build_id}\n"
@@ -518,6 +522,18 @@ PROBLEM_TYPE_CONFIG = {
         "java_class": "ChandyLamportServer",
         "test_runner": "backend.services.distributed_tests_chandy_lamport.ChandyLamportTestRunner",
     },
+    "consistent_hashing": {
+        "directory": "consistent_hashing",
+        "proto_file": "consistent_hashing.proto",
+        "java_class": "ConsistentHashingServer",
+        "test_runner": "backend.services.distributed_tests_consistent_hashing.ConsistentHashingTestRunner",
+    },
+    "rendezvous_hashing": {
+        "directory": "rendezvous_hashing",
+        "proto_file": "rendezvous_hashing.proto",
+        "java_class": "RendezvousHashingServer",
+        "test_runner": "backend.services.distributed_tests_rendezvous_hashing.RendezvousHashingTestRunner",
+    },
 }
 
 # Default problem IDs for filesystem-based problems
@@ -526,6 +542,8 @@ DEFAULT_PROBLEM_IDS = {
     2: "paxos",
     3: "two_phase_commit",
     4: "chandy_lamport",
+    5: "consistent_hashing",
+    6: "rendezvous_hashing",
 }
 
 
@@ -690,6 +708,28 @@ async def list_distributed_problems(
                 "supported_languages": ["python", "go", "java", "cpp", "rust"],
                 "cluster_size": 3,
                 "tags": ["distributed-systems", "snapshots", "chandy-lamport"],
+                "created_at": "2025-01-01T00:00:00Z",
+            },
+            {
+                "id": 5,
+                "title": "Implement Consistent Hashing",
+                "description": "Implement a consistent hash ring for distributing keys across a cluster of nodes.",
+                "difficulty": "medium",
+                "problem_type": "distributed_consensus",
+                "supported_languages": ["python", "go", "java", "cpp", "rust"],
+                "cluster_size": 3,
+                "tags": ["distributed-systems", "hashing", "consistent-hashing"],
+                "created_at": "2025-01-01T00:00:00Z",
+            },
+            {
+                "id": 6,
+                "title": "Implement Rendezvous Hashing",
+                "description": "Implement rendezvous (highest random weight) hashing for distributed key-to-node mapping.",
+                "difficulty": "medium",
+                "problem_type": "distributed_consensus",
+                "supported_languages": ["python", "go", "java", "cpp", "rust"],
+                "cluster_size": 3,
+                "tags": ["distributed-systems", "hashing", "rendezvous-hashing"],
                 "created_at": "2025-01-01T00:00:00Z",
             },
         ]
@@ -894,6 +934,54 @@ def _get_default_problem(problem_id: int, problem_type: str) -> dict:
             ],
             "tags": ["distributed-systems", "snapshots", "chandy-lamport"],
         },
+        "consistent_hashing": {
+            "id": 5,
+            "title": "Implement Consistent Hashing",
+            "description": "Implement a consistent hash ring for distributing keys across a cluster of nodes.\n\nKey features to implement:\n1. Hash Ring - Map keys and nodes to positions on a circular hash space\n2. Virtual Nodes - Create multiple positions per physical node for better distribution\n3. Key Lookup - Find the responsible node by walking clockwise from key position\n4. Rebalancing - Minimize key movement when nodes join or leave\n\nRefer to the gRPC proto file for the required service interfaces.",
+            "difficulty": "medium",
+            "test_scenarios": [
+                {"name": "Cluster Connectivity", "description": "Verify all nodes can communicate", "test_type": "functional"},
+                {"name": "Key Distribution", "description": "Verify keys are distributed evenly across nodes", "test_type": "functional"},
+                {"name": "Node Lookup", "description": "Verify correct node is returned for each key", "test_type": "functional"},
+                {"name": "Virtual Nodes", "description": "Verify virtual nodes improve distribution", "test_type": "functional"},
+                {"name": "Node Addition", "description": "Verify minimal key movement when adding nodes", "test_type": "functional"},
+                {"name": "Node Removal", "description": "Verify minimal key movement when removing nodes", "test_type": "functional"},
+                {"name": "Node Failure", "description": "Test behavior during node failure", "test_type": "chaos"},
+                {"name": "Lookup Latency", "description": "Measure key lookup latency", "test_type": "performance"},
+            ],
+            "hints": [
+                "Use a consistent hash function like MD5 or SHA-1 for deterministic positioning",
+                "More virtual nodes (100-200) gives better distribution but uses more memory",
+                "Binary search on sorted virtual nodes enables O(log n) lookups",
+                "When a node joins, only keys between it and its predecessor need to move",
+                "Replicate keys to the next N physical nodes for fault tolerance",
+            ],
+            "tags": ["distributed-systems", "hashing", "consistent-hashing"],
+        },
+        "rendezvous_hashing": {
+            "id": 6,
+            "title": "Implement Rendezvous Hashing",
+            "description": "Implement rendezvous (highest random weight) hashing for distributed key-to-node mapping.\n\nKey features to implement:\n1. Weight Calculation - Hash each (key, node) pair to compute weights\n2. Node Selection - Choose the node with highest weight for each key\n3. Deterministic Mapping - Same key always maps to same node given same cluster\n4. Minimal Disruption - Only keys from failed/added nodes need remapping\n\nRefer to the gRPC proto file for the required service interfaces.",
+            "difficulty": "medium",
+            "test_scenarios": [
+                {"name": "Cluster Connectivity", "description": "Verify all nodes can communicate", "test_type": "functional"},
+                {"name": "Key Distribution", "description": "Verify keys are distributed evenly", "test_type": "functional"},
+                {"name": "Deterministic Mapping", "description": "Verify same key maps to same node", "test_type": "functional"},
+                {"name": "Weight Calculation", "description": "Verify correct weight ordering", "test_type": "functional"},
+                {"name": "Node Addition", "description": "Verify minimal disruption when adding nodes", "test_type": "functional"},
+                {"name": "Node Removal", "description": "Verify only affected keys are remapped", "test_type": "functional"},
+                {"name": "Node Failure", "description": "Test behavior during node failure", "test_type": "chaos"},
+                {"name": "Lookup Latency", "description": "Measure key lookup latency", "test_type": "performance"},
+            ],
+            "hints": [
+                "Hash the concatenation of key and node ID to get the weight",
+                "The node with highest weight for a key is selected",
+                "Unlike consistent hashing, no virtual nodes are needed",
+                "Each lookup requires computing weights for all nodes (O(n))",
+                "Consider caching weights for frequently accessed keys",
+            ],
+            "tags": ["distributed-systems", "hashing", "rendezvous-hashing"],
+        },
     }
 
     config = problems_config.get(problem_type, problems_config["raft"])
@@ -938,7 +1026,7 @@ async def get_language_template(
             detail=f"Unsupported language: {language}"
         )
 
-    # For default problems (1-4), load from filesystem
+    # For default problems (1-6), load from filesystem
     if problem_id in DEFAULT_PROBLEM_IDS:
         problem_type = DEFAULT_PROBLEM_IDS[problem_id]
         template = get_template_from_filesystem(language, problem_type)
@@ -1076,6 +1164,7 @@ async def create_distributed_submission(
         submission_id=submission.id,
         language=data.language,
         source_code=data.source_code,
+        problem_id=data.problem_id,
     ))
 
     logger.info(f"Created submission {submission.id} and queued build for {data.language}")

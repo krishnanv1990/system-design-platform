@@ -1,0 +1,308 @@
+// Consistent Hashing gRPC Service Definition
+// Implements a distributed hash ring for key-to-node mapping
+//
+// Consistent hashing minimizes key redistribution when nodes join/leave.
+// This proto defines the RPC interface for implementing a consistent hash ring.
+
+syntax = "proto3";
+
+package consistent_hashing;
+
+option go_package = "github.com/sdp/chash";
+option java_package = "com.sdp.chash";
+option java_multiple_files = true;
+
+// ============================================================================
+// Hash Ring Service (manages the consistent hash ring)
+// ============================================================================
+
+// HashRingService provides consistent hashing operations
+service HashRingService {
+    // AddNode adds a node to the hash ring
+    rpc AddNode(AddNodeRequest) returns (AddNodeResponse);
+
+    // RemoveNode removes a node from the hash ring
+    rpc RemoveNode(RemoveNodeRequest) returns (RemoveNodeResponse);
+
+    // GetNode returns the node responsible for a given key
+    rpc GetNode(GetNodeRequest) returns (GetNodeResponse);
+
+    // GetNodes returns the N nodes responsible for a key (for replication)
+    rpc GetNodes(GetNodesRequest) returns (GetNodesResponse);
+
+    // GetRingState returns the current state of the hash ring
+    rpc GetRingState(GetRingStateRequest) returns (GetRingStateResponse);
+
+    // Rebalance triggers a rebalancing of keys after topology change
+    rpc Rebalance(RebalanceRequest) returns (RebalanceResponse);
+}
+
+// ============================================================================
+// Key-Value Store Service (uses consistent hashing for routing)
+// ============================================================================
+
+// KeyValueService provides a distributed key-value store with consistent hashing
+service KeyValueService {
+    // Get retrieves a value (routed via consistent hashing)
+    rpc Get(GetRequest) returns (GetResponse);
+
+    // Put stores a key-value pair (routed via consistent hashing)
+    rpc Put(PutRequest) returns (PutResponse);
+
+    // Delete removes a key (routed via consistent hashing)
+    rpc Delete(DeleteRequest) returns (DeleteResponse);
+
+    // GetLeader returns the current node information
+    rpc GetLeader(GetLeaderRequest) returns (GetLeaderResponse);
+
+    // GetClusterStatus returns cluster health and ring status
+    rpc GetClusterStatus(GetClusterStatusRequest) returns (GetClusterStatusResponse);
+}
+
+// ============================================================================
+// Inter-Node Communication Service
+// ============================================================================
+
+// NodeService handles inter-node communication for data transfer
+service NodeService {
+    // TransferKeys transfers keys from one node to another during rebalancing
+    rpc TransferKeys(TransferKeysRequest) returns (TransferKeysResponse);
+
+    // Heartbeat for health checking
+    rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+
+    // GetLocalKeys returns all keys stored on this node
+    rpc GetLocalKeys(GetLocalKeysRequest) returns (GetLocalKeysResponse);
+
+    // StoreLocal stores a key-value pair locally (bypasses routing)
+    rpc StoreLocal(StoreLocalRequest) returns (StoreLocalResponse);
+
+    // DeleteLocal deletes a key locally (bypasses routing)
+    rpc DeleteLocal(DeleteLocalRequest) returns (DeleteLocalResponse);
+}
+
+// ============================================================================
+// Hash Ring Types
+// ============================================================================
+
+// VirtualNode represents a virtual node on the hash ring
+message VirtualNode {
+    string node_id = 1;           // Physical node ID
+    uint32 virtual_id = 2;        // Virtual node number (0-N for N vnodes)
+    uint64 hash_value = 3;        // Position on the ring (hash of node_id:virtual_id)
+}
+
+// NodeInfo contains information about a physical node
+message NodeInfo {
+    string node_id = 1;
+    string address = 2;
+    uint32 virtual_nodes = 3;     // Number of virtual nodes (default: 150)
+    uint64 keys_count = 4;        // Number of keys stored on this node
+    bool is_healthy = 5;
+    uint64 last_heartbeat = 6;
+}
+
+// KeyRange represents a range of keys on the ring
+message KeyRange {
+    uint64 start_hash = 1;        // Inclusive
+    uint64 end_hash = 2;          // Exclusive
+    string responsible_node = 3;
+}
+
+// ============================================================================
+// Hash Ring Message Types
+// ============================================================================
+
+message AddNodeRequest {
+    string node_id = 1;
+    string address = 2;
+    uint32 virtual_nodes = 3;     // Number of virtual nodes (default: 150)
+    uint32 replication_factor = 4; // Number of replicas (default: 3)
+}
+
+message AddNodeResponse {
+    bool success = 1;
+    string error = 2;
+    repeated VirtualNode added_vnodes = 3;
+    uint64 keys_to_transfer = 4;  // Number of keys that will be transferred
+}
+
+message RemoveNodeRequest {
+    string node_id = 1;
+    bool graceful = 2;            // If true, transfer keys before removal
+}
+
+message RemoveNodeResponse {
+    bool success = 1;
+    string error = 2;
+    uint64 keys_transferred = 3;
+}
+
+message GetNodeRequest {
+    string key = 1;
+}
+
+message GetNodeResponse {
+    string node_id = 1;
+    string node_address = 2;
+    uint64 key_hash = 3;          // Hash value of the key
+}
+
+message GetNodesRequest {
+    string key = 1;
+    uint32 count = 2;             // Number of nodes to return (for replication)
+}
+
+message GetNodesResponse {
+    repeated NodeInfo nodes = 1;
+    uint64 key_hash = 2;
+}
+
+message GetRingStateRequest {}
+
+message GetRingStateResponse {
+    repeated NodeInfo nodes = 1;
+    repeated VirtualNode vnodes = 2;
+    uint64 total_keys = 3;
+    uint32 replication_factor = 4;
+}
+
+message RebalanceRequest {
+    bool force = 1;               // Force rebalance even if not needed
+}
+
+message RebalanceResponse {
+    bool success = 1;
+    string error = 2;
+    uint64 keys_moved = 3;
+    map<string, uint64> node_key_counts = 4;
+}
+
+// ============================================================================
+// Key-Value Store Message Types
+// ============================================================================
+
+message GetRequest {
+    string key = 1;
+}
+
+message GetResponse {
+    string value = 1;
+    bool found = 2;
+    string error = 3;
+    string served_by = 4;         // Node that served this request
+}
+
+message PutRequest {
+    string key = 1;
+    string value = 2;
+    uint32 replicas = 3;          // Number of replicas (0 = use default)
+}
+
+message PutResponse {
+    bool success = 1;
+    string error = 2;
+    string stored_on = 3;         // Primary node that stored this key
+    repeated string replicated_to = 4; // Nodes where replicas were stored
+}
+
+message DeleteRequest {
+    string key = 1;
+}
+
+message DeleteResponse {
+    bool success = 1;
+    string error = 2;
+}
+
+message GetLeaderRequest {}
+
+message GetLeaderResponse {
+    string node_id = 1;
+    string node_address = 2;
+    bool is_coordinator = 3;      // True if this node coordinates ring membership
+}
+
+message GetClusterStatusRequest {}
+
+message GetClusterStatusResponse {
+    string node_id = 1;
+    string node_address = 2;
+    bool is_coordinator = 3;
+
+    // Ring statistics
+    uint32 total_nodes = 4;
+    uint32 healthy_nodes = 5;
+    uint64 total_keys = 6;
+    uint32 replication_factor = 7;
+    uint32 virtual_nodes_per_node = 8;
+
+    // Per-node breakdown
+    repeated NodeInfo members = 9;
+
+    // Key distribution stats
+    double key_distribution_std_dev = 10;  // Lower is better (more even distribution)
+}
+
+// ============================================================================
+// Inter-Node Message Types
+// ============================================================================
+
+message TransferKeysRequest {
+    string source_node = 1;
+    string target_node = 2;
+    repeated KeyValuePair keys = 3;
+}
+
+message TransferKeysResponse {
+    bool success = 1;
+    string error = 2;
+    uint64 keys_received = 3;
+}
+
+message KeyValuePair {
+    string key = 1;
+    string value = 2;
+    uint64 hash = 3;
+}
+
+message HeartbeatRequest {
+    string node_id = 1;
+    uint64 timestamp = 2;
+    uint64 keys_count = 3;
+}
+
+message HeartbeatResponse {
+    bool acknowledged = 1;
+    uint64 timestamp = 2;
+}
+
+message GetLocalKeysRequest {
+    uint64 start_hash = 1;        // Optional: filter by hash range
+    uint64 end_hash = 2;
+}
+
+message GetLocalKeysResponse {
+    repeated KeyValuePair keys = 1;
+    uint64 total_count = 2;
+}
+
+message StoreLocalRequest {
+    string key = 1;
+    string value = 2;
+    bool is_replica = 3;          // True if this is a replica, not primary
+}
+
+message StoreLocalResponse {
+    bool success = 1;
+    string error = 2;
+}
+
+message DeleteLocalRequest {
+    string key = 1;
+}
+
+message DeleteLocalResponse {
+    bool success = 1;
+    string error = 2;
+}
