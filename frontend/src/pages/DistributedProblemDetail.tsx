@@ -373,71 +373,58 @@ export default function DistributedProblemDetail() {
         </CardContent>
       </Card>
 
-      {/* Main content */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        {/* Left: Proto and Hints */}
-        <div className="space-y-4">
-          <Tabs defaultValue="proto">
-            <TabsList>
-              <TabsTrigger value="proto" className="flex items-center gap-2">
+      {/* Main content - vertical layout for full-width editor */}
+      <div className="space-y-6">
+        {/* Top: gRPC Proto, Hints, and Test Scenarios in a responsive grid */}
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {/* gRPC Proto */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm flex items-center gap-2">
                 <FileCode className="h-4 w-4" />
-                gRPC Proto
-              </TabsTrigger>
-              <TabsTrigger value="hints" className="flex items-center gap-2">
+                gRPC Service Definition
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <pre className="bg-muted p-4 rounded-md overflow-auto text-sm max-h-[200px]">
+                <code>{problem.grpc_proto}</code>
+              </pre>
+            </CardContent>
+          </Card>
+
+          {/* Hints */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm flex items-center gap-2">
                 <BookOpen className="h-4 w-4" />
-                Hints
-              </TabsTrigger>
-            </TabsList>
-            <TabsContent value="proto" className="mt-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-sm flex items-center gap-2">
-                    <FileCode className="h-4 w-4" />
-                    gRPC Service Definition
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <pre className="bg-muted p-4 rounded-md overflow-auto text-sm max-h-[400px]">
-                    <code>{problem.grpc_proto}</code>
-                  </pre>
-                </CardContent>
-              </Card>
-            </TabsContent>
-            <TabsContent value="hints" className="mt-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-sm flex items-center gap-2">
-                    <BookOpen className="h-4 w-4" />
-                    Implementation Hints
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {problem.hints && problem.hints.length > 0 ? (
-                    <ul className="space-y-2">
-                      {problem.hints.map((hint, index) => (
-                        <li key={index} className="flex items-start gap-2">
-                          <CheckCircle className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
-                          <span className="text-sm text-muted-foreground">{hint}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">
-                      No hints available for this problem.
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
-            </TabsContent>
-          </Tabs>
+                Implementation Hints
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {problem.hints && problem.hints.length > 0 ? (
+                <ul className="space-y-2 max-h-[200px] overflow-auto">
+                  {problem.hints.map((hint, index) => (
+                    <li key={index} className="flex items-start gap-2">
+                      <CheckCircle className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
+                      <span className="text-sm text-muted-foreground">{hint}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  No hints available for this problem.
+                </p>
+              )}
+            </CardContent>
+          </Card>
 
           {/* Test scenarios */}
-          <Card>
-            <CardHeader>
+          <Card className="md:col-span-2 lg:col-span-1">
+            <CardHeader className="pb-3">
               <CardTitle className="text-sm">Test Scenarios</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="space-y-2">
+              <div className="space-y-2 max-h-[200px] overflow-auto">
                 {problem.test_scenarios.map((scenario, index) => (
                   <div
                     key={index}
@@ -466,17 +453,15 @@ export default function DistributedProblemDetail() {
           </Card>
         </div>
 
-        {/* Right: Language selector and Code editor */}
+        {/* Bottom: Language selector and full-width Code editor */}
         <div className="space-y-4">
-          {/* Language selector */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm flex items-center gap-2">
+          {/* Language selector - inline with header style */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <span className="text-sm font-medium flex items-center gap-2">
                 <Code className="h-4 w-4" />
-                Select Language
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
+                Select Language:
+              </span>
               <div className="flex flex-wrap gap-2">
                 {problem.supported_languages.map((lang) => (
                   <Button
@@ -490,23 +475,19 @@ export default function DistributedProblemDetail() {
                   </Button>
                 ))}
               </div>
-            </CardContent>
-          </Card>
-
-          {/* Code editor */}
-          <div className="relative">
-            <div className="absolute top-2 right-2 z-10 flex items-center gap-2">
-              <Badge variant="secondary">
-                {languageInfo[selectedLanguage].icon} {languageInfo[selectedLanguage].label}
-              </Badge>
             </div>
-            <CodeEditor
-              value={code}
-              onChange={handleCodeChange}
-              language={selectedLanguage}
-              height={500}
-            />
+            <Badge variant="secondary">
+              {languageInfo[selectedLanguage].icon} {languageInfo[selectedLanguage].label}
+            </Badge>
           </div>
+
+          {/* Full-width Code editor */}
+          <CodeEditor
+            value={code}
+            onChange={handleCodeChange}
+            language={selectedLanguage}
+            height={600}
+          />
         </div>
       </div>
     </div>

@@ -149,37 +149,24 @@ describe('DistributedProblemDetail', () => {
     })
   })
 
-  it('displays gRPC proto in a tab', async () => {
+  it('displays gRPC proto in a card', async () => {
     vi.mocked(distributedProblemsApi.get).mockResolvedValue(mockProblem)
 
     renderWithRouter()
 
     await waitFor(() => {
-      expect(screen.getByText('gRPC Proto')).toBeInTheDocument()
-    })
-
-    // Click on proto tab
-    const protoTab = screen.getByText('gRPC Proto')
-    await userEvent.click(protoTab)
-
-    await waitFor(() => {
+      expect(screen.getByText('gRPC Service Definition')).toBeInTheDocument()
       expect(screen.getByText(/syntax = "proto3"/)).toBeInTheDocument()
     })
   })
 
-  it('displays hints in a tab', async () => {
+  it('displays hints in a card', async () => {
     vi.mocked(distributedProblemsApi.get).mockResolvedValue(mockProblem)
 
     renderWithRouter()
 
     await waitFor(() => {
-      expect(screen.getByText('Hints')).toBeInTheDocument()
-    })
-
-    const hintsTab = screen.getByText('Hints')
-    await userEvent.click(hintsTab)
-
-    await waitFor(() => {
+      expect(screen.getByText('Implementation Hints')).toBeInTheDocument()
       expect(screen.getByText('Use randomized timeouts')).toBeInTheDocument()
     })
   })
@@ -203,7 +190,7 @@ describe('DistributedProblemDetail', () => {
     renderWithRouter()
 
     await waitFor(() => {
-      expect(screen.getByText('Select Language')).toBeInTheDocument()
+      expect(screen.getByText('Select Language:')).toBeInTheDocument()
       expect(screen.getByRole('button', { name: /Python/i })).toBeInTheDocument()
       expect(screen.getByRole('button', { name: /Go/i })).toBeInTheDocument()
       expect(screen.getByRole('button', { name: /Java/i })).toBeInTheDocument()
