@@ -251,7 +251,7 @@ export default function DesignEditor({
 
         {/* Chat section - below canvas when expanded */}
         {chatExpanded && (
-          <div className="w-full flex flex-col" style={{ height: "400px" }}>
+          <div className="w-full h-[400px] min-h-[400px] max-h-[400px] overflow-hidden">
             <DesignChat
               problemId={problemId}
               currentSchema={parsedSchema}
@@ -268,7 +268,7 @@ export default function DesignEditor({
       {/* Design Summary Box (AI-generated) */}
       {designSummary && showSummaryBox && (
         <div className="border-t">
-          <div className="bg-gradient-to-r from-green-500/10 to-emerald-500/10 px-4 py-2 flex items-center justify-between">
+          <div className="bg-gradient-to-r from-green-500/10 to-emerald-500/10 px-4 py-2 flex items-center justify-between flex-shrink-0">
             <div className="flex items-center gap-2">
               <FileText className="h-4 w-4 text-green-600" />
               <span className="text-sm font-medium">Design Summary</span>
@@ -282,7 +282,7 @@ export default function DesignEditor({
               Hide
             </Button>
           </div>
-          <div className="p-4 max-h-80 overflow-y-auto">
+          <div className="p-4 h-80 min-h-[320px] max-h-80 overflow-y-auto">
             <DesignSummary
               summary={designSummary}
               diagramData={data.canvas}
@@ -292,11 +292,12 @@ export default function DesignEditor({
       )}
 
       {/* Design Components Summary */}
-      <DesignTextSummary
-        canvasData={data.canvas || null}
-        textData={data.text || null}
-        className="mx-4 mb-4"
-      />
+      <div className="mx-4 mb-4 min-h-[120px] max-h-[200px] overflow-y-auto">
+        <DesignTextSummary
+          canvasData={data.canvas || null}
+          textData={data.text || null}
+        />
+      </div>
 
       {/* Tips section */}
       <div className="border-t bg-muted/30 p-3">

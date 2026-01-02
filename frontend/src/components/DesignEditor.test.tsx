@@ -133,6 +133,23 @@ describe('DesignEditor', () => {
       expect(mainContent).toBeInTheDocument()
     })
 
+    it('chat section has fixed height constraints to prevent fluttering', () => {
+      render(<DesignEditor value="" onChange={mockOnChange} problemId={1} />)
+
+      const chatSection = screen.getByTestId('design-chat').parentElement
+      // Should have fixed height classes to prevent layout shift
+      expect(chatSection).toHaveClass('h-[400px]')
+      expect(chatSection).toHaveClass('min-h-[400px]')
+      expect(chatSection).toHaveClass('max-h-[400px]')
+    })
+
+    it('chat section has overflow-hidden to prevent content overflow', () => {
+      render(<DesignEditor value="" onChange={mockOnChange} problemId={1} />)
+
+      const chatSection = screen.getByTestId('design-chat').parentElement
+      expect(chatSection).toHaveClass('overflow-hidden')
+    })
+
     it('canvas section uses full width (w-full) when chat is expanded', () => {
       const { container } = render(
         <DesignEditor value="" onChange={mockOnChange} problemId={1} />
@@ -465,6 +482,51 @@ describe('DesignEditor', () => {
 
       expect(screen.getByTestId('design-summary')).toBeInTheDocument()
     })
+
+    it('summary content container has fixed height to prevent fluttering', async () => {
+      render(
+        <DesignEditor
+          value=""
+          onChange={mockOnChange}
+          problemId={1}
+          onSummaryChange={mockOnSummaryChange}
+        />
+      )
+
+      // Generate summary
+      const generateButton = screen.getByText('Generate Summary')
+      await act(async () => {
+        fireEvent.click(generateButton)
+      })
+
+      // The summary content container should have fixed height classes
+      const summaryContent = screen.getByTestId('design-summary').parentElement
+      expect(summaryContent).toHaveClass('h-80')
+      expect(summaryContent).toHaveClass('min-h-[320px]')
+      expect(summaryContent).toHaveClass('max-h-80')
+      expect(summaryContent).toHaveClass('overflow-y-auto')
+    })
+
+    it('summary header has flex-shrink-0 to prevent shrinking', async () => {
+      const { container } = render(
+        <DesignEditor
+          value=""
+          onChange={mockOnChange}
+          problemId={1}
+          onSummaryChange={mockOnSummaryChange}
+        />
+      )
+
+      // Generate summary
+      const generateButton = screen.getByText('Generate Summary')
+      await act(async () => {
+        fireEvent.click(generateButton)
+      })
+
+      // The summary header should have flex-shrink-0
+      const summaryHeader = container.querySelector('.bg-gradient-to-r.from-green-500\\/10')
+      expect(summaryHeader).toHaveClass('flex-shrink-0')
+    })
   })
 
   describe('DesignTextSummary', () => {
@@ -485,6 +547,15 @@ describe('DesignEditor', () => {
       const summary = screen.getByTestId('design-text-summary')
       expect(summary).toHaveAttribute('data-canvas', '{"elements":[]}')
       expect(summary).toHaveAttribute('data-text', 'Design notes')
+    })
+
+    it('has fixed height constraints on text summary wrapper to prevent fluttering', () => {
+      render(<DesignEditor value="" onChange={mockOnChange} problemId={1} />)
+
+      const summaryWrapper = screen.getByTestId('design-text-summary').parentElement
+      expect(summaryWrapper).toHaveClass('min-h-[120px]')
+      expect(summaryWrapper).toHaveClass('max-h-[200px]')
+      expect(summaryWrapper).toHaveClass('overflow-y-auto')
     })
   })
 
