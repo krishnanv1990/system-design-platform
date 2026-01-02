@@ -1,0 +1,255 @@
+syntax = "proto3";
+
+package inverted_file_index;
+
+option go_package = "ivf/proto";
+option java_package = "com.sdp.ivf";
+option java_outer_classname = "IVFProto";
+
+// =============================================================================
+// Inverted File Index (IVF) Service
+// =============================================================================
+//
+// IVF is a clustering-based index for vector similarity search.
+// It works by:
+// 1. Training: Cluster vectors using k-means to create centroids
+// 2. Assignment: Assign each vector to its nearest centroid
+// 3. Search: Find nearest centroids, then search within those clusters
+//
+// Key parameters:
+// - n_clusters: Number of clusters/centroids (typically sqrt(n))
+// - n_probe: Number of clusters to search (trade-off accuracy vs speed)
+// =============================================================================
+
+// Vector representation
+message Vector {
+    string id = 1;
+    repeated float values = 2;
+    map<string, string> metadata = 3;
+}
+
+// Centroid representing a cluster
+message Centroid {
+    int32 cluster_id = 1;
+    repeated float values = 2;
+    int64 vector_count = 3;
+}
+
+// Search result with distance
+message SearchResult {
+    string id = 1;
+    float distance = 2;
+    int32 cluster_id = 3;
+    repeated float vector = 4;
+    map<string, string> metadata = 5;
+}
+
+// Index statistics
+message IndexStats {
+    int64 total_vectors = 1;
+    int32 n_clusters = 2;
+    int32 dimension = 3;
+    bool is_trained = 4;
+    float memory_usage_mb = 5;
+    repeated int64 cluster_sizes = 6;  // Number of vectors per cluster
+}
+
+// =============================================================================
+// IVF Index Service - Core Operations
+// =============================================================================
+
+service IVFService {
+    // Create a new IVF index with specified parameters
+    rpc CreateIndex(CreateIndexRequest) returns (CreateIndexResponse);
+
+    // Train the index on a set of vectors (creates centroids)
+    rpc Train(TrainRequest) returns (TrainResponse);
+
+    // Add a vector to the index (must be trained first)
+    rpc Add(AddRequest) returns (AddResponse);
+
+    // Add multiple vectors in batch
+    rpc BatchAdd(BatchAddRequest) returns (BatchAddResponse);
+
+    // Search for k nearest neighbors
+    rpc Search(SearchRequest) returns (SearchResponse);
+
+    // Remove a vector from the index
+    rpc Remove(RemoveRequest) returns (RemoveResponse);
+
+    // Get index statistics
+    rpc GetStats(GetStatsRequest) returns (GetStatsResponse);
+
+    // Get centroids (cluster centers)
+    rpc GetCentroids(GetCentroidsRequest) returns (GetCentroidsResponse);
+
+    // Get vectors in a specific cluster
+    rpc GetClusterVectors(GetClusterVectorsRequest) returns (GetClusterVectorsResponse);
+}
+
+// CreateIndex
+message CreateIndexRequest {
+    int32 dimension = 1;          // Vector dimension
+    int32 n_clusters = 2;         // Number of clusters (default: sqrt(n))
+    string distance_type = 3;     // "euclidean", "cosine", "inner_product"
+}
+
+message CreateIndexResponse {
+    bool success = 1;
+    string index_id = 2;
+    string error = 3;
+}
+
+// Train
+message TrainRequest {
+    repeated Vector training_vectors = 1;
+    int32 n_iterations = 2;       // K-means iterations (default: 25)
+    int32 n_init = 3;             // Number of k-means runs (default: 1)
+}
+
+message TrainResponse {
+    bool success = 1;
+    int32 n_clusters = 2;
+    float inertia = 3;            // Sum of squared distances to centroids
+    string error = 4;
+}
+
+// Add
+message AddRequest {
+    string id = 1;
+    repeated float vector = 2;
+    map<string, string> metadata = 3;
+}
+
+message AddResponse {
+    bool success = 1;
+    int32 assigned_cluster = 2;
+    string error = 3;
+}
+
+// BatchAdd
+message BatchAddRequest {
+    repeated Vector vectors = 1;
+}
+
+message BatchAddResponse {
+    bool success = 1;
+    int32 added_count = 2;
+    repeated string failed_ids = 3;
+    string error = 4;
+}
+
+// Search
+message SearchRequest {
+    repeated float query_vector = 1;
+    int32 k = 2;              // Number of neighbors to return
+    int32 n_probe = 3;        // Number of clusters to search (default: 1)
+    map<string, string> filter = 4;  // Optional metadata filter
+}
+
+message SearchResponse {
+    repeated SearchResult results = 1;
+    int64 search_time_us = 2;
+    repeated int32 clusters_searched = 3;
+}
+
+// Remove
+message RemoveRequest {
+    string id = 1;
+}
+
+message RemoveResponse {
+    bool success = 1;
+    bool found = 2;
+    string error = 3;
+}
+
+// GetStats
+message GetStatsRequest {}
+
+message GetStatsResponse {
+    IndexStats stats = 1;
+}
+
+// GetCentroids
+message GetCentroidsRequest {}
+
+message GetCentroidsResponse {
+    repeated Centroid centroids = 1;
+}
+
+// GetClusterVectors
+message GetClusterVectorsRequest {
+    int32 cluster_id = 1;
+    int32 limit = 2;          // Max vectors to return
+    int32 offset = 3;
+}
+
+message GetClusterVectorsResponse {
+    repeated Vector vectors = 1;
+    int32 total_in_cluster = 2;
+}
+
+// =============================================================================
+// Node Service - For distributed IVF
+// =============================================================================
+
+service NodeService {
+    // Synchronize centroids between nodes
+    rpc SyncCentroids(SyncCentroidsRequest) returns (SyncCentroidsResponse);
+
+    // Forward search to node responsible for specific clusters
+    rpc ForwardSearch(ForwardSearchRequest) returns (ForwardSearchResponse);
+
+    // Transfer vectors during rebalancing
+    rpc TransferVectors(TransferVectorsRequest) returns (TransferVectorsResponse);
+
+    // Health check
+    rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+}
+
+message SyncCentroidsRequest {
+    string source_node = 1;
+    repeated Centroid centroids = 2;
+    int64 timestamp = 3;
+}
+
+message SyncCentroidsResponse {
+    bool success = 1;
+    int32 centroids_synced = 2;
+}
+
+message ForwardSearchRequest {
+    repeated float query_vector = 1;
+    int32 k = 2;
+    repeated int32 target_clusters = 3;
+    string request_id = 4;
+}
+
+message ForwardSearchResponse {
+    repeated SearchResult results = 1;
+    string served_by = 2;
+}
+
+message TransferVectorsRequest {
+    int32 source_cluster = 1;
+    int32 target_cluster = 2;
+    repeated Vector vectors = 3;
+}
+
+message TransferVectorsResponse {
+    bool success = 1;
+    int32 transferred_count = 2;
+}
+
+message HeartbeatRequest {
+    string node_id = 1;
+    int64 timestamp = 2;
+    int64 vector_count = 3;
+    repeated int32 owned_clusters = 4;
+}
+
+message HeartbeatResponse {
+    bool acknowledged = 1;
+    int64 timestamp = 2;
+}

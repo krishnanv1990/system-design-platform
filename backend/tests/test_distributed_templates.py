@@ -274,10 +274,10 @@ class TestTemplateStructure:
 class TestProblemConfiguration:
     """Tests for problem type configuration."""
 
-    def test_all_16_problems_configured(self):
-        """Test that all 16 problems are configured."""
-        assert len(PROBLEM_TYPE_CONFIG) == 16, \
-            f"Expected 16 problem types, got {len(PROBLEM_TYPE_CONFIG)}"
+    def test_all_19_problems_configured(self):
+        """Test that all 19 problems are configured."""
+        assert len(PROBLEM_TYPE_CONFIG) == 19, \
+            f"Expected 19 problem types, got {len(PROBLEM_TYPE_CONFIG)}"
 
     def test_problem_ids_match_config(self):
         """Test that DEFAULT_PROBLEM_IDS match PROBLEM_TYPE_CONFIG."""

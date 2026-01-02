@@ -594,6 +594,24 @@ PROBLEM_TYPE_CONFIG = {
         "java_class": "BPlusTreeKVServer",
         "test_runner": "backend.services.distributed_tests_kv.BPlusTreeTestRunner",
     },
+    "hnsw": {
+        "directory": "hnsw",
+        "proto_file": "hnsw.proto",
+        "java_class": "HNSWServer",
+        "test_runner": "backend.services.distributed_tests_vector.HNSWTestRunner",
+    },
+    "inverted_file_index": {
+        "directory": "inverted_file_index",
+        "proto_file": "inverted_file_index.proto",
+        "java_class": "IVFServer",
+        "test_runner": "backend.services.distributed_tests_vector.IVFTestRunner",
+    },
+    "product_quantization": {
+        "directory": "product_quantization",
+        "proto_file": "product_quantization.proto",
+        "java_class": "PQServer",
+        "test_runner": "backend.services.distributed_tests_vector.PQTestRunner",
+    },
 }
 
 # Default problem IDs for filesystem-based problems
@@ -614,6 +632,9 @@ DEFAULT_PROBLEM_IDS = {
     14: "kv_store_log",
     15: "kv_store_lsm",
     16: "kv_store_btree",
+    17: "hnsw",
+    18: "inverted_file_index",
+    19: "product_quantization",
 }
 
 

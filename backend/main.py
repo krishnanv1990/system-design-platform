@@ -188,6 +188,36 @@ def seed_distributed_problems():
             "supported_languages": ["python", "go", "java", "cpp", "rust"],
             "tags": ["distributed-systems", "storage", "kv-store", "b-plus-tree"],
         },
+        {
+            "target_id": 17,
+            "title": "Implement HNSW Index",
+            "description": "Implement Hierarchical Navigable Small World (HNSW) graph for approximate nearest neighbor search. Build a multi-layer graph structure with efficient insertion, deletion, and k-NN search operations.",
+            "problem_type": ProblemType.DISTRIBUTED_CONSENSUS.value,
+            "difficulty": "hard",
+            "cluster_size": 3,
+            "supported_languages": ["python", "go", "java", "cpp", "rust"],
+            "tags": ["distributed-systems", "vector-search", "ann", "graph-algorithms"],
+        },
+        {
+            "target_id": 18,
+            "title": "Implement Inverted File Index (IVF)",
+            "description": "Implement an Inverted File Index for vector similarity search. Use k-means clustering to partition the vector space into cells, then search by probing the nearest clusters.",
+            "problem_type": ProblemType.DISTRIBUTED_CONSENSUS.value,
+            "difficulty": "hard",
+            "cluster_size": 3,
+            "supported_languages": ["python", "go", "java", "cpp", "rust"],
+            "tags": ["distributed-systems", "vector-search", "clustering", "indexing"],
+        },
+        {
+            "target_id": 19,
+            "title": "Implement Product Quantization (PQ)",
+            "description": "Implement Product Quantization for vector compression and efficient similarity search. Split vectors into subvectors, quantize each independently, and use lookup tables for fast distance computation.",
+            "problem_type": ProblemType.DISTRIBUTED_CONSENSUS.value,
+            "difficulty": "hard",
+            "cluster_size": 3,
+            "supported_languages": ["python", "go", "java", "cpp", "rust"],
+            "tags": ["distributed-systems", "vector-search", "compression", "quantization"],
+        },
     ]
 
     db = SessionLocal()

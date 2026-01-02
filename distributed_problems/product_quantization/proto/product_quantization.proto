@@ -1,0 +1,294 @@
+syntax = "proto3";
+
+package product_quantization;
+
+option go_package = "pq/proto";
+option java_package = "com.sdp.pq";
+option java_outer_classname = "PQProto";
+
+// =============================================================================
+// Product Quantization (PQ) Service
+// =============================================================================
+//
+// Product Quantization is a vector compression technique for efficient
+// similarity search. It works by:
+// 1. Splitting each vector into M subvectors
+// 2. Quantizing each subvector using a separate codebook
+// 3. Representing vectors as M code indices (huge compression)
+// 4. Using precomputed distance tables for fast search
+//
+// Key parameters:
+// - M: Number of subquantizers (subvectors)
+// - Ks: Number of centroids per subquantizer (typically 256)
+// - nbits: Bits per code (8 for Ks=256)
+// =============================================================================
+
+// Original vector representation
+message Vector {
+    string id = 1;
+    repeated float values = 2;
+    map<string, string> metadata = 3;
+}
+
+// Compressed (quantized) vector representation
+message PQCode {
+    string id = 1;
+    repeated uint32 codes = 2;    // M code indices
+    map<string, string> metadata = 3;
+}
+
+// Codebook for a single subquantizer
+message Codebook {
+    int32 subquantizer_id = 1;
+    int32 ks = 2;                 // Number of centroids
+    int32 dsub = 3;               // Subvector dimension
+    repeated float centroids = 4; // Flattened: ks * dsub values
+}
+
+// Search result with distance
+message SearchResult {
+    string id = 1;
+    float distance = 2;           // Approximate distance
+    float exact_distance = 3;     // Exact distance (if reranking enabled)
+    repeated uint32 codes = 4;
+    map<string, string> metadata = 5;
+}
+
+// Index statistics
+message IndexStats {
+    int64 total_vectors = 1;
+    int32 dimension = 2;
+    int32 m = 3;                  // Number of subquantizers
+    int32 ks = 4;                 // Centroids per subquantizer
+    int32 nbits = 5;              // Bits per code
+    bool is_trained = 6;
+    float compression_ratio = 7;  // Original size / compressed size
+    float memory_usage_mb = 8;
+}
+
+// =============================================================================
+// PQ Index Service - Core Operations
+// =============================================================================
+
+service PQService {
+    // Create a new PQ index with specified parameters
+    rpc CreateIndex(CreateIndexRequest) returns (CreateIndexResponse);
+
+    // Train the quantizer on a set of vectors
+    rpc Train(TrainRequest) returns (TrainResponse);
+
+    // Encode a vector to PQ codes
+    rpc Encode(EncodeRequest) returns (EncodeResponse);
+
+    // Decode PQ codes back to approximate vector
+    rpc Decode(DecodeRequest) returns (DecodeResponse);
+
+    // Add a vector to the index (encodes and stores)
+    rpc Add(AddRequest) returns (AddResponse);
+
+    // Add multiple vectors in batch
+    rpc BatchAdd(BatchAddRequest) returns (BatchAddResponse);
+
+    // Search for k nearest neighbors using asymmetric distance computation
+    rpc Search(SearchRequest) returns (SearchResponse);
+
+    // Remove a vector from the index
+    rpc Remove(RemoveRequest) returns (RemoveResponse);
+
+    // Get index statistics
+    rpc GetStats(GetStatsRequest) returns (GetStatsResponse);
+
+    // Get codebooks
+    rpc GetCodebooks(GetCodebooksRequest) returns (GetCodebooksResponse);
+
+    // Compute distance table for a query vector
+    rpc ComputeDistanceTable(ComputeDistanceTableRequest) returns (ComputeDistanceTableResponse);
+}
+
+// CreateIndex
+message CreateIndexRequest {
+    int32 dimension = 1;          // Vector dimension (must be divisible by M)
+    int32 m = 2;                  // Number of subquantizers (default: 8)
+    int32 ks = 3;                 // Centroids per subquantizer (default: 256)
+    string distance_type = 4;     // "euclidean", "inner_product"
+}
+
+message CreateIndexResponse {
+    bool success = 1;
+    string index_id = 2;
+    int32 dsub = 3;               // Computed subvector dimension (dimension / M)
+    string error = 4;
+}
+
+// Train
+message TrainRequest {
+    repeated Vector training_vectors = 1;
+    int32 n_iterations = 2;       // K-means iterations per subquantizer
+}
+
+message TrainResponse {
+    bool success = 1;
+    repeated float quantization_errors = 2;  // Per-subquantizer error
+    float total_error = 3;
+    string error = 4;
+}
+
+// Encode
+message EncodeRequest {
+    repeated float vector = 1;
+}
+
+message EncodeResponse {
+    bool success = 1;
+    repeated uint32 codes = 2;
+    string error = 3;
+}
+
+// Decode
+message DecodeRequest {
+    repeated uint32 codes = 1;
+}
+
+message DecodeResponse {
+    bool success = 1;
+    repeated float vector = 2;    // Reconstructed approximate vector
+    string error = 3;
+}
+
+// Add
+message AddRequest {
+    string id = 1;
+    repeated float vector = 2;
+    map<string, string> metadata = 3;
+}
+
+message AddResponse {
+    bool success = 1;
+    repeated uint32 codes = 2;    // Assigned codes
+    string error = 3;
+}
+
+// BatchAdd
+message BatchAddRequest {
+    repeated Vector vectors = 1;
+}
+
+message BatchAddResponse {
+    bool success = 1;
+    int32 added_count = 2;
+    repeated string failed_ids = 3;
+    string error = 4;
+}
+
+// Search
+message SearchRequest {
+    repeated float query_vector = 1;
+    int32 k = 2;                  // Number of neighbors to return
+    bool rerank = 3;              // Whether to rerank with exact distances
+    int32 rerank_k = 4;           // Number of candidates to rerank
+}
+
+message SearchResponse {
+    repeated SearchResult results = 1;
+    int64 search_time_us = 2;
+    bool used_reranking = 3;
+}
+
+// Remove
+message RemoveRequest {
+    string id = 1;
+}
+
+message RemoveResponse {
+    bool success = 1;
+    bool found = 2;
+    string error = 3;
+}
+
+// GetStats
+message GetStatsRequest {}
+
+message GetStatsResponse {
+    IndexStats stats = 1;
+}
+
+// GetCodebooks
+message GetCodebooksRequest {}
+
+message GetCodebooksResponse {
+    repeated Codebook codebooks = 1;
+}
+
+// ComputeDistanceTable
+message ComputeDistanceTableRequest {
+    repeated float query_vector = 1;
+}
+
+message ComputeDistanceTableResponse {
+    // Distance table: M * Ks values
+    // For subquantizer m and centroid k, distance is at index m * Ks + k
+    repeated float distance_table = 1;
+    int32 m = 2;
+    int32 ks = 3;
+}
+
+// =============================================================================
+// Node Service - For distributed PQ
+// =============================================================================
+
+service NodeService {
+    // Synchronize codebooks between nodes
+    rpc SyncCodebooks(SyncCodebooksRequest) returns (SyncCodebooksResponse);
+
+    // Forward search to other nodes
+    rpc ForwardSearch(ForwardSearchRequest) returns (ForwardSearchResponse);
+
+    // Transfer codes during rebalancing
+    rpc TransferCodes(TransferCodesRequest) returns (TransferCodesResponse);
+
+    // Health check
+    rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+}
+
+message SyncCodebooksRequest {
+    string source_node = 1;
+    repeated Codebook codebooks = 2;
+    int64 timestamp = 3;
+}
+
+message SyncCodebooksResponse {
+    bool success = 1;
+    int32 codebooks_synced = 2;
+}
+
+message ForwardSearchRequest {
+    repeated float query_vector = 1;
+    repeated float distance_table = 2;  // Pre-computed distance table
+    int32 k = 2;
+    string request_id = 4;
+}
+
+message ForwardSearchResponse {
+    repeated SearchResult results = 1;
+    string served_by = 2;
+}
+
+message TransferCodesRequest {
+    repeated PQCode codes = 1;
+}
+
+message TransferCodesResponse {
+    bool success = 1;
+    int32 transferred_count = 2;
+}
+
+message HeartbeatRequest {
+    string node_id = 1;
+    int64 timestamp = 2;
+    int64 vector_count = 3;
+}
+
+message HeartbeatResponse {
+    bool acknowledged = 1;
+    int64 timestamp = 2;
+}

@@ -1,0 +1,213 @@
+syntax = "proto3";
+
+package hnsw;
+
+option go_package = "hnsw/proto";
+option java_package = "com.sdp.hnsw";
+option java_outer_classname = "HNSWProto";
+
+// =============================================================================
+// HNSW (Hierarchical Navigable Small World) Index Service
+// =============================================================================
+//
+// HNSW is a graph-based algorithm for approximate nearest neighbor search.
+// It builds a hierarchical graph structure where:
+// - Each layer is a proximity graph
+// - Higher layers have fewer nodes (skip-list like structure)
+// - Search starts from top layer and descends to find neighbors
+//
+// Key parameters:
+// - M: Maximum number of connections per node
+// - ef_construction: Size of dynamic candidate list during construction
+// - ef_search: Size of dynamic candidate list during search
+// =============================================================================
+
+// Vector representation
+message Vector {
+    string id = 1;
+    repeated float values = 2;
+    map<string, string> metadata = 3;
+}
+
+// Search result with distance
+message SearchResult {
+    string id = 1;
+    float distance = 2;
+    repeated float vector = 3;
+    map<string, string> metadata = 4;
+}
+
+// Node in the HNSW graph
+message HNSWNode {
+    string id = 1;
+    repeated float vector = 2;
+    int32 level = 3;  // Maximum level this node appears in
+    repeated string neighbors = 4;  // Neighbor IDs at each level (flattened)
+}
+
+// Index statistics
+message IndexStats {
+    int64 total_vectors = 1;
+    int32 max_level = 2;
+    int32 dimension = 3;
+    int32 m = 4;  // Max connections per node
+    int32 ef_construction = 5;
+    float memory_usage_mb = 6;
+}
+
+// =============================================================================
+// HNSW Index Service - Core Operations
+// =============================================================================
+
+service HNSWService {
+    // Create a new HNSW index with specified parameters
+    rpc CreateIndex(CreateIndexRequest) returns (CreateIndexResponse);
+
+    // Insert a vector into the index
+    rpc Insert(InsertRequest) returns (InsertResponse);
+
+    // Insert multiple vectors in batch
+    rpc BatchInsert(BatchInsertRequest) returns (BatchInsertResponse);
+
+    // Search for k nearest neighbors
+    rpc Search(SearchRequest) returns (SearchResponse);
+
+    // Delete a vector from the index
+    rpc Delete(DeleteRequest) returns (DeleteResponse);
+
+    // Get index statistics
+    rpc GetStats(GetStatsRequest) returns (GetStatsResponse);
+
+    // Get a specific vector by ID
+    rpc GetVector(GetVectorRequest) returns (GetVectorResponse);
+}
+
+// CreateIndex
+message CreateIndexRequest {
+    int32 dimension = 1;          // Vector dimension
+    int32 m = 2;                  // Max connections per node (default: 16)
+    int32 ef_construction = 3;    // Construction search depth (default: 200)
+    string distance_type = 4;     // "euclidean", "cosine", "inner_product"
+}
+
+message CreateIndexResponse {
+    bool success = 1;
+    string index_id = 2;
+    string error = 3;
+}
+
+// Insert
+message InsertRequest {
+    string id = 1;
+    repeated float vector = 2;
+    map<string, string> metadata = 3;
+}
+
+message InsertResponse {
+    bool success = 1;
+    int32 level = 2;  // Level assigned to this node
+    string error = 3;
+}
+
+// BatchInsert
+message BatchInsertRequest {
+    repeated Vector vectors = 1;
+}
+
+message BatchInsertResponse {
+    bool success = 1;
+    int32 inserted_count = 2;
+    repeated string failed_ids = 3;
+    string error = 4;
+}
+
+// Search
+message SearchRequest {
+    repeated float query_vector = 1;
+    int32 k = 2;              // Number of neighbors to return
+    int32 ef_search = 3;      // Search depth (higher = more accurate but slower)
+    map<string, string> filter = 4;  // Optional metadata filter
+}
+
+message SearchResponse {
+    repeated SearchResult results = 1;
+    int64 search_time_us = 2;  // Search time in microseconds
+    int32 nodes_visited = 3;
+}
+
+// Delete
+message DeleteRequest {
+    string id = 1;
+}
+
+message DeleteResponse {
+    bool success = 1;
+    bool found = 2;
+    string error = 3;
+}
+
+// GetStats
+message GetStatsRequest {}
+
+message GetStatsResponse {
+    IndexStats stats = 1;
+}
+
+// GetVector
+message GetVectorRequest {
+    string id = 1;
+}
+
+message GetVectorResponse {
+    bool found = 1;
+    Vector vector = 2;
+}
+
+// =============================================================================
+// Node Service - For distributed HNSW
+// =============================================================================
+
+service NodeService {
+    // Synchronize graph structure between nodes
+    rpc SyncGraph(SyncGraphRequest) returns (SyncGraphResponse);
+
+    // Forward search to other nodes in distributed setting
+    rpc ForwardSearch(ForwardSearchRequest) returns (ForwardSearchResponse);
+
+    // Health check
+    rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+}
+
+message SyncGraphRequest {
+    string source_node = 1;
+    repeated HNSWNode nodes = 2;
+    int64 timestamp = 3;
+}
+
+message SyncGraphResponse {
+    bool success = 1;
+    int32 nodes_synced = 2;
+}
+
+message ForwardSearchRequest {
+    repeated float query_vector = 1;
+    int32 k = 2;
+    int32 ef_search = 3;
+    string request_id = 4;
+}
+
+message ForwardSearchResponse {
+    repeated SearchResult results = 1;
+    string served_by = 2;
+}
+
+message HeartbeatRequest {
+    string node_id = 1;
+    int64 timestamp = 2;
+    int64 vector_count = 3;
+}
+
+message HeartbeatResponse {
+    bool acknowledged = 1;
+    int64 timestamp = 2;
+}

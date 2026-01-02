@@ -1,0 +1,39 @@
+[package]
+name = "hnsw-server"
+version = "0.1.0"
+edition = "2021"
+description = "HNSW (Hierarchical Navigable Small World) vector search gRPC server template"
+authors = ["System Design Platform"]
+
+[[bin]]
+name = "hnsw-server"
+path = "src/main.rs"
+
+[dependencies]
+# gRPC and Protocol Buffers
+tonic = "0.10"
+prost = "0.12"
+
+# Async runtime
+tokio = { version = "1.34", features = ["full"] }
+tokio-stream = "0.1"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Logging and tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Utilities
+rand = "0.8"
+parking_lot = "0.12"
+dashmap = "5.5"
+
+[build-dependencies]
+tonic-build = "0.10"
+
+[profile.release]
+opt-level = 3
+lto = true
