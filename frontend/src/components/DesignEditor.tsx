@@ -222,10 +222,10 @@ export default function DesignEditor({
         </Button>
       </div>
 
-      {/* Main content - split view */}
-      <div className="flex">
-        {/* Canvas section */}
-        <div className={chatExpanded ? "w-1/2 border-r" : "w-full"}>
+      {/* Main content - stacked view (diagram above coach) */}
+      <div className="flex flex-col">
+        {/* Canvas section - always on top */}
+        <div className={chatExpanded ? "w-full border-b" : "w-full"}>
           <Tabs value={mode} onValueChange={handleModeChange} className="w-full">
             <div className="border-b bg-background px-2">
               <TabsList className="h-10 bg-transparent">
@@ -249,9 +249,9 @@ export default function DesignEditor({
           </Tabs>
         </div>
 
-        {/* Chat section */}
+        {/* Chat section - below canvas when expanded */}
         {chatExpanded && (
-          <div className="w-1/2 flex flex-col" style={{ height: "600px" }}>
+          <div className="w-full flex flex-col" style={{ height: "400px" }}>
             <DesignChat
               problemId={problemId}
               currentSchema={parsedSchema}
