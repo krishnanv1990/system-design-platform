@@ -655,6 +655,238 @@ def seed_system_design_problems():
             "difficulty": "hard",
             "tags": ["fintech", "real-time", "trading", "high-availability"],
         },
+        {
+            "target_id": 112,
+            "title": "Design a Location-Based Service like Google Maps",
+            "description": """Design a comprehensive mapping and navigation service like Google Maps, Apple Maps, or Waze.
+
+## Requirements
+
+### Functional Requirements
+- Display interactive maps with multiple zoom levels
+- Search for places, addresses, and points of interest
+- Calculate routes with turn-by-turn navigation
+- Real-time traffic updates and rerouting
+- Street View imagery
+- Offline maps support
+- User reviews and ratings for places
+
+### Non-Functional Requirements
+- Sub-second map tile loading
+- Route calculation <2 seconds for typical routes
+- Real-time traffic updates (<1 minute delay)
+- Global coverage with local accuracy
+- Handle billions of location queries per day
+- Battery-efficient mobile experience
+
+## Capacity Estimation
+- 1 billion monthly active users
+- 100 million navigation sessions per day
+- 10 billion location searches per month
+- 500TB of map tile data
+- 1 million traffic updates per minute
+
+## Key Components to Design
+- Map tile rendering and serving (vector/raster)
+- Geocoding and reverse geocoding service
+- Routing engine (Dijkstra/A* on road graph)
+- Real-time traffic data ingestion
+- Places database and search
+- ETA prediction system
+- Offline data packaging
+- Location data collection and processing""",
+            "difficulty": "hard",
+            "tags": ["geospatial", "real-time", "routing", "distributed-systems"],
+        },
+        {
+            "target_id": 113,
+            "title": "Design a Chatbot System like ChatGPT",
+            "description": """Design a large-scale conversational AI system like ChatGPT, Claude, or Gemini.
+
+## Requirements
+
+### Functional Requirements
+- Natural language conversation with context retention
+- Multi-turn dialogue with conversation history
+- Support for multiple languages
+- Code generation and execution
+- File upload and analysis
+- Web browsing capabilities
+- Custom instructions/system prompts
+- Conversation sharing and export
+
+### Non-Functional Requirements
+- Response latency <5 seconds for first token
+- Support streaming responses
+- Handle millions of concurrent users
+- Rate limiting and fair usage policies
+- Content moderation and safety filters
+- 99.9% availability
+- Cost-efficient inference
+
+## Capacity Estimation
+- 100 million weekly active users
+- 1 billion messages per day
+- Average conversation: 10 turns
+- Average input: 100 tokens, output: 500 tokens
+- Peak: 1 million concurrent sessions
+- Model size: 100B+ parameters
+
+## Key Components to Design
+- LLM inference infrastructure (GPU clusters)
+- Request routing and load balancing
+- Conversation context management
+- Token streaming service
+- Rate limiting and quota management
+- Content safety and moderation pipeline
+- Model versioning and A/B testing
+- User session and history storage
+- Prompt caching for efficiency""",
+            "difficulty": "hard",
+            "tags": ["ai-ml", "real-time", "streaming", "high-availability"],
+        },
+        {
+            "target_id": 114,
+            "title": "Design a Retrieval Augmented Generation (RAG) System",
+            "description": """Design a production RAG system that enables LLMs to answer questions using custom knowledge bases.
+
+## Requirements
+
+### Functional Requirements
+- Document ingestion (PDF, HTML, Markdown, etc.)
+- Automatic document chunking and processing
+- Vector embedding generation and storage
+- Semantic search across documents
+- Context-aware answer generation
+- Source citation and attribution
+- Knowledge base management (CRUD)
+- Multi-tenant support
+
+### Non-Functional Requirements
+- Query latency <3 seconds end-to-end
+- High retrieval accuracy (>90% relevance)
+- Support billions of document chunks
+- Real-time document updates
+- Scalable to thousands of knowledge bases
+- Cost-efficient embedding and inference
+
+## Capacity Estimation
+- 10,000 organizations, 1 million users
+- 100 million documents indexed
+- 1 billion document chunks
+- 10 million queries per day
+- Vector dimension: 1536 (OpenAI) or 768 (open source)
+- Average 5 chunks retrieved per query
+
+## Key Components to Design
+- Document ingestion pipeline
+- Chunking strategies (fixed, semantic, recursive)
+- Embedding service (batch and real-time)
+- Vector database (HNSW, IVF indexes)
+- Retrieval and reranking pipeline
+- Context assembly and prompt construction
+- LLM integration for generation
+- Caching layer (query, embedding, response)
+- Evaluation and monitoring system""",
+            "difficulty": "hard",
+            "tags": ["ai-ml", "search", "vector-database", "distributed-systems"],
+        },
+        {
+            "target_id": 115,
+            "title": "Design a Ride Sharing Service like Uber",
+            "description": """Design a ride-sharing platform that connects drivers and riders in real-time.
+
+## Requirements
+
+### Functional Requirements
+- User registration (riders and drivers)
+- Real-time ride matching
+- Dynamic pricing based on demand
+- Live driver/ride tracking
+- Multiple ride types (economy, premium, pool)
+- In-app payments and receipts
+- Driver/rider ratings and reviews
+- Trip history and receipts
+
+### Non-Functional Requirements
+- Matching latency <10 seconds
+- Location updates every 3-5 seconds
+- 99.99% availability in active markets
+- Handle millions of concurrent rides
+- Accurate ETA predictions
+- Fraud detection and prevention
+
+## Capacity Estimation
+- 100 million riders, 5 million drivers
+- 20 million rides per day
+- 1 million concurrent active rides at peak
+- 100 million location updates per minute
+- 50 million pricing calculations per day
+- 200 cities across 60 countries
+
+## Key Components to Design
+- Geospatial matching service
+- Supply/demand prediction and pricing
+- Real-time location tracking service
+- ETA and route optimization engine
+- Payment processing system
+- Driver dispatch algorithm
+- Surge pricing engine
+- Trip state machine
+- Notification service""",
+            "difficulty": "hard",
+            "tags": ["geospatial", "real-time", "matching", "distributed-systems"],
+        },
+        {
+            "target_id": 116,
+            "title": "Design a Social Network like Facebook",
+            "description": """Design a large-scale social networking platform with billions of users.
+
+## Requirements
+
+### Functional Requirements
+- User profiles and friend connections
+- News feed with personalized content
+- Post creation (text, images, videos, links)
+- Comments, likes, and reactions
+- Friend suggestions and people search
+- Groups and pages
+- Messenger/chat integration
+- Notifications (push, email, in-app)
+- Privacy controls and settings
+
+### Non-Functional Requirements
+- News feed generation <500ms
+- Support billions of users globally
+- Handle millions of posts per minute
+- Real-time notifications
+- 99.99% availability
+- Strong privacy and data protection
+- Content moderation at scale
+
+## Capacity Estimation
+- 3 billion monthly active users
+- 2 billion daily active users
+- 1 billion posts per day
+- 10 billion likes per day
+- 500 million friend connections per day
+- 100PB+ of user-generated content
+- Average 300 friends per user
+
+## Key Components to Design
+- Social graph storage and querying
+- News feed generation (push vs pull)
+- Content storage and CDN
+- Post ranking algorithm
+- Real-time notification system
+- Search service (people, posts, pages)
+- Privacy and access control layer
+- Content moderation pipeline
+- Ads targeting and delivery
+- Analytics and insights platform""",
+            "difficulty": "hard",
+            "tags": ["social-network", "graph", "feed-ranking", "distributed-systems"],
+        },
     ]
 
     db = SessionLocal()

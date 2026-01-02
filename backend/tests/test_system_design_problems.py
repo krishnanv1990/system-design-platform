@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 # Test Constants
 # ============================================================================
 
-SYSTEM_DESIGN_PROBLEM_IDS = [101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111]
+SYSTEM_DESIGN_PROBLEM_IDS = [101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116]
 
 EXPECTED_PROBLEMS = {
     101: {
@@ -77,6 +77,31 @@ EXPECTED_PROBLEMS = {
         "difficulty": "hard",
         "tags": ["fintech", "real-time", "trading", "high-availability"],
     },
+    112: {
+        "title": "Design a Location-Based Service like Google Maps",
+        "difficulty": "hard",
+        "tags": ["geospatial", "real-time", "routing", "distributed-systems"],
+    },
+    113: {
+        "title": "Design a Chatbot System like ChatGPT",
+        "difficulty": "hard",
+        "tags": ["ai-ml", "real-time", "streaming", "high-availability"],
+    },
+    114: {
+        "title": "Design a Retrieval Augmented Generation (RAG) System",
+        "difficulty": "hard",
+        "tags": ["ai-ml", "search", "vector-database", "distributed-systems"],
+    },
+    115: {
+        "title": "Design a Ride Sharing Service like Uber",
+        "difficulty": "hard",
+        "tags": ["geospatial", "real-time", "matching", "distributed-systems"],
+    },
+    116: {
+        "title": "Design a Social Network like Facebook",
+        "difficulty": "hard",
+        "tags": ["social-network", "graph", "feed-ranking", "distributed-systems"],
+    },
 }
 
 
@@ -133,14 +158,14 @@ def system_design_problems():
 class TestSystemDesignProblemConfiguration:
     """Tests for system design problem configuration."""
 
-    def test_all_11_problems_defined(self):
-        """Test that all 11 system design problems are defined."""
-        assert len(EXPECTED_PROBLEMS) == 11, \
-            f"Expected 11 system design problems, got {len(EXPECTED_PROBLEMS)}"
+    def test_all_16_problems_defined(self):
+        """Test that all 16 system design problems are defined."""
+        assert len(EXPECTED_PROBLEMS) == 16, \
+            f"Expected 16 system design problems, got {len(EXPECTED_PROBLEMS)}"
 
     def test_problem_ids_are_sequential(self):
-        """Test that problem IDs are sequential from 101-111."""
-        expected_ids = list(range(101, 112))
+        """Test that problem IDs are sequential from 101-116."""
+        expected_ids = list(range(101, 117))
         actual_ids = sorted(EXPECTED_PROBLEMS.keys())
         assert actual_ids == expected_ids, \
             f"Expected IDs {expected_ids}, got {actual_ids}"
@@ -223,13 +248,13 @@ class TestSystemDesignProblemContent:
         assert "## Requirements" in main_content, \
             "No problem with Requirements section found"
 
-    @pytest.mark.parametrize("problem_id", [106, 107, 108, 109, 110, 111])
+    @pytest.mark.parametrize("problem_id", [106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116])
     def test_new_problems_have_capacity_estimation(self, main_content, problem_id):
         """Test that new problems have capacity estimation."""
         assert "## Capacity Estimation" in main_content, \
             "New problems should have Capacity Estimation section"
 
-    @pytest.mark.parametrize("problem_id", [106, 107, 108, 109, 110, 111])
+    @pytest.mark.parametrize("problem_id", [106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116])
     def test_new_problems_have_key_components(self, main_content, problem_id):
         """Test that new problems have key components section."""
         assert "## Key Components to Design" in main_content, \
@@ -241,7 +266,7 @@ class TestSystemDesignProblemContent:
 # ============================================================================
 
 class TestNewSystemDesignProblems:
-    """Tests specific to the 6 new system design problems."""
+    """Tests specific to the 11 new system design problems (IDs 106-116)."""
 
     @pytest.fixture
     def main_content(self):
@@ -288,6 +313,41 @@ class TestNewSystemDesignProblems:
         assert "Stock Trading Application like Robinhood" in main_content
         assert "Order matching" in main_content
         assert "Real-time stock price" in main_content
+
+    def test_google_maps_problem_exists(self, main_content):
+        """Test that Google Maps location service problem exists."""
+        assert "Location-Based Service like Google Maps" in main_content
+        assert "Geocoding and reverse geocoding" in main_content
+        assert "Routing engine" in main_content
+        assert "Map tile rendering" in main_content
+
+    def test_chatgpt_problem_exists(self, main_content):
+        """Test that ChatGPT chatbot system problem exists."""
+        assert "Chatbot System like ChatGPT" in main_content
+        assert "LLM inference infrastructure" in main_content
+        assert "Token streaming service" in main_content
+        assert "Content safety and moderation" in main_content
+
+    def test_rag_problem_exists(self, main_content):
+        """Test that RAG system problem exists."""
+        assert "Retrieval Augmented Generation (RAG) System" in main_content
+        assert "Document ingestion pipeline" in main_content
+        assert "Vector database" in main_content
+        assert "Embedding service" in main_content
+
+    def test_uber_problem_exists(self, main_content):
+        """Test that Uber ride sharing problem exists."""
+        assert "Ride Sharing Service like Uber" in main_content
+        assert "Geospatial matching service" in main_content
+        assert "Dynamic pricing" in main_content
+        assert "Driver dispatch algorithm" in main_content
+
+    def test_facebook_problem_exists(self, main_content):
+        """Test that Facebook social network problem exists."""
+        assert "Social Network like Facebook" in main_content
+        assert "Social graph storage" in main_content
+        assert "News feed generation" in main_content
+        assert "Post ranking algorithm" in main_content
 
 
 # ============================================================================
