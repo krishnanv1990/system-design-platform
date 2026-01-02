@@ -373,24 +373,24 @@ export default function DistributedProblemDetail() {
       </Card>
 
       {/* Main content - vertical layout for full-width editor */}
-      <div className="space-y-6">
-        {/* Top: gRPC Proto, Hints, and Test Scenarios in a responsive grid */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {/* gRPC Proto */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm flex items-center gap-2">
-                <FileCode className="h-4 w-4" />
-                gRPC Service Definition
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <pre className="bg-muted p-4 rounded-md overflow-auto text-sm max-h-[200px]">
-                <code>{problem.grpc_proto}</code>
-              </pre>
-            </CardContent>
-          </Card>
+      <div className="space-y-4">
+        {/* gRPC Service Definition - full width on its own row */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <FileCode className="h-4 w-4" />
+              gRPC Service Definition
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <pre className="bg-muted p-4 rounded-md overflow-auto text-sm max-h-[200px]">
+              <code>{problem.grpc_proto}</code>
+            </pre>
+          </CardContent>
+        </Card>
 
+        {/* Hints and Test Scenarios side by side */}
+        <div className="grid gap-4 md:grid-cols-2">
           {/* Hints */}
           <Card>
             <CardHeader className="pb-3">
@@ -418,7 +418,7 @@ export default function DistributedProblemDetail() {
           </Card>
 
           {/* Test scenarios */}
-          <Card className="md:col-span-2 lg:col-span-1">
+          <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm">Test Scenarios</CardTitle>
             </CardHeader>
