@@ -414,6 +414,247 @@ def seed_system_design_problems():
             "difficulty": "hard",
             "tags": ["search", "data-structures", "real-time"],
         },
+        {
+            "target_id": 106,
+            "title": "Design a File Sharing Service like Dropbox",
+            "description": """Design a cloud file storage and synchronization service like Dropbox, Google Drive, or OneDrive.
+
+## Requirements
+
+### Functional Requirements
+- Users can upload, download, and delete files
+- Automatic synchronization across multiple devices
+- File and folder sharing with other users (view/edit permissions)
+- File versioning and revision history
+- Support for large files (up to 50GB)
+- Offline access and conflict resolution
+
+### Non-Functional Requirements
+- High availability (99.99% uptime)
+- Low latency for file operations
+- Strong consistency for metadata, eventual consistency for file content
+- Secure storage with encryption at rest and in transit
+- Scalable to billions of files
+
+## Capacity Estimation
+- 500 million users, 100 million DAU
+- Average 200 files per user, average file size 1MB
+- 2:1 read to write ratio
+- Peak upload: 1 million files per minute
+
+## Key Components to Design
+- Block storage and deduplication
+- Sync service and conflict resolution
+- Metadata database
+- Notification service for real-time updates
+- CDN for downloads""",
+            "difficulty": "hard",
+            "tags": ["distributed-systems", "storage", "sync", "cdn"],
+        },
+        {
+            "target_id": 107,
+            "title": "Design a Video Streaming Service like YouTube",
+            "description": """Design a video sharing and streaming platform like YouTube or Vimeo.
+
+## Requirements
+
+### Functional Requirements
+- Upload videos (support various formats and sizes)
+- Stream videos with adaptive bitrate
+- Search and discover videos
+- Like, comment, and subscribe functionality
+- Video recommendations
+- Live streaming support
+
+### Non-Functional Requirements
+- Support millions of concurrent viewers
+- Low startup latency (<2 seconds)
+- Smooth playback without buffering
+- Global availability with low latency
+- Support multiple video qualities (144p to 4K)
+
+## Capacity Estimation
+- 2 billion monthly active users
+- 500 hours of video uploaded per minute
+- Average video length: 10 minutes
+- 80% of traffic is video streaming
+- Peak concurrent viewers: 100 million
+
+## Key Components to Design
+- Video upload and processing pipeline
+- Transcoding service (multiple resolutions/codecs)
+- Content Delivery Network (CDN)
+- Recommendation engine
+- Comment and engagement system
+- Analytics and monetization""",
+            "difficulty": "hard",
+            "tags": ["streaming", "cdn", "video-processing", "distributed-systems"],
+        },
+        {
+            "target_id": 108,
+            "title": "Design a Chat Application like WhatsApp",
+            "description": """Design a real-time messaging application like WhatsApp, Telegram, or Signal.
+
+## Requirements
+
+### Functional Requirements
+- One-on-one messaging
+- Group chats (up to 1000 members)
+- Media sharing (images, videos, documents)
+- Message delivery and read receipts
+- Online/offline status indicators
+- End-to-end encryption
+- Message search and history
+
+### Non-Functional Requirements
+- Real-time message delivery (<100ms latency)
+- Message ordering guarantee
+- Offline message support
+- High availability (99.99% uptime)
+- Support for billions of messages per day
+
+## Capacity Estimation
+- 2 billion users, 500 million DAU
+- 100 billion messages per day
+- Average message size: 100 bytes
+- 20% of messages include media
+- Peak: 50 million messages per second
+
+## Key Components to Design
+- Message queue and delivery system
+- WebSocket connection management
+- Message storage and retrieval
+- Presence service (online status)
+- Push notification service
+- End-to-end encryption implementation
+- Group messaging architecture""",
+            "difficulty": "hard",
+            "tags": ["real-time", "messaging", "websocket", "encryption"],
+        },
+        {
+            "target_id": 109,
+            "title": "Design a Realtime Gaming Leaderboard",
+            "description": """Design a real-time leaderboard system for a massively multiplayer online game.
+
+## Requirements
+
+### Functional Requirements
+- Real-time score updates and ranking
+- Global leaderboard (top N players)
+- Regional/country-specific leaderboards
+- Friends leaderboard
+- Historical leaderboards (daily, weekly, monthly, all-time)
+- Player rank lookup (find my position)
+- Anti-cheat score validation
+
+### Non-Functional Requirements
+- Sub-second leaderboard updates
+- Handle millions of concurrent players
+- Accurate ranking even under high concurrency
+- Low latency for rank queries (<50ms)
+- Support for multiple games/modes
+
+## Capacity Estimation
+- 100 million active players
+- 1 million concurrent players at peak
+- 10,000 score updates per second
+- Leaderboard size: top 1 million players
+- Query volume: 100,000 rank lookups per second
+
+## Key Components to Design
+- Real-time ranking algorithm
+- Score ingestion and validation pipeline
+- Caching layer for top ranks
+- Sharding strategy for global scale
+- Historical data archival
+- Anti-cheat detection system""",
+            "difficulty": "medium",
+            "tags": ["real-time", "ranking", "gaming", "caching"],
+        },
+        {
+            "target_id": 110,
+            "title": "Design a Distributed Web Crawler",
+            "description": """Design a web crawler that can crawl the entire web efficiently.
+
+## Requirements
+
+### Functional Requirements
+- Discover and download web pages
+- Extract and follow links
+- Handle various content types (HTML, PDF, images)
+- Respect robots.txt and crawl-delay
+- Detect and handle duplicate content
+- Support incremental/continuous crawling
+
+### Non-Functional Requirements
+- Crawl billions of pages
+- Politeness (don't overload websites)
+- Freshness (re-crawl updated content)
+- Fault tolerance and resumability
+- Scalable to thousands of crawlers
+
+## Capacity Estimation
+- 15 billion web pages to crawl
+- Target: 1 billion pages per month
+- Average page size: 100KB
+- 1,000 crawler instances
+- Storage: 1PB+ for raw content
+
+## Key Components to Design
+- URL Frontier (priority queue)
+- DNS resolver with caching
+- Content fetcher (HTTP client pool)
+- Content parser and link extractor
+- Duplicate detection (URL and content)
+- Distributed coordination
+- Storage system for crawled content
+- Monitoring and analytics""",
+            "difficulty": "hard",
+            "tags": ["distributed-systems", "crawling", "big-data", "scheduling"],
+        },
+        {
+            "target_id": 111,
+            "title": "Design a Stock Trading Application like Robinhood",
+            "description": """Design a stock trading platform that enables users to buy and sell stocks in real-time.
+
+## Requirements
+
+### Functional Requirements
+- User account and portfolio management
+- Real-time stock price updates
+- Buy and sell orders (market, limit, stop-loss)
+- Order matching and execution
+- Transaction history and statements
+- Watchlists and price alerts
+- Support for stocks, ETFs, options, and crypto
+
+### Non-Functional Requirements
+- Order execution latency <10ms
+- Real-time price updates (<100ms delay)
+- High availability (99.999% for trading hours)
+- Strong consistency for transactions
+- Regulatory compliance (SEC, FINRA)
+- Fraud detection and prevention
+
+## Capacity Estimation
+- 20 million users, 5 million DAU
+- 10 million trades per day
+- 100,000 concurrent active traders
+- 10,000 price updates per second
+- Peak trading: 1 million orders per hour
+
+## Key Components to Design
+- Order management system
+- Order matching engine
+- Real-time price feed ingestion
+- Portfolio and position tracking
+- Settlement and clearing
+- Market data distribution
+- Risk management system
+- Regulatory reporting""",
+            "difficulty": "hard",
+            "tags": ["fintech", "real-time", "trading", "high-availability"],
+        },
     ]
 
     db = SessionLocal()
