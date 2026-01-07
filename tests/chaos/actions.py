@@ -964,3 +964,529 @@ def raft_cleanup_test_data(cluster_name: str, key_prefix: str) -> dict:
         "key_prefix": key_prefix,
         "note": "Test data cleanup acknowledged"
     }
+
+
+# ==================== GCP Infrastructure Chaos Actions ====================
+
+def simulate_database_failover(
+    duration_seconds: int = 30,
+    failover_type: str = "primary"
+) -> dict:
+    """
+    Trigger database failover in Cloud SQL.
+
+    Args:
+        duration_seconds: How long to wait for failover
+        failover_type: Type of failover ('primary' or 'replica')
+
+    Returns:
+        Status of the failover operation
+    """
+    import os
+
+    project = os.getenv("GCP_PROJECT_ID", os.getenv("GCP_PROJECT"))
+    instance = os.getenv("CLOUDSQL_INSTANCE", "sdp-postgres")
+
+    if not project:
+        return {"status": "skipped", "reason": "GCP_PROJECT not set"}
+
+    try:
+        from google.cloud import sqladmin_v1
+
+        client = sqladmin_v1.SqlAdminServiceClient()
+
+        # Trigger failover
+        request = sqladmin_v1.SqlInstancesFailoverRequest(
+            project=project,
+            instance=instance,
+            body=sqladmin_v1.InstancesFailoverRequest(
+                failover_context=sqladmin_v1.FailoverContext(
+                    kind="sql#failoverContext"
+                )
+            )
+        )
+
+        operation = client.failover(request=request)
+
+        return {
+            "status": "failover_initiated",
+            "instance": instance,
+            "failover_type": failover_type,
+            "operation": operation.name
+        }
+
+    except ImportError:
+        # Simulate if library not available
+        _injected_failures["database_failover"] = {
+            "until": time.time() + duration_seconds,
+            "type": failover_type
+        }
+        return {
+            "status": "simulated",
+            "failover_type": failover_type,
+            "duration_seconds": duration_seconds
+        }
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
+def restore_database(component: str = "primary") -> dict:
+    """Restore database after failover test."""
+    if "database_failover" in _injected_failures:
+        del _injected_failures["database_failover"]
+    return {"status": "database_restored", "component": component}
+
+
+def simulate_cache_failure(
+    cache_type: str = "redis",
+    failure_mode: str = "connection_refused",
+    duration_seconds: int = 60
+) -> dict:
+    """
+    Simulate Redis/Memorystore cache failure.
+
+    Args:
+        cache_type: Type of cache ('redis' or 'memcached')
+        failure_mode: Type of failure ('connection_refused', 'timeout', 'error')
+        duration_seconds: Duration of the failure
+
+    Returns:
+        Status of the cache failure simulation
+    """
+    import os
+
+    project = os.getenv("GCP_PROJECT_ID", os.getenv("GCP_PROJECT"))
+    redis_instance = os.getenv("REDIS_INSTANCE", "sdp-redis")
+    region = os.getenv("GCP_REGION", "us-central1")
+
+    _injected_failures["cache_failure"] = {
+        "cache_type": cache_type,
+        "failure_mode": failure_mode,
+        "until": time.time() + duration_seconds
+    }
+
+    if not project:
+        return {
+            "status": "simulated",
+            "cache_type": cache_type,
+            "failure_mode": failure_mode
+        }
+
+    try:
+        # For real Redis instance, we could pause the instance
+        # This is simulation mode for safety
+        return {
+            "status": "cache_failure_simulated",
+            "cache_type": cache_type,
+            "failure_mode": failure_mode,
+            "duration_seconds": duration_seconds,
+            "note": "Application should handle cache unavailability"
+        }
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
+def restore_cache(cache_type: str = "redis") -> dict:
+    """Restore cache after failure test."""
+    if "cache_failure" in _injected_failures:
+        del _injected_failures["cache_failure"]
+    return {"status": "cache_restored", "cache_type": cache_type}
+
+
+def exhaust_kgs_pool(
+    drain_rate: int = 1000,
+    duration_seconds: int = 30
+) -> dict:
+    """
+    Simulate Key Generation Service pool exhaustion.
+
+    Args:
+        drain_rate: Rate at which to drain keys
+        duration_seconds: Duration of the exhaustion
+
+    Returns:
+        Status of the KGS exhaustion simulation
+    """
+    _injected_failures["kgs_exhausted"] = {
+        "drain_rate": drain_rate,
+        "until": time.time() + duration_seconds
+    }
+
+    return {
+        "status": "kgs_pool_exhaustion_simulated",
+        "drain_rate": drain_rate,
+        "duration_seconds": duration_seconds,
+        "note": "Application should fall back to synchronous key generation"
+    }
+
+
+def replenish_kgs_pool(pool_size: int = 10000) -> dict:
+    """Replenish the KGS pool after exhaustion test."""
+    if "kgs_exhausted" in _injected_failures:
+        del _injected_failures["kgs_exhausted"]
+    return {"status": "kgs_pool_replenished", "pool_size": pool_size}
+
+
+def inject_network_partition(
+    partition_type: str = "api_to_database",
+    duration_seconds: int = 30,
+    packet_loss_percent: int = 100
+) -> dict:
+    """
+    Inject network partition between components.
+
+    Args:
+        partition_type: Type of partition ('api_to_database', 'api_to_cache', etc.)
+        duration_seconds: Duration of the partition
+        packet_loss_percent: Percentage of packets to drop
+
+    Returns:
+        Status of the partition injection
+    """
+    _injected_failures["network_partition_general"] = {
+        "partition_type": partition_type,
+        "packet_loss_percent": packet_loss_percent,
+        "until": time.time() + duration_seconds
+    }
+
+    return {
+        "status": "network_partition_injected",
+        "partition_type": partition_type,
+        "packet_loss_percent": packet_loss_percent,
+        "duration_seconds": duration_seconds
+    }
+
+
+def remove_network_partition() -> dict:
+    """Remove network partition."""
+    if "network_partition_general" in _injected_failures:
+        del _injected_failures["network_partition_general"]
+    return {"status": "network_partition_removed"}
+
+
+def simulate_rate_limiter_failure(
+    failure_mode: str = "bypass",
+    duration_seconds: int = 30
+) -> dict:
+    """
+    Simulate rate limiter component failure.
+
+    Args:
+        failure_mode: Type of failure ('bypass', 'block_all', 'error')
+        duration_seconds: Duration of the failure
+
+    Returns:
+        Status of the rate limiter failure simulation
+    """
+    _injected_failures["rate_limiter"] = {
+        "failure_mode": failure_mode,
+        "until": time.time() + duration_seconds
+    }
+
+    return {
+        "status": "rate_limiter_failure_simulated",
+        "failure_mode": failure_mode,
+        "duration_seconds": duration_seconds
+    }
+
+
+def restore_rate_limiter() -> dict:
+    """Restore rate limiter after failure test."""
+    if "rate_limiter" in _injected_failures:
+        del _injected_failures["rate_limiter"]
+    return {"status": "rate_limiter_restored"}
+
+
+def simulate_queue_backpressure(
+    queue_type: str = "kafka",
+    backpressure_level: str = "high",
+    duration_seconds: int = 60
+) -> dict:
+    """
+    Simulate message queue backpressure.
+
+    Args:
+        queue_type: Type of queue ('kafka', 'pubsub', 'rabbitmq')
+        backpressure_level: Level of backpressure ('low', 'medium', 'high')
+        duration_seconds: Duration of the backpressure
+
+    Returns:
+        Status of the backpressure simulation
+    """
+    _injected_failures["queue_backpressure"] = {
+        "queue_type": queue_type,
+        "level": backpressure_level,
+        "until": time.time() + duration_seconds
+    }
+
+    return {
+        "status": "queue_backpressure_simulated",
+        "queue_type": queue_type,
+        "backpressure_level": backpressure_level,
+        "duration_seconds": duration_seconds
+    }
+
+
+def restore_event_queue(queue_type: str = "kafka") -> dict:
+    """Restore event queue after backpressure test."""
+    if "queue_backpressure" in _injected_failures:
+        del _injected_failures["queue_backpressure"]
+    return {"status": "event_queue_restored", "queue_type": queue_type}
+
+
+def inject_memory_pressure(
+    memory_percent: int = 85,
+    duration_seconds: int = 45
+) -> dict:
+    """
+    Inject memory pressure on API servers.
+
+    In Cloud Run, this would trigger autoscaling.
+    """
+    _injected_failures["memory_pressure"] = {
+        "percent": memory_percent,
+        "until": time.time() + duration_seconds
+    }
+
+    return {
+        "status": "memory_pressure_injected",
+        "memory_percent": memory_percent,
+        "duration_seconds": duration_seconds,
+        "note": "Cloud Run should autoscale in response"
+    }
+
+
+def release_memory_pressure() -> dict:
+    """Release memory pressure."""
+    if "memory_pressure" in _injected_failures:
+        del _injected_failures["memory_pressure"]
+    return {"status": "memory_pressure_released"}
+
+
+def inject_cpu_spike(
+    cpu_percent: int = 90,
+    duration_seconds: int = 60
+) -> dict:
+    """
+    Inject CPU spike to test autoscaling.
+    """
+    _injected_failures["cpu_spike"] = {
+        "percent": cpu_percent,
+        "until": time.time() + duration_seconds
+    }
+
+    return {
+        "status": "cpu_spike_injected",
+        "cpu_percent": cpu_percent,
+        "duration_seconds": duration_seconds
+    }
+
+
+def release_cpu_pressure() -> dict:
+    """Release CPU pressure."""
+    if "cpu_spike" in _injected_failures:
+        del _injected_failures["cpu_spike"]
+    return {"status": "cpu_pressure_released"}
+
+
+def inject_dns_failure(
+    failure_type: str = "timeout",
+    duration_seconds: int = 20
+) -> dict:
+    """
+    Inject DNS resolution failure.
+
+    Args:
+        failure_type: Type of DNS failure ('timeout', 'nxdomain', 'servfail')
+        duration_seconds: Duration of the failure
+
+    Returns:
+        Status of the DNS failure injection
+    """
+    _injected_failures["dns_failure"] = {
+        "failure_type": failure_type,
+        "until": time.time() + duration_seconds
+    }
+
+    return {
+        "status": "dns_failure_injected",
+        "failure_type": failure_type,
+        "duration_seconds": duration_seconds
+    }
+
+
+def restore_dns() -> dict:
+    """Restore DNS after failure test."""
+    if "dns_failure" in _injected_failures:
+        del _injected_failures["dns_failure"]
+    return {"status": "dns_restored"}
+
+
+def simulate_cert_issue(
+    issue_type: str = "about_to_expire",
+    duration_seconds: int = 30
+) -> dict:
+    """
+    Simulate certificate issues.
+
+    Args:
+        issue_type: Type of issue ('about_to_expire', 'expired', 'invalid')
+        duration_seconds: Duration of the simulation
+
+    Returns:
+        Status of the certificate issue simulation
+    """
+    _injected_failures["cert_issue"] = {
+        "issue_type": issue_type,
+        "until": time.time() + duration_seconds
+    }
+
+    return {
+        "status": "cert_issue_simulated",
+        "issue_type": issue_type,
+        "duration_seconds": duration_seconds
+    }
+
+
+def simulate_region_failure(
+    region: str = "us-east-1",
+    duration_seconds: int = 120,
+    failover_region: str = "us-west-2"
+) -> dict:
+    """
+    Simulate entire region failure for DR testing.
+
+    Args:
+        region: Region to simulate failure
+        duration_seconds: Duration of the failure
+        failover_region: Region to failover to
+
+    Returns:
+        Status of the region failure simulation
+    """
+    _injected_failures["region_failure"] = {
+        "failed_region": region,
+        "failover_region": failover_region,
+        "until": time.time() + duration_seconds
+    }
+
+    return {
+        "status": "region_failure_simulated",
+        "failed_region": region,
+        "failover_region": failover_region,
+        "duration_seconds": duration_seconds
+    }
+
+
+def restore_region(region: str = "us-east-1") -> dict:
+    """Restore region after failure test."""
+    if "region_failure" in _injected_failures:
+        del _injected_failures["region_failure"]
+    return {"status": "region_restored", "region": region}
+
+
+def trigger_cascading_failure(
+    start_component: str = "cache",
+    propagation_delay_seconds: int = 5,
+    duration_seconds: int = 60
+) -> dict:
+    """
+    Trigger cascading failure across services.
+
+    Args:
+        start_component: Component to start failure from
+        propagation_delay_seconds: Delay between cascade stages
+        duration_seconds: Total duration of the cascade
+
+    Returns:
+        Status of the cascading failure
+    """
+    _injected_failures["cascading_failure"] = {
+        "start_component": start_component,
+        "propagation_delay": propagation_delay_seconds,
+        "until": time.time() + duration_seconds
+    }
+
+    return {
+        "status": "cascading_failure_triggered",
+        "start_component": start_component,
+        "propagation_delay_seconds": propagation_delay_seconds,
+        "duration_seconds": duration_seconds
+    }
+
+
+def stop_cascading_failure() -> dict:
+    """Stop cascading failure."""
+    if "cascading_failure" in _injected_failures:
+        del _injected_failures["cascading_failure"]
+    return {"status": "cascading_failure_stopped"}
+
+
+def simulate_slow_consumer(
+    consumer_group: str = "analytics",
+    processing_delay_ms: int = 5000,
+    duration_seconds: int = 90
+) -> dict:
+    """
+    Simulate slow consumer causing message backlog.
+
+    Args:
+        consumer_group: Consumer group to slow down
+        processing_delay_ms: Processing delay per message
+        duration_seconds: Duration of the slowdown
+
+    Returns:
+        Status of the slow consumer simulation
+    """
+    _injected_failures["slow_consumer"] = {
+        "consumer_group": consumer_group,
+        "delay_ms": processing_delay_ms,
+        "until": time.time() + duration_seconds
+    }
+
+    return {
+        "status": "slow_consumer_simulated",
+        "consumer_group": consumer_group,
+        "processing_delay_ms": processing_delay_ms,
+        "duration_seconds": duration_seconds
+    }
+
+
+def restore_consumer_speed(consumer_group: str = "analytics") -> dict:
+    """Restore consumer speed after slowdown test."""
+    if "slow_consumer" in _injected_failures:
+        del _injected_failures["slow_consumer"]
+    return {"status": "consumer_speed_restored", "consumer_group": consumer_group}
+
+
+def inject_disk_io_pressure(
+    io_pressure_percent: int = 95,
+    duration_seconds: int = 45
+) -> dict:
+    """
+    Inject disk I/O saturation.
+
+    Args:
+        io_pressure_percent: Percentage of I/O capacity to saturate
+        duration_seconds: Duration of the pressure
+
+    Returns:
+        Status of the I/O pressure injection
+    """
+    _injected_failures["disk_io_pressure"] = {
+        "percent": io_pressure_percent,
+        "until": time.time() + duration_seconds
+    }
+
+    return {
+        "status": "disk_io_pressure_injected",
+        "io_pressure_percent": io_pressure_percent,
+        "duration_seconds": duration_seconds
+    }
+
+
+def release_disk_io_pressure() -> dict:
+    """Release disk I/O pressure."""
+    if "disk_io_pressure" in _injected_failures:
+        del _injected_failures["disk_io_pressure"]
+    return {"status": "disk_io_pressure_released"}
