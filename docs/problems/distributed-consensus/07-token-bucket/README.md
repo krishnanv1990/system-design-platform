@@ -233,9 +233,10 @@ class DistributedTokenBucket:
 
 ### Cluster Configuration
 
-- 3+ node cluster for high availability
+- **5-node cluster** for high availability and distributed rate limiting
 - Shared state via Redis or consensus protocol
 - Each node handles local bucket operations
+- Tolerates 2 node failures
 
 ### gRPC Services
 

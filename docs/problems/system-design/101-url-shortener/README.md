@@ -55,33 +55,184 @@ Design a URL shortening service like TinyURL or bit.ly that can handle 500 milli
 
 ### Core Components
 
-#### 1. Short Code Generation
-- **Algorithm:** Base62 encoding (a-z, A-Z, 0-9)
-- **Length:** 7 characters = 62^7 = 3.5 trillion unique URLs
-- **Generation Strategy:**
-  - Option A: Counter-based with range allocation (recommended)
-  - Option B: Random generation with collision detection
-  - Option C: Hash-based (MD5/SHA256 truncated)
+#### 1. Key Generation Service (KGS) - Optimal Approach
+
+The **Key Generation Service (KGS)** pre-generates unique short codes for O(1) retrieval with zero collision handling at request time.
+
+**Why KGS is optimal:**
+- **O(1) key retrieval** - No database lookups or collision checks during URL creation
+- **Cryptographically secure** - Uses `secrets` module for unpredictable codes
+- **Horizontally scalable** - Multiple KGS instances can generate keys independently
+- **No hot spots** - Distributed key pools prevent contention
 
 ```python
-# Base62 Encoding
-CHARSET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+import secrets
+import redis.asyncio as redis
+from typing import Optional
+import asyncio
 
-def encode_base62(num: int) -> str:
-    if num == 0:
-        return CHARSET[0]
-    result = []
-    while num:
-        num, remainder = divmod(num, 62)
-        result.append(CHARSET[remainder])
-    return ''.join(reversed(result)).zfill(7)
+class KeyGenerationService:
+    """
+    Pre-generates unique, cryptographically secure short codes.
+    Maintains a pool of available keys in Redis for O(1) retrieval.
+    """
 
-def decode_base62(code: str) -> int:
-    num = 0
-    for char in code:
-        num = num * 62 + CHARSET.index(char)
-    return num
+    def __init__(
+        self,
+        redis_client: redis.Redis,
+        pool_name: str = "kgs:available_keys",
+        used_pool: str = "kgs:used_keys",
+        batch_size: int = 10000,
+        min_pool_size: int = 5000
+    ):
+        self.redis = redis_client
+        self.pool_name = pool_name
+        self.used_pool = used_pool
+        self.batch_size = batch_size
+        self.min_pool_size = min_pool_size
+        self._replenish_lock = asyncio.Lock()
+
+    async def generate_batch(self) -> int:
+        """
+        Generate a batch of unique, cryptographically secure keys.
+        Returns the number of keys added to the pool.
+        """
+        keys = set()
+        attempts = 0
+        max_attempts = self.batch_size * 2
+
+        while len(keys) < self.batch_size and attempts < max_attempts:
+            # Generate cryptographically secure 7-char code
+            key = secrets.token_urlsafe(6)[:7]
+
+            # Check not already used (rare with 62^7 space)
+            if not await self.redis.sismember(self.used_pool, key):
+                keys.add(key)
+            attempts += 1
+
+        if keys:
+            # Atomic batch add to available pool
+            await self.redis.sadd(self.pool_name, *keys)
+
+        return len(keys)
+
+    async def get_key(self) -> str:
+        """
+        Get a unique key from the pool. O(1) operation.
+        Triggers async replenishment if pool is low.
+        """
+        # Atomic pop from available pool
+        key = await self.redis.spop(self.pool_name)
+
+        if key:
+            key = key.decode() if isinstance(key, bytes) else key
+            # Mark as used (for collision prevention)
+            await self.redis.sadd(self.used_pool, key)
+
+            # Check if replenishment needed (async, non-blocking)
+            pool_size = await self.redis.scard(self.pool_name)
+            if pool_size < self.min_pool_size:
+                asyncio.create_task(self._replenish_if_needed())
+
+            return key
+
+        # Fallback: generate on-demand (should rarely happen)
+        return await self._generate_single_key()
+
+    async def _generate_single_key(self) -> str:
+        """Generate a single key on-demand (fallback)."""
+        while True:
+            key = secrets.token_urlsafe(6)[:7]
+            if not await self.redis.sismember(self.used_pool, key):
+                await self.redis.sadd(self.used_pool, key)
+                return key
+
+    async def _replenish_if_needed(self):
+        """Replenish pool if below threshold (with lock to prevent storms)."""
+        if self._replenish_lock.locked():
+            return  # Another replenishment in progress
+
+        async with self._replenish_lock:
+            pool_size = await self.redis.scard(self.pool_name)
+            if pool_size < self.min_pool_size:
+                await self.generate_batch()
+
+    async def get_pool_stats(self) -> dict:
+        """Get current pool statistics."""
+        available = await self.redis.scard(self.pool_name)
+        used = await self.redis.scard(self.used_pool)
+        return {
+            "available_keys": available,
+            "used_keys": used,
+            "pool_healthy": available >= self.min_pool_size
+        }
+
+
+# URL Shortener Service using KGS
+class URLShortenerService:
+    def __init__(self, kgs: KeyGenerationService, db, redis_client):
+        self.kgs = kgs
+        self.db = db
+        self.redis = redis_client
+
+    async def create_short_url(
+        self,
+        original_url: str,
+        custom_alias: Optional[str] = None,
+        expires_in: Optional[int] = None,
+        user_id: Optional[int] = None
+    ) -> dict:
+        """Create a shortened URL using KGS."""
+
+        if custom_alias:
+            # Check custom alias availability
+            if await self.redis.exists(f"url:{custom_alias}"):
+                raise ValueError("Custom alias already taken")
+            short_code = custom_alias
+        else:
+            # Get pre-generated key from KGS - O(1)!
+            short_code = await self.kgs.get_key()
+
+        # Store URL mapping
+        url_data = {
+            "original_url": original_url,
+            "short_code": short_code,
+            "user_id": user_id,
+            "created_at": datetime.utcnow().isoformat(),
+            "expires_at": (datetime.utcnow() + timedelta(seconds=expires_in)).isoformat() if expires_in else None
+        }
+
+        # Cache in Redis (primary store for reads)
+        cache_ttl = expires_in or 86400 * 365  # 1 year default
+        await self.redis.setex(
+            f"url:{short_code}",
+            cache_ttl,
+            original_url
+        )
+
+        # Persist to database (async, for durability)
+        await self.db.execute(
+            """INSERT INTO urls (short_code, original_url, user_id, expires_at)
+               VALUES ($1, $2, $3, $4)""",
+            short_code, original_url, user_id, url_data.get("expires_at")
+        )
+
+        return {
+            "short_code": short_code,
+            "short_url": f"https://short.url/{short_code}",
+            "original_url": original_url,
+            "expires_at": url_data.get("expires_at")
+        }
 ```
+
+**Alternative Approaches (for comparison):**
+
+| Approach | Pros | Cons |
+|----------|------|------|
+| **KGS (Recommended)** | O(1) retrieval, no collisions, secure | Requires pre-generation infrastructure |
+| Counter + Base62 | Simple, sequential | Predictable URLs, requires distributed counter |
+| Hash Truncation | Deterministic | Collision handling required, predictable |
+| Random Generation | Simple | Collision checks on every request |
 
 #### 2. Database Schema
 

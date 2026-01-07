@@ -262,9 +262,10 @@ class HNSW:
 
 ### Cluster Configuration
 
-- Single node for index (or sharded across nodes)
-- Each shard holds portion of vectors
+- **5-node cluster** for sharded vector index
+- Each shard holds portion of vectors (N/5 vectors per node)
 - Query aggregation for distributed search
+- Replication factor 2 for fault tolerance
 
 ### gRPC Services
 

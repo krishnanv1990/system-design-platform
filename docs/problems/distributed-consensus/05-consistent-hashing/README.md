@@ -200,10 +200,11 @@ class ConsistentHashRing:
 
 ### Cluster Configuration
 
-- 3+ node cluster
+- **5-node cluster** for high availability and load distribution
 - Each node maintains full ring state
 - Gossip protocol for membership updates
 - Virtual nodes configurable (default: 150)
+- Tolerates 2 node failures
 
 ### gRPC Services
 

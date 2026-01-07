@@ -301,9 +301,10 @@ class MVRegister:
 
 ### Cluster Configuration
 
-- 3+ node cluster (CRDTs are leaderless)
+- **5-node cluster** (CRDTs are leaderless, highly partition tolerant)
 - Periodic sync between nodes
 - Each node accepts writes locally
+- Tolerates 2 node failures (continues operating even during partitions)
 
 ### gRPC Services
 

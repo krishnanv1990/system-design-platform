@@ -137,9 +137,31 @@ class MultiPaxosNode:
 
 ### Deployment Configuration
 
-- 3 or 5 node cluster
+- **5-node cluster** (recommended for production fault tolerance)
 - Each node acts as proposer, acceptor, and learner
 - gRPC communication between nodes
+- Quorum: 3 nodes (majority of 5)
+- Fault tolerance: 2 node failures
+
+```yaml
+# Deployed 5-node cluster
+nodes:
+  - id: node-0
+    url: https://paxos-sub123-node0.run.app
+    port: 8080
+  - id: node-1
+    url: https://paxos-sub123-node1.run.app
+    port: 8080
+  - id: node-2
+    url: https://paxos-sub123-node2.run.app
+    port: 8080
+  - id: node-3
+    url: https://paxos-sub123-node3.run.app
+    port: 8080
+  - id: node-4
+    url: https://paxos-sub123-node4.run.app
+    port: 8080
+```
 
 ### gRPC Services
 
@@ -225,5 +247,7 @@ async def test_proposer_crash_recovery(self, cluster):
 |------|----------|
 | Single Proposer | Reaches consensus |
 | Concurrent Proposers | Same value chosen |
-| Minority Failure | Continues with majority |
+| Single Node Failure | Continues with 4/5 nodes |
+| Double Node Failure | Continues with 3/5 nodes (quorum) |
+| Majority Failure (3+) | Blocks until recovery |
 | Proposer Crash | Recovery succeeds |

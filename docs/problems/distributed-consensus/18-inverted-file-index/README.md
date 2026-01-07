@@ -232,9 +232,10 @@ class IVFIndex:
 
 ### Cluster Configuration
 
-- Clusters can be distributed across nodes
-- Each node owns subset of centroids
+- **5-node cluster** for distributed IVF index
+- Each node owns subset of centroids (C/5 centroids per node)
 - Query routing based on centroid ownership
+- Replication factor 2 for fault tolerance
 
 ### gRPC Services
 

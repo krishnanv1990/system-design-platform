@@ -261,9 +261,10 @@ class DistributedSlidingWindowCounter:
 
 ### Cluster Configuration
 
-- 3+ node cluster
+- **5-node cluster** for high availability and distributed rate limiting
 - Redis for distributed counters
 - Only 2 keys per limit (current + previous window)
+- Tolerates 2 node failures
 
 ### gRPC Services
 

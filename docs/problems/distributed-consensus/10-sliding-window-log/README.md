@@ -245,9 +245,10 @@ class DistributedSlidingWindowLog:
 
 ### Cluster Configuration
 
-- 3+ node cluster
+- **5-node cluster** for high availability and distributed rate limiting
 - Redis sorted sets for distributed log storage
 - Automatic cleanup of expired entries
+- Tolerates 2 node failures
 
 ### gRPC Services
 

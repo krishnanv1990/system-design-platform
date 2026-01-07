@@ -319,9 +319,10 @@ class BPlusTree:
 
 ### Cluster Configuration
 
-- 3+ node cluster with Raft replication
+- **5-node cluster** with Raft replication
 - Leader handles writes, replicates WAL entries
 - Buffer pool on each node for caching
+- Tolerates 2 node failures (Raft quorum: 3/5)
 
 ### gRPC Services
 

@@ -123,9 +123,35 @@ class TwoPhaseCommitParticipant:
 
 ### Cluster Configuration
 
-- 1 Coordinator node
-- 2+ Participant nodes
+- **5-node cluster** with flexible role assignment
+- 1 active Coordinator + 4 Participant nodes
+- Any node can act as coordinator (hot standby)
 - Each node implements both roles for flexibility
+
+```yaml
+# Deployed 5-node cluster
+nodes:
+  - id: node-0
+    url: https://2pc-sub123-node0.run.app
+    role: coordinator
+    port: 8080
+  - id: node-1
+    url: https://2pc-sub123-node1.run.app
+    role: participant
+    port: 8080
+  - id: node-2
+    url: https://2pc-sub123-node2.run.app
+    role: participant
+    port: 8080
+  - id: node-3
+    url: https://2pc-sub123-node3.run.app
+    role: participant
+    port: 8080
+  - id: node-4
+    url: https://2pc-sub123-node4.run.app
+    role: participant (standby coordinator)
+    port: 8080
+```
 
 ### gRPC Services
 

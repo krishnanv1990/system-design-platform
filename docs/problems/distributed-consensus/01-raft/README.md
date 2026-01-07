@@ -127,9 +127,10 @@ service KeyValueService {
    - Security analysis (race detection, memory checks)
    - Proto stubs generated for the language
 3. **Deployment:**
-   - 3-node cluster deployed on Cloud Run
+   - 5-node cluster deployed on Cloud Run for higher fault tolerance
    - Each node runs as separate service with unique node ID
    - Nodes discover each other via environment variables
+   - 5-node cluster tolerates 2 node failures (vs 1 for 3-node)
 4. **Testing:**
    - Functional tests against the cluster
    - Chaos tests (node failures, network partitions)
@@ -137,7 +138,7 @@ service KeyValueService {
 ### Cluster Configuration
 
 ```yaml
-# Deployed cluster
+# Deployed 5-node cluster (tolerates 2 failures)
 nodes:
   - id: node-0
     url: https://raft-sub123-node0.run.app
@@ -148,6 +149,15 @@ nodes:
   - id: node-2
     url: https://raft-sub123-node2.run.app
     port: 8080
+  - id: node-3
+    url: https://raft-sub123-node3.run.app
+    port: 8080
+  - id: node-4
+    url: https://raft-sub123-node4.run.app
+    port: 8080
+
+# Quorum: 3 nodes (majority of 5)
+# Fault tolerance: 2 node failures
 ```
 
 ---
@@ -235,25 +245,39 @@ class TestRaftConsensus:
 
 ```python
 class TestRaftChaos:
-    async def test_minority_failure(self, cluster):
-        """Cluster survives minority node failures."""
+    async def test_single_failure(self, cluster):
+        """Cluster survives single node failure (5-node cluster)."""
         leader = await find_leader(cluster)
 
-        # Kill one node
+        # Kill one node - still have 4 nodes (quorum = 3)
         await platform_api.stop_service(cluster[1].node_id)
 
         # Operations should still work
-        await leader.Put(key="minority_fail", value="ok")
-        response = await leader.Get(key="minority_fail")
+        await leader.Put(key="single_fail", value="ok")
+        response = await leader.Get(key="single_fail")
+        assert response.value == "ok"
+
+    async def test_double_failure(self, cluster):
+        """Cluster survives two node failures (5-node cluster)."""
+        leader = await find_leader(cluster)
+
+        # Kill two nodes - still have 3 nodes (exactly quorum)
+        await platform_api.stop_service(cluster[1].node_id)
+        await platform_api.stop_service(cluster[2].node_id)
+
+        # Operations should still work (3 nodes = quorum for 5-node cluster)
+        await leader.Put(key="double_fail", value="ok")
+        response = await leader.Get(key="double_fail")
         assert response.value == "ok"
 
     async def test_majority_failure_blocks(self, cluster):
-        """Cluster blocks on majority failure."""
+        """Cluster blocks on majority failure (3+ nodes down in 5-node cluster)."""
         leader = await find_leader(cluster)
 
-        # Kill two nodes (majority)
+        # Kill three nodes (no longer have quorum)
         await platform_api.stop_service(cluster[1].node_id)
         await platform_api.stop_service(cluster[2].node_id)
+        await platform_api.stop_service(cluster[3].node_id)
 
         # Operations should block or fail
         with pytest.raises(Exception):
@@ -350,9 +374,10 @@ grpcurl -plaintext \
 | Test | Criteria |
 |------|----------|
 | Leader Election | Elects single leader within 5 seconds |
-| Log Replication | All nodes converge to same state |
-| Minority Failure | Continues operating with 1 node down |
-| Majority Failure | Blocks operations (safety) |
+| Log Replication | All 5 nodes converge to same state |
+| Single Node Failure | Continues operating with 1 node down (4/5 nodes) |
+| Double Node Failure | Continues operating with 2 nodes down (3/5 nodes = quorum) |
+| Majority Failure | Blocks operations when 3+ nodes down (safety) |
 | Partition Healing | Reconciles state after partition |
 | Write Throughput | > 100 writes/second |
 | Read Latency (p99) | < 50ms |

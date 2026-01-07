@@ -177,10 +177,30 @@ class ChandyLamportNode:
 
 ### Cluster Configuration
 
-- 3+ node cluster
+- **5-node cluster** for comprehensive distributed state capture
 - Each node acts as both initiator and participant
 - FIFO channels required for correctness
 - gRPC streaming for message channels
+
+```yaml
+# Deployed 5-node cluster
+nodes:
+  - id: node-0
+    url: https://snapshot-sub123-node0.run.app
+    port: 8080
+  - id: node-1
+    url: https://snapshot-sub123-node1.run.app
+    port: 8080
+  - id: node-2
+    url: https://snapshot-sub123-node2.run.app
+    port: 8080
+  - id: node-3
+    url: https://snapshot-sub123-node3.run.app
+    port: 8080
+  - id: node-4
+    url: https://snapshot-sub123-node4.run.app
+    port: 8080
+```
 
 ### gRPC Services
 
@@ -312,7 +332,7 @@ async def test_node_failure_during_snapshot(self, cluster):
     snapshot = await cluster[0].GetGlobalSnapshot(response.snapshot_id)
 
     # Should have partial snapshot
-    assert len(snapshot.process_states) == 2  # Only 2 of 3 nodes
+    assert len(snapshot.process_states) == 4  # Only 4 of 5 nodes (1 failed)
 ```
 
 ---

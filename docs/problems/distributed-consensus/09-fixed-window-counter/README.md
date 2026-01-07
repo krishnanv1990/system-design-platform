@@ -191,9 +191,10 @@ class DistributedFixedWindow:
 
 ### Cluster Configuration
 
-- 3+ node cluster
+- **5-node cluster** for high availability and distributed rate limiting
 - Shared state via Redis for distributed counting
 - Each node can handle limit checks
+- Tolerates 2 node failures
 
 ### gRPC Services
 

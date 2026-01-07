@@ -284,9 +284,11 @@ class ThreePhaseCommitParticipant:
 
 ### Cluster Configuration
 
-- 1 Coordinator + N Participants
+- **5-node cluster** (1 Coordinator + 4 Participants, with coordinator failover)
 - Each node can detect coordinator failure
 - Participants can communicate for recovery
+- Any participant can become new coordinator
+- Tolerates coordinator + 1 participant failure
 
 ### gRPC Services
 

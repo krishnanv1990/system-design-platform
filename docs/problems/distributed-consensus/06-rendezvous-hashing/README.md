@@ -217,10 +217,11 @@ class RendezvousNode:
 
 ### Cluster Configuration
 
-- 3+ node cluster
+- **5-node cluster** for high availability and load distribution
 - All nodes maintain registry of active nodes
 - Gossip protocol for membership
 - Weighted capacity support
+- Tolerates 2 node failures
 
 ### gRPC Services
 

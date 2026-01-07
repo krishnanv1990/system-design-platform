@@ -308,9 +308,10 @@ class LogStructuredKVStore:
 
 ### Cluster Configuration
 
-- 3+ node cluster with Raft replication
+- **5-node cluster** with Raft replication
 - Leader handles writes, followers replicate log
 - Compaction runs independently on each node
+- Tolerates 2 node failures (Raft quorum: 3/5)
 
 ### gRPC Services
 

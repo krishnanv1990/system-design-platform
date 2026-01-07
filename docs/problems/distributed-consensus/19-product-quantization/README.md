@@ -293,9 +293,11 @@ class ProductQuantizer:
 
 ### Cluster Configuration
 
+- **5-node cluster** for distributed PQ index
 - Codebooks shared across all nodes
-- Codes distributed via consistent hashing
+- Codes distributed via consistent hashing (N/5 codes per node)
 - Query broadcasts to all shards
+- Replication factor 2 for fault tolerance
 
 ### gRPC Services
 

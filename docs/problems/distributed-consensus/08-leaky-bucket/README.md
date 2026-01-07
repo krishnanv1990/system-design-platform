@@ -220,10 +220,11 @@ class LeakyBucketProcessor:
 
 ### Cluster Configuration
 
-- 3+ node cluster
+- **5-node cluster** for high availability and distributed rate limiting
 - Each node maintains its own queue (or shared via Redis)
 - Processing happens at consistent rate
 - gRPC for request submission
+- Tolerates 2 node failures
 
 ### gRPC Services
 
