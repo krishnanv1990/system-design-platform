@@ -10,7 +10,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent, act, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, act } from '@testing-library/react'
 import DesignEditor from './DesignEditor'
 
 // Mock child components
@@ -165,7 +165,7 @@ describe('DesignEditor', () => {
     })
 
     it('chat section uses full width (w-full) when expanded', () => {
-      const { container } = render(
+      render(
         <DesignEditor value="" onChange={mockOnChange} problemId={1} />
       )
 
@@ -186,7 +186,7 @@ describe('DesignEditor', () => {
     })
 
     it('diagram appears before coach in DOM order (diagram on top)', () => {
-      const { container } = render(
+      render(
         <DesignEditor value="" onChange={mockOnChange} problemId={1} />
       )
 
@@ -448,7 +448,6 @@ describe('DesignEditor', () => {
 
       // Find and click the summary hide button (not the Coach hide button)
       // The summary section has a "Hide" button with exact text
-      const summarySection = screen.getByTestId('design-summary').parentElement?.parentElement
       const hideButtons = screen.getAllByRole('button', { name: /hide/i })
       // Find the hide button that's within the summary section (text is just "Hide", not "Hide Coach")
       const summaryHideButton = hideButtons.find(btn => btn.textContent === 'Hide')
