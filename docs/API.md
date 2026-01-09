@@ -635,7 +635,437 @@ For validation errors:
 
 ## Rate Limiting
 
-Currently no rate limiting is implemented. Consider adding for production:
+The API implements rate limiting to prevent abuse. Limits are configured per endpoint type:
 
-- 100 requests per minute for authenticated users
-- 10 requests per minute for unauthenticated endpoints
+| Endpoint Type | Authenticated | Unauthenticated |
+|--------------|---------------|-----------------|
+| Submissions | 5/hour | 2/hour |
+| Validation | 20/hour | 10/hour |
+| General API | 100/minute | 20/minute |
+
+### Rate Limit Headers
+
+Rate limit information is included in response headers:
+- `X-RateLimit-Limit`: Maximum requests allowed
+- `X-RateLimit-Remaining`: Requests remaining in window
+- `X-RateLimit-Reset`: Unix timestamp when limit resets
+
+### Rate Limit Exceeded Response
+
+When rate limited, the API returns `429 Too Many Requests`:
+```json
+{
+  "error": "rate_limit_exceeded",
+  "message": "Too many requests. Please try again later.",
+  "retry_after": 3600
+}
+```
+
+### Configuration
+
+Rate limiting is configured via environment variables:
+- `RATE_LIMIT_ENABLED`: Enable/disable rate limiting (default: `true`)
+- `RATE_LIMIT_SUBMISSIONS_PER_HOUR`: Submission limit (default: `5`)
+- `RATE_LIMIT_VALIDATE_PER_HOUR`: Validation limit (default: `20`)
+- `REDIS_URL`: Redis URL for distributed rate limiting (optional)
+
+---
+
+## Distributed Consensus API
+
+The distributed consensus API provides endpoints for solving distributed systems problems with real code execution.
+
+### List Distributed Problems
+
+```http
+GET /api/distributed/problems
+```
+
+Returns all available distributed consensus problems.
+
+**Response:** `200 OK`
+```json
+[
+  {
+    "id": 1,
+    "title": "Implement Raft Consensus",
+    "description": "Implement the Raft consensus algorithm...",
+    "difficulty": "hard",
+    "problem_type": "distributed_consensus",
+    "supported_languages": ["python", "go", "java", "cpp", "rust"],
+    "cluster_size": 3,
+    "tags": ["distributed-systems", "consensus", "raft"],
+    "created_at": "2025-01-01T00:00:00Z"
+  }
+]
+```
+
+---
+
+### Get Distributed Problem
+
+```http
+GET /api/distributed/problems/{problem_id}
+```
+
+Returns detailed information about a distributed problem including test cases and starter code.
+
+**Response:** `200 OK`
+```json
+{
+  "id": 1,
+  "title": "Implement Raft Consensus",
+  "description": "Implement the Raft consensus algorithm...",
+  "difficulty": "hard",
+  "problem_type": "distributed_consensus",
+  "supported_languages": ["python", "go", "java", "cpp", "rust"],
+  "cluster_size": 3,
+  "test_cases": [
+    {
+      "name": "Leader Election",
+      "description": "Test leader election when cluster starts"
+    }
+  ],
+  "starter_code": {
+    "python": "# Python starter code...",
+    "go": "// Go starter code..."
+  },
+  "proto_definition": "syntax = \"proto3\";...",
+  "tags": ["distributed-systems", "consensus", "raft"],
+  "created_at": "2025-01-01T00:00:00Z"
+}
+```
+
+---
+
+### Get Code Template
+
+```http
+GET /api/distributed/problems/{problem_id}/template/{language}
+```
+
+Returns the starter code template for a specific language.
+
+**Path Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `problem_id` | integer | Problem ID |
+| `language` | string | Programming language (python/go/java/cpp/rust) |
+
+**Response:** `200 OK`
+```json
+{
+  "language": "python",
+  "template": "import grpc\n..."
+}
+```
+
+---
+
+### Get Saved Code
+
+```http
+GET /api/distributed/problems/{problem_id}/saved-code/{language}
+```
+
+Returns the user's saved code for a problem.
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Response:** `200 OK`
+```json
+{
+  "language": "python",
+  "source_code": "# User's saved code...",
+  "saved_at": "2024-01-15T10:30:00Z"
+}
+```
+
+---
+
+### Save Code
+
+```http
+POST /api/distributed/problems/{problem_id}/save-code
+```
+
+Saves the user's code progress for a problem.
+
+**Headers:**
+```
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "language": "python",
+  "source_code": "# User's code..."
+}
+```
+
+**Response:** `200 OK`
+```json
+{
+  "message": "Code saved successfully"
+}
+```
+
+---
+
+### Create Distributed Submission
+
+```http
+POST /api/distributed/submissions
+```
+
+Submits code for compilation and testing against a distributed cluster.
+
+**Headers:**
+```
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "problem_id": 1,
+  "language": "python",
+  "source_code": "import grpc\n..."
+}
+```
+
+**Response:** `201 Created`
+```json
+{
+  "id": 1,
+  "problem_id": 1,
+  "user_id": 1,
+  "submission_type": "distributed_consensus",
+  "language": "python",
+  "source_code": "...",
+  "status": "building",
+  "build_logs": "Queuing build job...\n",
+  "build_artifact_url": null,
+  "cluster_node_urls": null,
+  "error_message": null,
+  "created_at": "2024-01-15T10:35:00Z"
+}
+```
+
+---
+
+### List Distributed Submissions
+
+```http
+GET /api/distributed/submissions
+```
+
+Returns the current user's distributed submissions.
+
+**Query Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `problem_id` | integer | Filter by problem (optional) |
+
+**Response:** `200 OK`
+```json
+[
+  {
+    "id": 1,
+    "problem_id": 1,
+    "user_id": 1,
+    "submission_type": "distributed_consensus",
+    "language": "python",
+    "status": "completed",
+    "build_logs": "...",
+    "cluster_node_urls": ["https://node-0.run.app", "https://node-1.run.app"],
+    "error_message": null,
+    "created_at": "2024-01-15T10:35:00Z"
+  }
+]
+```
+
+---
+
+### Get Distributed Submission
+
+```http
+GET /api/distributed/submissions/{submission_id}
+```
+
+Returns details of a specific distributed submission.
+
+**Response:** `200 OK`
+```json
+{
+  "id": 1,
+  "problem_id": 1,
+  "user_id": 1,
+  "submission_type": "distributed_consensus",
+  "language": "python",
+  "source_code": "...",
+  "status": "testing",
+  "build_logs": "Build successful...",
+  "build_artifact_url": "gs://bucket/artifact.tar.gz",
+  "cluster_node_urls": ["https://node-0.run.app", "https://node-1.run.app", "https://node-2.run.app"],
+  "error_message": null,
+  "created_at": "2024-01-15T10:35:00Z"
+}
+```
+
+---
+
+### Get Build Logs
+
+```http
+GET /api/distributed/submissions/{submission_id}/build-logs
+```
+
+Returns the build logs for a submission.
+
+**Response:** `200 OK`
+```json
+{
+  "logs": "Step 1/5: Compiling code...\nStep 2/5: Running unit tests...\n..."
+}
+```
+
+---
+
+### Get Submission Tests
+
+```http
+GET /api/distributed/submissions/{submission_id}/tests
+```
+
+Returns the test results for a distributed submission.
+
+**Response:** `200 OK`
+```json
+[
+  {
+    "id": 1,
+    "submission_id": 1,
+    "test_type": "functional",
+    "test_name": "Leader Election",
+    "status": "passed",
+    "details": { "stdout": "Leader elected successfully" },
+    "duration_ms": 1250,
+    "chaos_scenario": null,
+    "created_at": "2024-01-15T10:40:00Z"
+  }
+]
+```
+
+---
+
+### Teardown Cluster
+
+```http
+POST /api/distributed/submissions/{submission_id}/teardown
+```
+
+Tears down the deployed cluster for a submission.
+
+**Response:** `200 OK`
+```json
+{
+  "message": "Cluster teardown initiated"
+}
+```
+
+---
+
+## Distributed Submission Status Values
+
+| Status | Description |
+|--------|-------------|
+| `building` | Code is being compiled |
+| `build_failed` | Compilation failed |
+| `deploying` | Cluster is being deployed |
+| `deploy_failed` | Deployment failed |
+| `testing` | Running distributed tests |
+| `completed` | All tests complete |
+| `failed` | Submission failed |
+
+---
+
+## WebSocket API
+
+The platform supports real-time updates via WebSocket connections.
+
+### Submission Updates
+
+```
+WS /ws/submissions/{submission_id}?token=<jwt_token>
+```
+
+Connect to receive live updates for a specific submission.
+
+**Query Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `token` | string | JWT auth token (required unless demo mode) |
+
+**Connection:**
+```javascript
+const ws = new WebSocket('wss://api.example.com/ws/submissions/123?token=xxx');
+
+ws.onmessage = (event) => {
+  const message = JSON.parse(event.data);
+  console.log(message);
+};
+```
+
+**Server Messages:**
+
+Status Update:
+```json
+{
+  "type": "status_update",
+  "submission_id": 123,
+  "status": "testing",
+  "timestamp": "2024-01-15T10:38:00Z"
+}
+```
+
+Test Result:
+```json
+{
+  "type": "test_result",
+  "submission_id": 123,
+  "test_name": "Leader Election",
+  "status": "passed",
+  "duration_ms": 1250,
+  "timestamp": "2024-01-15T10:40:00Z"
+}
+```
+
+Error Analysis:
+```json
+{
+  "type": "error_analysis",
+  "submission_id": 123,
+  "error": "Connection refused",
+  "analysis": "The node failed to connect...",
+  "suggestions": ["Check network configuration"],
+  "timestamp": "2024-01-15T10:41:00Z"
+}
+```
+
+**Keepalive:**
+- Server sends `ping` every 5 minutes
+- Client should respond with `pong`
+- Connection closes if client doesn't respond
+
+**Close Codes:**
+| Code | Reason |
+|------|--------|
+| 4003 | Unauthorized - Invalid or missing token |
+| 1000 | Normal closure |

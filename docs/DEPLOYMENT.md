@@ -353,15 +353,47 @@ gcloud sql users create sdp_user \
 
 ### Database Migrations
 
-The application auto-creates tables on startup. For manual migrations:
+We use Alembic for database migrations. Tables are auto-created on startup for development.
+
+#### Setup
 
 ```bash
-# Using Alembic (if configured)
+# Initialize Alembic (already done)
+cd backend
+alembic init alembic
+
+# Create a migration
+alembic revision --autogenerate -m "Add new table"
+
+# Run migrations
 alembic upgrade head
 
-# Or manually
-python -c "from backend.database import engine, Base; Base.metadata.create_all(bind=engine)"
+# Rollback one version
+alembic downgrade -1
 ```
+
+#### Creating Migrations
+
+```bash
+# After modifying models
+alembic revision --autogenerate -m "Description of changes"
+
+# Review generated migration in alembic/versions/
+# Then apply
+alembic upgrade head
+```
+
+#### Production Migrations
+
+```bash
+# Set DATABASE_URL for production
+export DATABASE_URL="postgresql://user:pass@host:5432/db"
+
+# Run migrations
+alembic upgrade head
+```
+
+**Note:** Never modify production database schema manually. Always use migrations.
 
 ### Seed Data
 

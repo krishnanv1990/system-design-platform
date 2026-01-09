@@ -11,10 +11,10 @@ This document outlines the recommended next steps to take the System Design Inte
   - User role for submissions
   - Implement in `backend/auth/`
 
-- [ ] **Rate Limiting**
-  - Add rate limiting middleware
-  - Consider using Redis for distributed rate limiting
-  - Suggested: 100 req/min for authenticated, 10 req/min for unauthenticated
+- [x] **Rate Limiting** ✓ Implemented
+  - Rate limiting middleware added to backend
+  - Redis support for distributed rate limiting
+  - See API.md for current limits
 
 - [ ] **Input Sanitization**
   - Sanitize user inputs in design_text
@@ -110,10 +110,10 @@ This document outlines the recommended next steps to take the System Design Inte
 
 ### 7. Monitoring & Observability
 
-- [ ] **Set up Logging**
-  - Structured logging format
-  - Cloud Logging integration
-  - Log aggregation
+- [x] **Set up Logging** ✓ Implemented
+  - Structured logging format with Python logging module
+  - Replaced print statements with proper logger calls
+  - Cloud Logging integration ready
 
 - [ ] **Add Metrics**
   - Request latency
@@ -131,10 +131,10 @@ This document outlines the recommended next steps to take the System Design Inte
 
 ### 8. User Experience Improvements
 
-- [ ] **Add Real-time Updates**
-  - WebSocket for submission status
+- [x] **Add Real-time Updates** ✓ Implemented
+  - WebSocket endpoint at `/ws/submissions/{id}` for submission status
   - Live test result streaming
-  - Progress indicators
+  - See API.md WebSocket API section
 
 - [ ] **Improve Editors**
   - Add syntax highlighting for design text
@@ -331,4 +331,4 @@ curl https://api.yourdomain.com/health
 
 - **Documentation**: See `docs/` folder
 - **Issues**: Open GitHub issues for bugs
-- **Contributions**: See CONTRIBUTING.md (TODO)
+- **Contributions**: PRs welcome! Please follow existing code style

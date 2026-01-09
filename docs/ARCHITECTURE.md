@@ -33,6 +33,13 @@ The platform is designed as a modern web application with a clear separation bet
 │  │  │  Auth  │  │Problems│  │Submissions │  │       Tests        │ │  │
 │  │  │  API   │  │  API   │  │    API     │  │        API         │ │  │
 │  │  └────────┘  └────────┘  └────────────┘  └────────────────────┘ │  │
+│  │  ┌────────┐  ┌────────┐  ┌────────────┐  ┌────────────────────┐ │  │
+│  │  │ User   │  │ Assets │  │Distributed │  │       Chat/AI      │ │  │
+│  │  │  API   │  │  API   │  │    API     │  │        API         │ │  │
+│  │  └────────┘  └────────┘  └────────────┘  └────────────────────┘ │  │
+│  │                      ┌────────────────────┐                      │  │
+│  │                      │     Admin API      │                      │  │
+│  │                      └────────────────────┘                      │  │
 │  └─────────────────────────────────────────────────────────────────┘  │
 │                                    │                                    │
 │  ┌─────────────────────────────────────────────────────────────────┐  │
@@ -130,6 +137,12 @@ Business logic and external integrations.
 | `TestRunner` | Execute functional, performance, chaos tests |
 | `ChaosService` | Chaos experiment definitions |
 | `Orchestrator` | Pipeline coordination |
+| `DistributedBuildService` | Compile and deploy distributed consensus code to GCP |
+| `DistributedTestService` | Run gRPC-based distributed tests (Raft, Paxos, 2PC, etc.) |
+| `AuditService` | Track user actions and system events |
+| `CleanupScheduler` | Automatic resource cleanup for expired deployments |
+| `ErrorAnalyzer` | AI-powered analysis of build and test failures |
+| `ModerationService` | Content moderation for user submissions |
 
 #### Layer 3: Data (`backend/models/`, `backend/schemas/`)
 
