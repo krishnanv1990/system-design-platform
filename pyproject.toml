@@ -1,0 +1,62 @@
+# System Design Platform - Python Project Configuration
+# This file configures various Python tools
+
+[project]
+name = "system-design-platform"
+version = "1.0.0"
+description = "AI-powered system design interview practice platform"
+readme = "README.md"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["backend/tests", "tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+addopts = "-v --tb=short"
+asyncio_mode = "auto"
+markers = [
+    "unit: Unit tests",
+    "integration: Integration tests",
+    "e2e: End-to-end tests",
+    "chaos: Chaos engineering tests",
+    "performance: Performance tests",
+    "requires_auth: Tests requiring authentication",
+    "requires_gcp: Tests requiring GCP resources",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::UserWarning",
+]
+
+[tool.coverage.run]
+source = ["backend"]
+omit = [
+    "backend/tests/*",
+    "backend/alembic/*",
+    "*/__pycache__/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+]
+fail_under = 60
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+exclude = [
+    "backend/alembic",
+    "backend/tests",
+    "tests",
+]
+
+# Ruff configuration is in ruff.toml for better organization
+# See ruff.toml for linting rules

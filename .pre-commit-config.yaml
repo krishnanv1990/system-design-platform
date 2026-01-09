@@ -1,0 +1,50 @@
+# Pre-commit hooks for system-design-platform
+# Install: pip install pre-commit && pre-commit install
+# Run manually: pre-commit run --all-files
+
+repos:
+  # General pre-commit hooks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+      - id: check-merge-conflict
+      - id: detect-private-key
+
+  # Python linting with Ruff (replaces black, isort, flake8)
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.1.9
+    hooks:
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+      - id: ruff-format
+
+  # TypeScript/JavaScript linting (frontend)
+  - repo: local
+    hooks:
+      - id: eslint-frontend
+        name: ESLint (frontend)
+        entry: npm run lint --prefix frontend
+        language: system
+        files: ^frontend/.*\.(ts|tsx)$
+        pass_filenames: false
+
+  # Type checking (optional - can be slow)
+  # - repo: local
+  #   hooks:
+  #     - id: typecheck-frontend
+  #       name: TypeScript (frontend)
+  #       entry: npm run typecheck --prefix frontend
+  #       language: system
+  #       files: ^frontend/.*\.(ts|tsx)$
+  #       pass_filenames: false
+
+# CI configuration
+ci:
+  autofix_prs: true
+  autoupdate_schedule: monthly
