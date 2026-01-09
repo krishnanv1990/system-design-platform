@@ -1,7 +1,11 @@
 """
 JWT token creation and verification.
+
+Handles JWT token generation, validation, and user authentication
+for the System Design Platform API.
 """
 
+import logging
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -13,6 +17,8 @@ from sqlalchemy.orm import Session
 from backend.config import get_settings
 from backend.database import get_db
 from backend.models.user import User
+
+logger = logging.getLogger(__name__)
 
 settings = get_settings()
 security = HTTPBearer()
@@ -61,10 +67,10 @@ def verify_token(token: str) -> Optional[dict]:
             settings.jwt_secret_key,
             algorithms=[settings.jwt_algorithm]
         )
-        print(f"Token verified successfully, payload: {payload}")
+        logger.debug(f"Token verified successfully, payload: {payload}")
         return payload
     except JWTError as e:
-        print(f"Token verification failed: {e}, token prefix: {token[:50] if token else 'None'}...")
+        logger.warning(f"Token verification failed: {e}, token prefix: {token[:50] if token else 'None'}...")
         return None
 
 
@@ -115,34 +121,34 @@ async def get_current_user(
     )
 
     if credentials is None:
-        print("get_current_user: No credentials provided")
+        logger.debug("get_current_user: No credentials provided")
         raise credentials_exception
 
     token = credentials.credentials
-    print(f"get_current_user: Token received, length={len(token) if token else 0}")
+    logger.debug(f"get_current_user: Token received, length={len(token) if token else 0}")
     payload = verify_token(token)
 
     if payload is None:
-        print("get_current_user: Token verification failed")
+        logger.debug("get_current_user: Token verification failed")
         raise credentials_exception
 
     user_id_str = payload.get("sub")
     if user_id_str is None:
-        print("get_current_user: No user_id in payload")
+        logger.warning("get_current_user: No user_id in payload")
         raise credentials_exception
 
     try:
         user_id = int(user_id_str)
     except (ValueError, TypeError):
-        print(f"get_current_user: Invalid user_id format: {user_id_str}")
+        logger.warning(f"get_current_user: Invalid user_id format: {user_id_str}")
         raise credentials_exception
 
     user = db.query(User).filter(User.id == user_id).first()
     if user is None:
-        print(f"get_current_user: User not found for id={user_id}")
+        logger.warning(f"get_current_user: User not found for id={user_id}")
         raise credentials_exception
 
-    print(f"get_current_user: User found - {user.email}")
+    logger.debug(f"get_current_user: User found - {user.email}")
     return user
 
 

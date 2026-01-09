@@ -616,7 +616,7 @@ if __name__ == "__main__":
                 run_client.set_iam_policy(request=set_request)
             except Exception as iam_error:
                 # Log but don't fail - service is deployed, just not public
-                print(f"Warning: Could not set IAM policy: {iam_error}")
+                logger.warning(f"Could not set IAM policy: {iam_error}")
 
             # Store deployment info
             submission.deployment_id = service_name

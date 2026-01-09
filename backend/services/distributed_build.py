@@ -13,6 +13,7 @@ Security Analysis Features:
 """
 
 import json
+import logging
 import os
 from dataclasses import dataclass
 from datetime import datetime
@@ -23,6 +24,8 @@ from google.cloud.devtools import cloudbuild_v1
 from google.iam.v1 import iam_policy_pb2, policy_pb2
 
 from backend.config import get_settings
+
+logger = logging.getLogger(__name__)
 from backend.database import SessionLocal
 from backend.models.submission import Submission, SubmissionStatus
 
@@ -1069,7 +1072,7 @@ install(TARGETS server DESTINATION bin)
             try:
                 client.delete_service(name=name)
             except Exception as e:
-                print(f"Failed to delete service {service_name}: {e}")
+                logger.warning(f"Failed to delete service {service_name}: {e}")
 
 
 # Singleton instance

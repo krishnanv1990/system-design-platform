@@ -11,6 +11,7 @@ Error Handling:
 """
 
 import asyncio
+import logging
 import os
 import sys
 import time
@@ -23,6 +24,8 @@ import grpc
 from google.cloud import run_v2
 
 from backend.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 settings = get_settings()
 
@@ -94,7 +97,7 @@ class GrpcClientManager:
         proto_path = self._get_proto_path()
         if not proto_path:
             GrpcClientManager._compilation_error = "Proto file not found. Cannot run gRPC tests."
-            print(GrpcClientManager._compilation_error)
+            logger.error(GrpcClientManager._compilation_error)
             return
 
         try:
@@ -115,17 +118,17 @@ class GrpcClientManager:
             if result == 0:
                 GrpcClientManager._proto_module_path = stubs_dir
                 GrpcClientManager._stubs_compiled = True
-                print(f"Proto stubs compiled to {stubs_dir}")
+                logger.info(f"Proto stubs compiled to {stubs_dir}")
             else:
                 GrpcClientManager._compilation_error = f"Proto compilation failed with code {result}"
-                print(GrpcClientManager._compilation_error)
+                logger.error(GrpcClientManager._compilation_error)
 
         except ImportError as e:
             GrpcClientManager._compilation_error = f"grpc_tools not installed: {e}"
-            print(GrpcClientManager._compilation_error)
+            logger.error(GrpcClientManager._compilation_error)
         except Exception as e:
             GrpcClientManager._compilation_error = f"Failed to compile proto stubs: {e}"
-            print(GrpcClientManager._compilation_error)
+            logger.error(GrpcClientManager._compilation_error)
 
     def is_ready(self) -> Tuple[bool, Optional[str]]:
         """Check if gRPC client is ready to use."""
@@ -216,7 +219,7 @@ class DistributedTestRunner:
         try:
             results.extend(await self.run_functional_tests())
         except Exception as e:
-            print(f"Error running functional tests: {e}")
+            logger.error(f"Error running functional tests: {e}")
             results.append(TestResult(
                 test_name="Functional Tests",
                 test_type=TestType.FUNCTIONAL,
@@ -229,7 +232,7 @@ class DistributedTestRunner:
         try:
             results.extend(await self.run_performance_tests())
         except Exception as e:
-            print(f"Error running performance tests: {e}")
+            logger.error(f"Error running performance tests: {e}")
             results.append(TestResult(
                 test_name="Performance Tests",
                 test_type=TestType.PERFORMANCE,
@@ -242,7 +245,7 @@ class DistributedTestRunner:
         try:
             results.extend(await self.run_chaos_tests())
         except Exception as e:
-            print(f"Error running chaos tests: {e}")
+            logger.error(f"Error running chaos tests: {e}")
             results.append(TestResult(
                 test_name="Chaos Tests",
                 test_type=TestType.CHAOS,
@@ -1502,7 +1505,7 @@ class DistributedTestRunner:
 
             return None
         except Exception as e:
-            print(f"Error extracting service name from {url}: {e}")
+            logger.warning(f"Error extracting service name from {url}: {e}")
             return None
 
     async def _stop_service(self, service_name: str) -> bool:
@@ -1524,11 +1527,11 @@ class DistributedTestRunner:
             operation = client.update_service(service=service)
             operation.result(timeout=120)  # Wait for update to complete
 
-            print(f"Stopped service {service_name}")
+            logger.info(f"Stopped service {service_name}")
             return True
 
         except Exception as e:
-            print(f"Failed to stop service {service_name}: {e}")
+            logger.error(f"Failed to stop service {service_name}: {e}")
             return False
 
     async def _start_service(self, service_name: str) -> bool:
@@ -1553,9 +1556,9 @@ class DistributedTestRunner:
             # Wait a bit for the service to become healthy
             await asyncio.sleep(5)
 
-            print(f"Started service {service_name}")
+            logger.info(f"Started service {service_name}")
             return True
 
         except Exception as e:
-            print(f"Failed to start service {service_name}: {e}")
+            logger.error(f"Failed to start service {service_name}: {e}")
             return False

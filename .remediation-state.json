@@ -1,0 +1,108 @@
+{
+  "plan_file": "docs/REMEDIATION_PLAN.md",
+  "started_at": "2026-01-09T00:00:00Z",
+  "last_updated": "2026-01-09T01:00:00Z",
+  "current_phase": 1,
+  "current_task": "1.4",
+  "status": "in_progress",
+  "phases": {
+    "phase1": {
+      "name": "Critical Code Fixes",
+      "status": "in_progress",
+      "tasks": {
+        "1.1": {"name": "Replace print statements with logging", "status": "completed", "files_modified": ["backend/auth/jwt_handler.py", "backend/services/orchestrator.py", "backend/services/distributed_build.py", "backend/services/distributed_tests.py"]},
+        "1.2": {"name": "Fix bare exception handlers", "status": "skipped", "notes": "File backend/auth/oauth_providers.py does not exist; other exception handlers are appropriate for their context"},
+        "1.3": {"name": "Remove hardcoded credentials", "status": "skipped", "notes": "config.py uses empty defaults, test files use localhost as fallback - acceptable"},
+        "1.4": {"name": "Commit Phase 1", "status": "pending"}
+      }
+    },
+    "phase2": {
+      "name": "Redundant Code Elimination",
+      "status": "pending",
+      "tasks": {
+        "2.1": {"name": "Create shared GrpcClientManager", "status": "pending"},
+        "2.2": {"name": "Refactor OAuth URL functions", "status": "pending"},
+        "2.3": {"name": "Consolidate test fixtures", "status": "pending"},
+        "2.4": {"name": "Create single source for enums", "status": "pending"},
+        "2.5": {"name": "Consolidate validation logic", "status": "pending"},
+        "2.6": {"name": "Commit Phase 2", "status": "pending"}
+      }
+    },
+    "phase3": {
+      "name": "Structure Cleanup",
+      "status": "pending",
+      "tasks": {
+        "3.1": {"name": "Handle root Dockerfile", "status": "pending"},
+        "3.2": {"name": "Remove duplicate requirements.txt", "status": "pending"},
+        "3.3": {"name": "Document test organization", "status": "pending"},
+        "3.4": {"name": "Consolidate solution directories", "status": "pending"},
+        "3.5": {"name": "Commit Phase 3", "status": "pending"}
+      }
+    },
+    "phase4": {
+      "name": "Documentation Updates",
+      "status": "pending",
+      "tasks": {
+        "4.1": {"name": "Fix API.md rate limiting section", "status": "pending"},
+        "4.2": {"name": "Add distributed API documentation", "status": "pending"},
+        "4.3": {"name": "Add WebSocket documentation", "status": "pending"},
+        "4.4": {"name": "Update ARCHITECTURE.md", "status": "pending"},
+        "4.5": {"name": "Fix DEPLOYMENT.md", "status": "pending"},
+        "4.6": {"name": "Fix NEXT_STEPS.md reference", "status": "pending"},
+        "4.7": {"name": "Commit Phase 4", "status": "pending"}
+      }
+    },
+    "phase5": {
+      "name": "New Documentation Creation",
+      "status": "pending",
+      "tasks": {
+        "5.1": {"name": "Create DISTRIBUTED_CONSENSUS.md", "status": "pending"},
+        "5.2": {"name": "Create WEBSOCKET.md", "status": "pending"},
+        "5.3": {"name": "Create CONTRIBUTING.md", "status": "pending"},
+        "5.4": {"name": "Create AUDIT_AND_SECURITY.md", "status": "pending"},
+        "5.5": {"name": "Commit Phase 5", "status": "pending"}
+      }
+    },
+    "phase6": {
+      "name": "Code Docstrings",
+      "status": "pending",
+      "tasks": {
+        "6.1": {"name": "Add docstrings to middleware", "status": "pending"},
+        "6.2": {"name": "Add docstrings to websocket module", "status": "pending"},
+        "6.3": {"name": "Add docstrings to prompts module", "status": "pending"},
+        "6.4": {"name": "Add docstrings to error analyzer", "status": "pending"},
+        "6.5": {"name": "Commit Phase 6", "status": "pending"}
+      }
+    },
+    "phase7": {
+      "name": "TypeScript Improvements",
+      "status": "pending",
+      "tasks": {
+        "7.1": {"name": "Fix frontend API client types", "status": "pending"},
+        "7.2": {"name": "Fix DesignEditor component types", "status": "pending"},
+        "7.3": {"name": "Fix admin API client types", "status": "pending"},
+        "7.4": {"name": "Add type hints to Python utils", "status": "pending"},
+        "7.5": {"name": "Commit Phase 7", "status": "pending"}
+      }
+    },
+    "phase8": {
+      "name": "Tooling & Configuration",
+      "status": "pending",
+      "tasks": {
+        "8.1": {"name": "Configure Python linting", "status": "pending"},
+        "8.2": {"name": "Configure TypeScript linting", "status": "pending"},
+        "8.3": {"name": "Add pre-commit hooks", "status": "pending"},
+        "8.4": {"name": "Fix import ordering", "status": "pending"},
+        "8.5": {"name": "Final commit", "status": "pending"}
+      }
+    }
+  },
+  "commits": [],
+  "files_modified": [
+    "backend/auth/jwt_handler.py",
+    "backend/services/orchestrator.py",
+    "backend/services/distributed_build.py",
+    "backend/services/distributed_tests.py"
+  ],
+  "files_created": []
+}
