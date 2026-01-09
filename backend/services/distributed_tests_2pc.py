@@ -17,26 +17,13 @@ from enum import Enum
 import grpc
 
 from backend.config import get_settings
+from backend.models.test_result import TestType, TestStatus
 
 settings = get_settings()
 
 
-class TestType(str, Enum):
-    FUNCTIONAL = "functional"
-    PERFORMANCE = "performance"
-    CHAOS = "chaos"
-
-
-class TestStatus(str, Enum):
-    PENDING = "pending"
-    RUNNING = "running"
-    PASSED = "passed"
-    FAILED = "failed"
-    ERROR = "error"
-
-
 @dataclass
-class TestResult:
+class DistributedDistributedTestResult:
     """Result of a single test."""
     test_name: str
     test_type: TestType
@@ -179,14 +166,14 @@ class TwoPhaseCommitTestRunner:
         self.grpc_manager = TwoPhaseCommitGrpcClientManager()
         self._grpc_ready, self._grpc_error = self.grpc_manager.is_ready()
 
-    async def run_all_tests(self) -> List[TestResult]:
+    async def run_all_tests(self) -> List[DistributedTestResult]:
         """Run all tests and return results."""
         results = []
 
         try:
             results.extend(await self.run_functional_tests())
         except Exception as e:
-            results.append(TestResult(
+            results.append(DistributedTestResult(
                 test_name="Functional Tests",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.ERROR,
@@ -197,7 +184,7 @@ class TwoPhaseCommitTestRunner:
         try:
             results.extend(await self.run_performance_tests())
         except Exception as e:
-            results.append(TestResult(
+            results.append(DistributedTestResult(
                 test_name="Performance Tests",
                 test_type=TestType.PERFORMANCE,
                 status=TestStatus.ERROR,
@@ -208,7 +195,7 @@ class TwoPhaseCommitTestRunner:
         try:
             results.extend(await self.run_chaos_tests())
         except Exception as e:
-            results.append(TestResult(
+            results.append(DistributedTestResult(
                 test_name="Chaos Tests",
                 test_type=TestType.CHAOS,
                 status=TestStatus.ERROR,
@@ -217,7 +204,7 @@ class TwoPhaseCommitTestRunner:
             ))
 
         if not results:
-            results.append(TestResult(
+            results.append(DistributedTestResult(
                 test_name="Test Execution",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.ERROR,
@@ -227,7 +214,7 @@ class TwoPhaseCommitTestRunner:
 
         return results
 
-    async def run_functional_tests(self) -> List[TestResult]:
+    async def run_functional_tests(self) -> List[DistributedTestResult]:
         """Run 2PC-specific functional tests."""
         results = []
         results.append(await self._test_coordinator_detection())
@@ -236,21 +223,21 @@ class TwoPhaseCommitTestRunner:
         results.append(await self._test_atomicity())
         return results
 
-    async def run_performance_tests(self) -> List[TestResult]:
+    async def run_performance_tests(self) -> List[DistributedTestResult]:
         """Run performance tests."""
         results = []
         results.append(await self._test_transaction_throughput())
         results.append(await self._test_transaction_latency())
         return results
 
-    async def run_chaos_tests(self) -> List[TestResult]:
+    async def run_chaos_tests(self) -> List[DistributedTestResult]:
         """Run chaos tests."""
         results = []
         results.append(await self._test_coordinator_failure())
         results.append(await self._test_participant_failure())
         return results
 
-    async def _test_coordinator_detection(self) -> TestResult:
+    async def _test_coordinator_detection(self) -> DistributedTestResult:
         """Test that coordinator is detected."""
         start_time = time.time()
 
@@ -270,7 +257,7 @@ class TwoPhaseCommitTestRunner:
             duration_ms = int((time.time() - start_time) * 1000)
 
             if coordinator_found:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Coordinator Detection",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.PASSED,
@@ -278,7 +265,7 @@ class TwoPhaseCommitTestRunner:
                     details={"coordinator_id": coordinator_id},
                 )
             else:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Coordinator Detection",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
@@ -287,7 +274,7 @@ class TwoPhaseCommitTestRunner:
                 )
 
         except Exception as e:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Coordinator Detection",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.ERROR,
@@ -295,14 +282,14 @@ class TwoPhaseCommitTestRunner:
                 error_message=f"Test framework error: {e}",
             )
 
-    async def _test_transaction_commit(self) -> TestResult:
+    async def _test_transaction_commit(self) -> DistributedTestResult:
         """Test successful transaction commit."""
         start_time = time.time()
 
         try:
             coordinator_url = await self._find_coordinator()
             if not coordinator_url:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Transaction Commit",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
@@ -313,7 +300,7 @@ class TwoPhaseCommitTestRunner:
             # Begin transaction
             begin_result, error = await self._begin_transaction(coordinator_url)
             if error or not begin_result.get("success"):
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Transaction Commit",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
@@ -328,7 +315,7 @@ class TwoPhaseCommitTestRunner:
             duration_ms = int((time.time() - start_time) * 1000)
 
             if error:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Transaction Commit",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
@@ -338,7 +325,7 @@ class TwoPhaseCommitTestRunner:
                 )
 
             if commit_result.get("success"):
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Transaction Commit",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.PASSED,
@@ -346,7 +333,7 @@ class TwoPhaseCommitTestRunner:
                     details={"transaction_id": txn_id},
                 )
             else:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Transaction Commit",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
@@ -355,7 +342,7 @@ class TwoPhaseCommitTestRunner:
                 )
 
         except Exception as e:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Transaction Commit",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.ERROR,
@@ -363,14 +350,14 @@ class TwoPhaseCommitTestRunner:
                 error_message=f"Test framework error: {e}",
             )
 
-    async def _test_transaction_abort(self) -> TestResult:
+    async def _test_transaction_abort(self) -> DistributedTestResult:
         """Test transaction abort."""
         start_time = time.time()
 
         try:
             coordinator_url = await self._find_coordinator()
             if not coordinator_url:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Transaction Abort",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
@@ -380,7 +367,7 @@ class TwoPhaseCommitTestRunner:
 
             begin_result, error = await self._begin_transaction(coordinator_url)
             if error or not begin_result.get("success"):
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Transaction Abort",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
@@ -393,7 +380,7 @@ class TwoPhaseCommitTestRunner:
             duration_ms = int((time.time() - start_time) * 1000)
 
             if error:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Transaction Abort",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
@@ -402,7 +389,7 @@ class TwoPhaseCommitTestRunner:
                 )
 
             if abort_result.get("success"):
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Transaction Abort",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.PASSED,
@@ -410,7 +397,7 @@ class TwoPhaseCommitTestRunner:
                     details={"transaction_id": txn_id},
                 )
             else:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Transaction Abort",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
@@ -419,7 +406,7 @@ class TwoPhaseCommitTestRunner:
                 )
 
         except Exception as e:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Transaction Abort",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.ERROR,
@@ -427,10 +414,10 @@ class TwoPhaseCommitTestRunner:
                 error_message=f"Test framework error: {e}",
             )
 
-    async def _test_atomicity(self) -> TestResult:
+    async def _test_atomicity(self) -> DistributedTestResult:
         """Test that transactions are atomic."""
         start_time = time.time()
-        return TestResult(
+        return DistributedTestResult(
             test_name="Atomicity",
             test_type=TestType.FUNCTIONAL,
             status=TestStatus.PASSED,
@@ -438,14 +425,14 @@ class TwoPhaseCommitTestRunner:
             details={"note": "Atomicity verified via commit/abort tests"},
         )
 
-    async def _test_transaction_throughput(self) -> TestResult:
+    async def _test_transaction_throughput(self) -> DistributedTestResult:
         """Test transaction throughput."""
         start_time = time.time()
 
         try:
             coordinator_url = await self._find_coordinator()
             if not coordinator_url:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Transaction Throughput",
                     test_type=TestType.PERFORMANCE,
                     status=TestStatus.FAILED,
@@ -471,7 +458,7 @@ class TwoPhaseCommitTestRunner:
             duration_ms = int((time.time() - start_time) * 1000)
 
             if txns_per_second >= 5:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Transaction Throughput",
                     test_type=TestType.PERFORMANCE,
                     status=TestStatus.PASSED,
@@ -479,7 +466,7 @@ class TwoPhaseCommitTestRunner:
                     details={"txns_per_second": round(txns_per_second, 2)},
                 )
             else:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Transaction Throughput",
                     test_type=TestType.PERFORMANCE,
                     status=TestStatus.FAILED,
@@ -488,7 +475,7 @@ class TwoPhaseCommitTestRunner:
                 )
 
         except Exception as e:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Transaction Throughput",
                 test_type=TestType.PERFORMANCE,
                 status=TestStatus.ERROR,
@@ -496,14 +483,14 @@ class TwoPhaseCommitTestRunner:
                 error_message=f"Test framework error: {e}",
             )
 
-    async def _test_transaction_latency(self) -> TestResult:
+    async def _test_transaction_latency(self) -> DistributedTestResult:
         """Test transaction latency."""
         start_time = time.time()
 
         try:
             coordinator_url = await self._find_coordinator()
             if not coordinator_url:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Transaction Latency",
                     test_type=TestType.PERFORMANCE,
                     status=TestStatus.FAILED,
@@ -523,7 +510,7 @@ class TwoPhaseCommitTestRunner:
                         latencies.append(op_latency)
 
             if not latencies:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Transaction Latency",
                     test_type=TestType.PERFORMANCE,
                     status=TestStatus.FAILED,
@@ -535,7 +522,7 @@ class TwoPhaseCommitTestRunner:
             p95 = latencies[int(len(latencies) * 0.95)]
 
             if p95 < 1000:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Transaction Latency",
                     test_type=TestType.PERFORMANCE,
                     status=TestStatus.PASSED,
@@ -543,7 +530,7 @@ class TwoPhaseCommitTestRunner:
                     details={"p95_ms": round(p95, 2)},
                 )
             else:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Transaction Latency",
                     test_type=TestType.PERFORMANCE,
                     status=TestStatus.FAILED,
@@ -552,7 +539,7 @@ class TwoPhaseCommitTestRunner:
                 )
 
         except Exception as e:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Transaction Latency",
                 test_type=TestType.PERFORMANCE,
                 status=TestStatus.ERROR,
@@ -560,9 +547,9 @@ class TwoPhaseCommitTestRunner:
                 error_message=f"Test framework error: {e}",
             )
 
-    async def _test_coordinator_failure(self) -> TestResult:
+    async def _test_coordinator_failure(self) -> DistributedTestResult:
         """Test recovery from coordinator failure."""
-        return TestResult(
+        return DistributedTestResult(
             test_name="Coordinator Failure",
             test_type=TestType.CHAOS,
             status=TestStatus.PASSED,
@@ -571,9 +558,9 @@ class TwoPhaseCommitTestRunner:
             chaos_scenario="skipped",
         )
 
-    async def _test_participant_failure(self) -> TestResult:
+    async def _test_participant_failure(self) -> DistributedTestResult:
         """Test recovery from participant failure."""
-        return TestResult(
+        return DistributedTestResult(
             test_name="Participant Failure",
             test_type=TestType.CHAOS,
             status=TestStatus.PASSED,

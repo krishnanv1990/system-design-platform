@@ -18,34 +18,20 @@ import time
 import tempfile
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Any, Tuple
-from enum import Enum
 
 import grpc
 from google.cloud import run_v2
 
 from backend.config import get_settings
+from backend.models.test_result import TestType, TestStatus
 
 logger = logging.getLogger(__name__)
 
 settings = get_settings()
 
 
-class TestType(str, Enum):
-    FUNCTIONAL = "functional"
-    PERFORMANCE = "performance"
-    CHAOS = "chaos"
-
-
-class TestStatus(str, Enum):
-    PENDING = "pending"
-    RUNNING = "running"
-    PASSED = "passed"
-    FAILED = "failed"
-    ERROR = "error"
-
-
 @dataclass
-class TestResult:
+class DistributedTestResult:
     """Result of a single test."""
     test_name: str
     test_type: TestType
@@ -211,7 +197,7 @@ class DistributedTestRunner:
         # Track gRPC readiness
         self._grpc_ready, self._grpc_error = self.grpc_manager.is_ready()
 
-    async def run_all_tests(self) -> List[TestResult]:
+    async def run_all_tests(self) -> List[DistributedTestResult]:
         """Run all tests and return results."""
         results = []
 
@@ -220,7 +206,7 @@ class DistributedTestRunner:
             results.extend(await self.run_functional_tests())
         except Exception as e:
             logger.error(f"Error running functional tests: {e}")
-            results.append(TestResult(
+            results.append(DistributedTestResult(
                 test_name="Functional Tests",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.ERROR,
@@ -233,7 +219,7 @@ class DistributedTestRunner:
             results.extend(await self.run_performance_tests())
         except Exception as e:
             logger.error(f"Error running performance tests: {e}")
-            results.append(TestResult(
+            results.append(DistributedTestResult(
                 test_name="Performance Tests",
                 test_type=TestType.PERFORMANCE,
                 status=TestStatus.ERROR,
@@ -246,7 +232,7 @@ class DistributedTestRunner:
             results.extend(await self.run_chaos_tests())
         except Exception as e:
             logger.error(f"Error running chaos tests: {e}")
-            results.append(TestResult(
+            results.append(DistributedTestResult(
                 test_name="Chaos Tests",
                 test_type=TestType.CHAOS,
                 status=TestStatus.ERROR,
@@ -256,7 +242,7 @@ class DistributedTestRunner:
 
         # Ensure we always return at least one result
         if not results:
-            results.append(TestResult(
+            results.append(DistributedTestResult(
                 test_name="Test Execution",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.ERROR,
@@ -266,7 +252,7 @@ class DistributedTestRunner:
 
         return results
 
-    async def run_functional_tests(self) -> List[TestResult]:
+    async def run_functional_tests(self) -> List[DistributedTestResult]:
         """Run functional correctness tests."""
         results = []
 
@@ -287,7 +273,7 @@ class DistributedTestRunner:
 
         return results
 
-    async def run_performance_tests(self) -> List[TestResult]:
+    async def run_performance_tests(self) -> List[DistributedTestResult]:
         """Run performance tests."""
         results = []
 
@@ -299,7 +285,7 @@ class DistributedTestRunner:
 
         return results
 
-    async def run_chaos_tests(self) -> List[TestResult]:
+    async def run_chaos_tests(self) -> List[DistributedTestResult]:
         """Run chaos engineering tests with real infrastructure control."""
         results = []
 
@@ -348,7 +334,7 @@ class DistributedTestRunner:
             duration_ms = int((time.time() - start_time) * 1000)
 
             if leader_found:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Leader Election",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.PASSED,
@@ -359,7 +345,7 @@ class DistributedTestRunner:
                 error_msg = "No leader elected within 30 second timeout."
                 if last_error:
                     error_msg += f" Last error: {last_error}"
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Leader Election",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
@@ -369,7 +355,7 @@ class DistributedTestRunner:
                 )
 
         except Exception as e:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Leader Election",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.ERROR,
@@ -385,7 +371,7 @@ class DistributedTestRunner:
             # Find leader
             leader_url, leader_error = await self._find_leader()
             if not leader_url:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Basic Put/Get",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
@@ -400,7 +386,7 @@ class DistributedTestRunner:
 
             put_result, put_error = await self._put(leader_url, test_key, test_value)
             if put_error:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Basic Put/Get",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
@@ -412,7 +398,7 @@ class DistributedTestRunner:
             if not put_result.get("success"):
                 error_info = put_result.get("error", "Unknown error")
                 leader_hint = put_result.get("leader_hint")
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Basic Put/Get",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
@@ -432,7 +418,7 @@ class DistributedTestRunner:
             duration_ms = int((time.time() - start_time) * 1000)
 
             if get_error:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Basic Put/Get",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
@@ -442,7 +428,7 @@ class DistributedTestRunner:
                 )
 
             if not get_result.get("found"):
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Basic Put/Get",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
@@ -452,7 +438,7 @@ class DistributedTestRunner:
                 )
 
             if get_result.get("value") != test_value:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Basic Put/Get",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
@@ -461,7 +447,7 @@ class DistributedTestRunner:
                     details={"hint": "The stored value doesn't match what was written. Check your state machine."},
                 )
 
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Basic Put/Get",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.PASSED,
@@ -470,7 +456,7 @@ class DistributedTestRunner:
             )
 
         except Exception as e:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Basic Put/Get",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.ERROR,
@@ -485,7 +471,7 @@ class DistributedTestRunner:
         try:
             leader_url, leader_error = await self._find_leader()
             if not leader_url:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Log Replication",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
@@ -501,7 +487,7 @@ class DistributedTestRunner:
                 test_entries[key] = value
                 result, error = await self._put(leader_url, key, value)
                 if error or not result.get("success"):
-                    return TestResult(
+                    return DistributedTestResult(
                         test_name="Log Replication",
                         test_type=TestType.FUNCTIONAL,
                         status=TestStatus.FAILED,
@@ -528,7 +514,7 @@ class DistributedTestRunner:
             duration_ms = int((time.time() - start_time) * 1000)
 
             if not failed_reads:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Log Replication",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.PASSED,
@@ -536,7 +522,7 @@ class DistributedTestRunner:
                     details={"entries_replicated": len(test_entries), "nodes_checked": len(self.cluster_urls)},
                 )
             else:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Log Replication",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
@@ -549,7 +535,7 @@ class DistributedTestRunner:
                 )
 
         except Exception as e:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Log Replication",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.ERROR,
@@ -564,7 +550,7 @@ class DistributedTestRunner:
         try:
             leader_url, leader_error = await self._find_leader()
             if not leader_url:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Read Consistency",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
@@ -577,7 +563,7 @@ class DistributedTestRunner:
             value = "consistency_value"
             result, error = await self._put(leader_url, key, value)
             if error or not result.get("success"):
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Read Consistency",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
@@ -604,7 +590,7 @@ class DistributedTestRunner:
             # Check if all nodes have the same value
             unique_values = set(node_values.values())
             if len(unique_values) == 1 and value in unique_values:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Read Consistency",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.PASSED,
@@ -612,7 +598,7 @@ class DistributedTestRunner:
                     details={"nodes_checked": len(node_values), "value": value},
                 )
             else:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Read Consistency",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
@@ -626,7 +612,7 @@ class DistributedTestRunner:
                 )
 
         except Exception as e:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Read Consistency",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.ERROR,
@@ -641,7 +627,7 @@ class DistributedTestRunner:
         try:
             leader_url, leader_error = await self._find_leader()
             if not leader_url:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Leader Redirect",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
@@ -657,7 +643,7 @@ class DistributedTestRunner:
                     break
 
             if not follower_url:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Leader Redirect",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.PASSED,
@@ -672,7 +658,7 @@ class DistributedTestRunner:
             duration_ms = int((time.time() - start_time) * 1000)
 
             if error:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Leader Redirect",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
@@ -683,7 +669,7 @@ class DistributedTestRunner:
 
             # Either the write succeeds (follower forwards to leader) or we get a leader_hint
             if result.get("success") or result.get("leader_hint"):
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Leader Redirect",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.PASSED,
@@ -695,7 +681,7 @@ class DistributedTestRunner:
                     },
                 )
             else:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Leader Redirect",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
@@ -708,7 +694,7 @@ class DistributedTestRunner:
                 )
 
         except Exception as e:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Leader Redirect",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.ERROR,
@@ -727,7 +713,7 @@ class DistributedTestRunner:
         try:
             leader_url, leader_error = await self._find_leader()
             if not leader_url:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Throughput",
                     test_type=TestType.PERFORMANCE,
                     status=TestStatus.FAILED,
@@ -764,7 +750,7 @@ class DistributedTestRunner:
 
             # Consider passing if we achieve at least 10 ops/sec
             if ops_per_second >= 10:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Throughput",
                     test_type=TestType.PERFORMANCE,
                     status=TestStatus.PASSED,
@@ -778,7 +764,7 @@ class DistributedTestRunner:
                     },
                 )
             else:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Throughput",
                     test_type=TestType.PERFORMANCE,
                     status=TestStatus.FAILED,
@@ -794,7 +780,7 @@ class DistributedTestRunner:
                 )
 
         except Exception as e:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Throughput",
                 test_type=TestType.PERFORMANCE,
                 status=TestStatus.ERROR,
@@ -809,7 +795,7 @@ class DistributedTestRunner:
         try:
             leader_url, leader_error = await self._find_leader()
             if not leader_url:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Latency",
                     test_type=TestType.PERFORMANCE,
                     status=TestStatus.FAILED,
@@ -838,7 +824,7 @@ class DistributedTestRunner:
                         errors.append(result.get("error", "Unknown"))
 
             if not latencies:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Latency",
                     test_type=TestType.PERFORMANCE,
                     status=TestStatus.FAILED,
@@ -860,7 +846,7 @@ class DistributedTestRunner:
 
             # Consider passing if p95 < 500ms
             if p95 < 500:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Latency",
                     test_type=TestType.PERFORMANCE,
                     status=TestStatus.PASSED,
@@ -874,7 +860,7 @@ class DistributedTestRunner:
                     },
                 )
             else:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Latency",
                     test_type=TestType.PERFORMANCE,
                     status=TestStatus.FAILED,
@@ -888,7 +874,7 @@ class DistributedTestRunner:
                 )
 
         except Exception as e:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Latency",
                 test_type=TestType.PERFORMANCE,
                 status=TestStatus.ERROR,
@@ -919,7 +905,7 @@ class DistributedTestRunner:
             # Find current leader
             leader_url, leader_error = await self._find_leader()
             if not leader_url:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Leader Failure",
                     test_type=TestType.CHAOS,
                     status=TestStatus.FAILED,
@@ -935,7 +921,7 @@ class DistributedTestRunner:
             test_value = "pre_failure_value"
             put_result, put_error = await self._put(leader_url, test_key, test_value)
             if put_error or not put_result.get("success"):
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Leader Failure",
                     test_type=TestType.CHAOS,
                     status=TestStatus.FAILED,
@@ -952,7 +938,7 @@ class DistributedTestRunner:
             if leader_service_name:
                 stopped = await self._stop_service(leader_service_name)
                 if not stopped:
-                    return TestResult(
+                    return DistributedTestResult(
                         test_name="Leader Failure",
                         test_type=TestType.CHAOS,
                         status=TestStatus.ERROR,
@@ -963,7 +949,7 @@ class DistributedTestRunner:
                     )
             else:
                 # Cannot extract service name - skip with explanation
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Leader Failure",
                     test_type=TestType.CHAOS,
                     status=TestStatus.PASSED,
@@ -989,7 +975,7 @@ class DistributedTestRunner:
                     await asyncio.sleep(0.5)
 
                 if not new_leader_url:
-                    return TestResult(
+                    return DistributedTestResult(
                         test_name="Leader Failure",
                         test_type=TestType.CHAOS,
                         status=TestStatus.FAILED,
@@ -1005,7 +991,7 @@ class DistributedTestRunner:
                 duration_ms = int((time.time() - start_time) * 1000)
 
                 if get_error:
-                    return TestResult(
+                    return DistributedTestResult(
                         test_name="Leader Failure",
                         test_type=TestType.CHAOS,
                         status=TestStatus.FAILED,
@@ -1015,7 +1001,7 @@ class DistributedTestRunner:
                     )
 
                 if get_result.get("found") and get_result.get("value") == test_value:
-                    return TestResult(
+                    return DistributedTestResult(
                         test_name="Leader Failure",
                         test_type=TestType.CHAOS,
                         status=TestStatus.PASSED,
@@ -1028,7 +1014,7 @@ class DistributedTestRunner:
                         chaos_scenario=chaos_scenario,
                     )
                 else:
-                    return TestResult(
+                    return DistributedTestResult(
                         test_name="Leader Failure",
                         test_type=TestType.CHAOS,
                         status=TestStatus.FAILED,
@@ -1048,7 +1034,7 @@ class DistributedTestRunner:
                     await self._start_service(leader_service_name)
 
         except Exception as e:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Leader Failure",
                 test_type=TestType.CHAOS,
                 status=TestStatus.ERROR,
@@ -1069,7 +1055,7 @@ class DistributedTestRunner:
 
         try:
             if self.cluster_size < 3:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Network Partition",
                     test_type=TestType.CHAOS,
                     status=TestStatus.PASSED,
@@ -1081,7 +1067,7 @@ class DistributedTestRunner:
             # Find leader and a follower to partition
             leader_url, leader_error = await self._find_leader()
             if not leader_url:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Network Partition",
                     test_type=TestType.CHAOS,
                     status=TestStatus.FAILED,
@@ -1098,7 +1084,7 @@ class DistributedTestRunner:
                     break
 
             if not follower_to_partition:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Network Partition",
                     test_type=TestType.CHAOS,
                     status=TestStatus.PASSED,
@@ -1110,7 +1096,7 @@ class DistributedTestRunner:
             # Stop the follower to simulate partition
             follower_service_name = self._url_to_service_name(follower_to_partition)
             if not follower_service_name:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Network Partition",
                     test_type=TestType.CHAOS,
                     status=TestStatus.PASSED,
@@ -1121,7 +1107,7 @@ class DistributedTestRunner:
 
             stopped = await self._stop_service(follower_service_name)
             if not stopped:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Network Partition",
                     test_type=TestType.CHAOS,
                     status=TestStatus.ERROR,
@@ -1141,7 +1127,7 @@ class DistributedTestRunner:
                 put_result, put_error = await self._put(leader_url, test_key, test_value)
 
                 if put_error or not put_result.get("success"):
-                    return TestResult(
+                    return DistributedTestResult(
                         test_name="Network Partition",
                         test_type=TestType.CHAOS,
                         status=TestStatus.FAILED,
@@ -1157,7 +1143,7 @@ class DistributedTestRunner:
                 duration_ms = int((time.time() - start_time) * 1000)
 
                 if get_error:
-                    return TestResult(
+                    return DistributedTestResult(
                         test_name="Network Partition",
                         test_type=TestType.CHAOS,
                         status=TestStatus.FAILED,
@@ -1167,7 +1153,7 @@ class DistributedTestRunner:
                     )
 
                 if get_result.get("found") and get_result.get("value") == test_value:
-                    return TestResult(
+                    return DistributedTestResult(
                         test_name="Network Partition",
                         test_type=TestType.CHAOS,
                         status=TestStatus.PASSED,
@@ -1180,7 +1166,7 @@ class DistributedTestRunner:
                         chaos_scenario=chaos_scenario,
                     )
                 else:
-                    return TestResult(
+                    return DistributedTestResult(
                         test_name="Network Partition",
                         test_type=TestType.CHAOS,
                         status=TestStatus.FAILED,
@@ -1195,7 +1181,7 @@ class DistributedTestRunner:
                 await self._start_service(follower_service_name)
 
         except Exception as e:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Network Partition",
                 test_type=TestType.CHAOS,
                 status=TestStatus.ERROR,
@@ -1222,7 +1208,7 @@ class DistributedTestRunner:
             # Find leader and a follower
             leader_url, leader_error = await self._find_leader()
             if not leader_url:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Node Restart",
                     test_type=TestType.CHAOS,
                     status=TestStatus.FAILED,
@@ -1238,7 +1224,7 @@ class DistributedTestRunner:
                     break
 
             if not follower_url:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Node Restart",
                     test_type=TestType.CHAOS,
                     status=TestStatus.PASSED,
@@ -1252,7 +1238,7 @@ class DistributedTestRunner:
             pre_restart_value = "before_restart"
             result, error = await self._put(leader_url, pre_restart_key, pre_restart_value)
             if error or not result.get("success"):
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Node Restart",
                     test_type=TestType.CHAOS,
                     status=TestStatus.FAILED,
@@ -1265,7 +1251,7 @@ class DistributedTestRunner:
             # Stop the follower
             follower_service_name = self._url_to_service_name(follower_url)
             if not follower_service_name:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Node Restart",
                     test_type=TestType.CHAOS,
                     status=TestStatus.PASSED,
@@ -1276,7 +1262,7 @@ class DistributedTestRunner:
 
             stopped = await self._stop_service(follower_service_name)
             if not stopped:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Node Restart",
                     test_type=TestType.CHAOS,
                     status=TestStatus.ERROR,
@@ -1291,7 +1277,7 @@ class DistributedTestRunner:
                 during_restart_value = "during_restart"
                 result, error = await self._put(leader_url, during_restart_key, during_restart_value)
                 if error or not result.get("success"):
-                    return TestResult(
+                    return DistributedTestResult(
                         test_name="Node Restart",
                         test_type=TestType.CHAOS,
                         status=TestStatus.FAILED,
@@ -1320,7 +1306,7 @@ class DistributedTestRunner:
                     all_data_present = pre_result.get("found") and pre_result.get("value") == pre_restart_value
 
                     if all_data_present:
-                        return TestResult(
+                        return DistributedTestResult(
                             test_name="Node Restart",
                             test_type=TestType.CHAOS,
                             status=TestStatus.PASSED,
@@ -1333,7 +1319,7 @@ class DistributedTestRunner:
                             chaos_scenario=chaos_scenario,
                         )
                     else:
-                        return TestResult(
+                        return DistributedTestResult(
                             test_name="Node Restart",
                             test_type=TestType.CHAOS,
                             status=TestStatus.FAILED,
@@ -1343,7 +1329,7 @@ class DistributedTestRunner:
                             details={"hint": "Check log persistence and snapshot handling."},
                         )
                 else:
-                    return TestResult(
+                    return DistributedTestResult(
                         test_name="Node Restart",
                         test_type=TestType.CHAOS,
                         status=TestStatus.FAILED,
@@ -1359,7 +1345,7 @@ class DistributedTestRunner:
                 raise e
 
         except Exception as e:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Node Restart",
                 test_type=TestType.CHAOS,
                 status=TestStatus.ERROR,

@@ -17,26 +17,13 @@ from enum import Enum
 import grpc
 
 from backend.config import get_settings
+from backend.models.test_result import TestType, TestStatus
 
 settings = get_settings()
 
 
-class TestType(str, Enum):
-    FUNCTIONAL = "functional"
-    PERFORMANCE = "performance"
-    CHAOS = "chaos"
-
-
-class TestStatus(str, Enum):
-    PENDING = "pending"
-    RUNNING = "running"
-    PASSED = "passed"
-    FAILED = "failed"
-    ERROR = "error"
-
-
 @dataclass
-class TestResult:
+class DistributedDistributedTestResult:
     """Result of a single test."""
     test_name: str
     test_type: TestType
@@ -199,14 +186,14 @@ class ConsistentHashingTestRunner:
         self.grpc_manager = ConsistentHashingGrpcClientManager()
         self._grpc_ready, self._grpc_error = self.grpc_manager.is_ready()
 
-    async def run_all_tests(self) -> List[TestResult]:
+    async def run_all_tests(self) -> List[DistributedTestResult]:
         """Run all tests and return results."""
         results = []
 
         try:
             results.extend(await self.run_functional_tests())
         except Exception as e:
-            results.append(TestResult(
+            results.append(DistributedTestResult(
                 test_name="Functional Tests",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.ERROR,
@@ -217,7 +204,7 @@ class ConsistentHashingTestRunner:
         try:
             results.extend(await self.run_performance_tests())
         except Exception as e:
-            results.append(TestResult(
+            results.append(DistributedTestResult(
                 test_name="Performance Tests",
                 test_type=TestType.PERFORMANCE,
                 status=TestStatus.ERROR,
@@ -228,7 +215,7 @@ class ConsistentHashingTestRunner:
         try:
             results.extend(await self.run_chaos_tests())
         except Exception as e:
-            results.append(TestResult(
+            results.append(DistributedTestResult(
                 test_name="Chaos Tests",
                 test_type=TestType.CHAOS,
                 status=TestStatus.ERROR,
@@ -237,7 +224,7 @@ class ConsistentHashingTestRunner:
             ))
 
         if not results:
-            results.append(TestResult(
+            results.append(DistributedTestResult(
                 test_name="Test Execution",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.ERROR,
@@ -247,7 +234,7 @@ class ConsistentHashingTestRunner:
 
         return results
 
-    async def run_functional_tests(self) -> List[TestResult]:
+    async def run_functional_tests(self) -> List[DistributedTestResult]:
         """Run Consistent Hashing-specific functional tests."""
         results = []
         results.append(await self._test_cluster_connectivity())
@@ -258,20 +245,20 @@ class ConsistentHashingTestRunner:
         results.append(await self._test_virtual_nodes())
         return results
 
-    async def run_performance_tests(self) -> List[TestResult]:
+    async def run_performance_tests(self) -> List[DistributedTestResult]:
         """Run performance tests."""
         results = []
         results.append(await self._test_lookup_latency())
         results.append(await self._test_distribution_uniformity())
         return results
 
-    async def run_chaos_tests(self) -> List[TestResult]:
+    async def run_chaos_tests(self) -> List[DistributedTestResult]:
         """Run chaos tests."""
         results = []
         results.append(await self._test_node_failure_redistribution())
         return results
 
-    async def _test_cluster_connectivity(self) -> TestResult:
+    async def _test_cluster_connectivity(self) -> DistributedTestResult:
         """Test that all nodes are connected."""
         start_time = time.time()
 
@@ -285,7 +272,7 @@ class ConsistentHashingTestRunner:
             duration_ms = int((time.time() - start_time) * 1000)
 
             if connected_nodes == len(self.cluster_urls):
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Cluster Connectivity",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.PASSED,
@@ -293,7 +280,7 @@ class ConsistentHashingTestRunner:
                     details={"connected_nodes": connected_nodes},
                 )
             else:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Cluster Connectivity",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
@@ -302,7 +289,7 @@ class ConsistentHashingTestRunner:
                 )
 
         except Exception as e:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Cluster Connectivity",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.ERROR,
@@ -310,7 +297,7 @@ class ConsistentHashingTestRunner:
                 error_message=f"Test framework error: {e}",
             )
 
-    async def _test_add_node(self) -> TestResult:
+    async def _test_add_node(self) -> DistributedTestResult:
         """Test that nodes can be added to the hash ring."""
         start_time = time.time()
 
@@ -321,7 +308,7 @@ class ConsistentHashingTestRunner:
             duration_ms = int((time.time() - start_time) * 1000)
 
             if error:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Add Node",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
@@ -331,7 +318,7 @@ class ConsistentHashingTestRunner:
                 )
 
             if result.get("success"):
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Add Node",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.PASSED,
@@ -339,7 +326,7 @@ class ConsistentHashingTestRunner:
                     details={"virtual_nodes": result.get("virtual_nodes_added", 0)},
                 )
             else:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Add Node",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
@@ -348,7 +335,7 @@ class ConsistentHashingTestRunner:
                 )
 
         except Exception as e:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Add Node",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.ERROR,
@@ -356,7 +343,7 @@ class ConsistentHashingTestRunner:
                 error_message=f"Test framework error: {e}",
             )
 
-    async def _test_get_node_for_key(self) -> TestResult:
+    async def _test_get_node_for_key(self) -> DistributedTestResult:
         """Test that GetNodeForKey returns correct node."""
         start_time = time.time()
 
@@ -373,7 +360,7 @@ class ConsistentHashingTestRunner:
             duration_ms = int((time.time() - start_time) * 1000)
 
             if error:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Get Node For Key",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
@@ -383,7 +370,7 @@ class ConsistentHashingTestRunner:
                 )
 
             if result.get("node_id"):
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Get Node For Key",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.PASSED,
@@ -391,7 +378,7 @@ class ConsistentHashingTestRunner:
                     details={"returned_node": result.get("node_id")},
                 )
             else:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Get Node For Key",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
@@ -400,7 +387,7 @@ class ConsistentHashingTestRunner:
                 )
 
         except Exception as e:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Get Node For Key",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.ERROR,
@@ -408,7 +395,7 @@ class ConsistentHashingTestRunner:
                 error_message=f"Test framework error: {e}",
             )
 
-    async def _test_key_consistency(self) -> TestResult:
+    async def _test_key_consistency(self) -> DistributedTestResult:
         """Test that same key always maps to same node."""
         start_time = time.time()
 
@@ -431,7 +418,7 @@ class ConsistentHashingTestRunner:
             duration_ms = int((time.time() - start_time) * 1000)
 
             if len(set(nodes_returned)) == 1 and len(nodes_returned) == 5:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Key Consistency",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.PASSED,
@@ -439,7 +426,7 @@ class ConsistentHashingTestRunner:
                     details={"consistent_node": nodes_returned[0]},
                 )
             else:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Key Consistency",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
@@ -449,7 +436,7 @@ class ConsistentHashingTestRunner:
                 )
 
         except Exception as e:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Key Consistency",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.ERROR,
@@ -457,7 +444,7 @@ class ConsistentHashingTestRunner:
                 error_message=f"Test framework error: {e}",
             )
 
-    async def _test_node_removal(self) -> TestResult:
+    async def _test_node_removal(self) -> DistributedTestResult:
         """Test that node removal works correctly."""
         start_time = time.time()
 
@@ -471,7 +458,7 @@ class ConsistentHashingTestRunner:
             duration_ms = int((time.time() - start_time) * 1000)
 
             if error:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Node Removal",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
@@ -480,7 +467,7 @@ class ConsistentHashingTestRunner:
                 )
 
             if result.get("success"):
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Node Removal",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.PASSED,
@@ -488,7 +475,7 @@ class ConsistentHashingTestRunner:
                     details={"removed_node": "removal-node"},
                 )
             else:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Node Removal",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
@@ -497,7 +484,7 @@ class ConsistentHashingTestRunner:
                 )
 
         except Exception as e:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Node Removal",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.ERROR,
@@ -505,7 +492,7 @@ class ConsistentHashingTestRunner:
                 error_message=f"Test framework error: {e}",
             )
 
-    async def _test_virtual_nodes(self) -> TestResult:
+    async def _test_virtual_nodes(self) -> DistributedTestResult:
         """Test that virtual nodes are created correctly."""
         start_time = time.time()
 
@@ -518,7 +505,7 @@ class ConsistentHashingTestRunner:
             duration_ms = int((time.time() - start_time) * 1000)
 
             if error:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Virtual Nodes",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
@@ -528,7 +515,7 @@ class ConsistentHashingTestRunner:
 
             virtual_nodes = result.get("virtual_nodes_added", 0)
             if virtual_nodes >= 100:  # Should have created virtual nodes
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Virtual Nodes",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.PASSED,
@@ -536,7 +523,7 @@ class ConsistentHashingTestRunner:
                     details={"virtual_nodes_created": virtual_nodes},
                 )
             else:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Virtual Nodes",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.PASSED,
@@ -545,7 +532,7 @@ class ConsistentHashingTestRunner:
                 )
 
         except Exception as e:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Virtual Nodes",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.ERROR,
@@ -553,7 +540,7 @@ class ConsistentHashingTestRunner:
                 error_message=f"Test framework error: {e}",
             )
 
-    async def _test_lookup_latency(self) -> TestResult:
+    async def _test_lookup_latency(self) -> DistributedTestResult:
         """Test lookup latency performance."""
         start_time = time.time()
 
@@ -573,7 +560,7 @@ class ConsistentHashingTestRunner:
                     latencies.append(op_latency)
 
             if not latencies:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Lookup Latency",
                     test_type=TestType.PERFORMANCE,
                     status=TestStatus.FAILED,
@@ -584,7 +571,7 @@ class ConsistentHashingTestRunner:
             avg_latency = sum(latencies) / len(latencies)
 
             if avg_latency < 500:  # < 500ms is acceptable
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Lookup Latency",
                     test_type=TestType.PERFORMANCE,
                     status=TestStatus.PASSED,
@@ -592,7 +579,7 @@ class ConsistentHashingTestRunner:
                     details={"avg_latency_ms": round(avg_latency, 2)},
                 )
             else:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Lookup Latency",
                     test_type=TestType.PERFORMANCE,
                     status=TestStatus.FAILED,
@@ -601,7 +588,7 @@ class ConsistentHashingTestRunner:
                 )
 
         except Exception as e:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Lookup Latency",
                 test_type=TestType.PERFORMANCE,
                 status=TestStatus.ERROR,
@@ -609,7 +596,7 @@ class ConsistentHashingTestRunner:
                 error_message=f"Test framework error: {e}",
             )
 
-    async def _test_distribution_uniformity(self) -> TestResult:
+    async def _test_distribution_uniformity(self) -> DistributedTestResult:
         """Test that keys are distributed uniformly."""
         start_time = time.time()
 
@@ -632,7 +619,7 @@ class ConsistentHashingTestRunner:
             duration_ms = int((time.time() - start_time) * 1000)
 
             if not node_counts:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Distribution Uniformity",
                     test_type=TestType.PERFORMANCE,
                     status=TestStatus.FAILED,
@@ -647,7 +634,7 @@ class ConsistentHashingTestRunner:
 
             # Allow up to 3x imbalance
             if max_count <= min_count * 3:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Distribution Uniformity",
                     test_type=TestType.PERFORMANCE,
                     status=TestStatus.PASSED,
@@ -655,7 +642,7 @@ class ConsistentHashingTestRunner:
                     details={"distribution": node_counts},
                 )
             else:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Distribution Uniformity",
                     test_type=TestType.PERFORMANCE,
                     status=TestStatus.FAILED,
@@ -664,7 +651,7 @@ class ConsistentHashingTestRunner:
                 )
 
         except Exception as e:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Distribution Uniformity",
                 test_type=TestType.PERFORMANCE,
                 status=TestStatus.ERROR,
@@ -672,9 +659,9 @@ class ConsistentHashingTestRunner:
                 error_message=f"Test framework error: {e}",
             )
 
-    async def _test_node_failure_redistribution(self) -> TestResult:
+    async def _test_node_failure_redistribution(self) -> DistributedTestResult:
         """Test key redistribution after node failure."""
-        return TestResult(
+        return DistributedTestResult(
             test_name="Node Failure Redistribution",
             test_type=TestType.CHAOS,
             status=TestStatus.PASSED,

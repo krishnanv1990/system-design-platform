@@ -17,26 +17,13 @@ from enum import Enum
 import grpc
 
 from backend.config import get_settings
+from backend.models.test_result import TestType, TestStatus
 
 settings = get_settings()
 
 
-class TestType(str, Enum):
-    FUNCTIONAL = "functional"
-    PERFORMANCE = "performance"
-    CHAOS = "chaos"
-
-
-class TestStatus(str, Enum):
-    PENDING = "pending"
-    RUNNING = "running"
-    PASSED = "passed"
-    FAILED = "failed"
-    ERROR = "error"
-
-
 @dataclass
-class TestResult:
+class DistributedDistributedTestResult:
     """Result of a single test."""
     test_name: str
     test_type: TestType
@@ -159,14 +146,14 @@ class PaxosTestRunner:
         self.grpc_manager = PaxosGrpcClientManager()
         self._grpc_ready, self._grpc_error = self.grpc_manager.is_ready()
 
-    async def run_all_tests(self) -> List[TestResult]:
+    async def run_all_tests(self) -> List[DistributedTestResult]:
         """Run all tests and return results."""
         results = []
 
         try:
             results.extend(await self.run_functional_tests())
         except Exception as e:
-            results.append(TestResult(
+            results.append(DistributedTestResult(
                 test_name="Functional Tests",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.ERROR,
@@ -177,7 +164,7 @@ class PaxosTestRunner:
         try:
             results.extend(await self.run_performance_tests())
         except Exception as e:
-            results.append(TestResult(
+            results.append(DistributedTestResult(
                 test_name="Performance Tests",
                 test_type=TestType.PERFORMANCE,
                 status=TestStatus.ERROR,
@@ -188,7 +175,7 @@ class PaxosTestRunner:
         try:
             results.extend(await self.run_chaos_tests())
         except Exception as e:
-            results.append(TestResult(
+            results.append(DistributedTestResult(
                 test_name="Chaos Tests",
                 test_type=TestType.CHAOS,
                 status=TestStatus.ERROR,
@@ -197,7 +184,7 @@ class PaxosTestRunner:
             ))
 
         if not results:
-            results.append(TestResult(
+            results.append(DistributedTestResult(
                 test_name="Test Execution",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.ERROR,
@@ -207,7 +194,7 @@ class PaxosTestRunner:
 
         return results
 
-    async def run_functional_tests(self) -> List[TestResult]:
+    async def run_functional_tests(self) -> List[DistributedTestResult]:
         """Run Paxos-specific functional tests."""
         results = []
         results.append(await self._test_leader_election())
@@ -216,21 +203,21 @@ class PaxosTestRunner:
         results.append(await self._test_value_agreement())
         return results
 
-    async def run_performance_tests(self) -> List[TestResult]:
+    async def run_performance_tests(self) -> List[DistributedTestResult]:
         """Run performance tests."""
         results = []
         results.append(await self._test_throughput())
         results.append(await self._test_latency())
         return results
 
-    async def run_chaos_tests(self) -> List[TestResult]:
+    async def run_chaos_tests(self) -> List[DistributedTestResult]:
         """Run chaos tests."""
         results = []
         results.append(await self._test_proposer_failure())
         results.append(await self._test_acceptor_failure())
         return results
 
-    async def _test_leader_election(self) -> TestResult:
+    async def _test_leader_election(self) -> DistributedTestResult:
         """Test that a leader is elected in Multi-Paxos."""
         start_time = time.time()
 
@@ -256,7 +243,7 @@ class PaxosTestRunner:
             duration_ms = int((time.time() - start_time) * 1000)
 
             if leader_found:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Leader Election (Multi-Paxos)",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.PASSED,
@@ -264,7 +251,7 @@ class PaxosTestRunner:
                     details={"leader_id": leader_id},
                 )
             else:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Leader Election (Multi-Paxos)",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
@@ -274,7 +261,7 @@ class PaxosTestRunner:
                 )
 
         except Exception as e:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Leader Election (Multi-Paxos)",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.ERROR,
@@ -282,14 +269,14 @@ class PaxosTestRunner:
                 error_message=f"Test framework error: {e}",
             )
 
-    async def _test_basic_consensus(self) -> TestResult:
+    async def _test_basic_consensus(self) -> DistributedTestResult:
         """Test basic Paxos consensus - Put/Get."""
         start_time = time.time()
 
         try:
             leader_url, leader_error = await self._find_leader()
             if not leader_url:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Basic Consensus",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
@@ -302,7 +289,7 @@ class PaxosTestRunner:
 
             put_result, put_error = await self._put(leader_url, test_key, test_value)
             if put_error or not put_result.get("success"):
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Basic Consensus",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
@@ -317,7 +304,7 @@ class PaxosTestRunner:
             duration_ms = int((time.time() - start_time) * 1000)
 
             if get_error or not get_result.get("found"):
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Basic Consensus",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
@@ -326,7 +313,7 @@ class PaxosTestRunner:
                 )
 
             if get_result.get("value") != test_value:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Basic Consensus",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
@@ -334,7 +321,7 @@ class PaxosTestRunner:
                     error_message=f"Value mismatch: expected '{test_value}', got '{get_result.get('value')}'",
                 )
 
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Basic Consensus",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.PASSED,
@@ -343,7 +330,7 @@ class PaxosTestRunner:
             )
 
         except Exception as e:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Basic Consensus",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.ERROR,
@@ -351,14 +338,14 @@ class PaxosTestRunner:
                 error_message=f"Test framework error: {e}",
             )
 
-    async def _test_slot_ordering(self) -> TestResult:
+    async def _test_slot_ordering(self) -> DistributedTestResult:
         """Test that Paxos maintains slot ordering."""
         start_time = time.time()
 
         try:
             leader_url, _ = await self._find_leader()
             if not leader_url:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Slot Ordering",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
@@ -372,7 +359,7 @@ class PaxosTestRunner:
                 key = f"slot_key_{i}_{int(time.time())}"
                 result, error = await self._put(leader_url, key, f"value_{i}")
                 if error or not result.get("success"):
-                    return TestResult(
+                    return DistributedTestResult(
                         test_name="Slot Ordering",
                         test_type=TestType.FUNCTIONAL,
                         status=TestStatus.FAILED,
@@ -387,7 +374,7 @@ class PaxosTestRunner:
             for i, key in enumerate(keys):
                 result, _ = await self._get(leader_url, key)
                 if not result.get("found") or result.get("value") != f"value_{i}":
-                    return TestResult(
+                    return DistributedTestResult(
                         test_name="Slot Ordering",
                         test_type=TestType.FUNCTIONAL,
                         status=TestStatus.FAILED,
@@ -395,7 +382,7 @@ class PaxosTestRunner:
                         error_message=f"Value {i} not found or incorrect",
                     )
 
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Slot Ordering",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.PASSED,
@@ -404,7 +391,7 @@ class PaxosTestRunner:
             )
 
         except Exception as e:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Slot Ordering",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.ERROR,
@@ -412,14 +399,14 @@ class PaxosTestRunner:
                 error_message=f"Test framework error: {e}",
             )
 
-    async def _test_value_agreement(self) -> TestResult:
+    async def _test_value_agreement(self) -> DistributedTestResult:
         """Test that all nodes agree on values."""
         start_time = time.time()
 
         try:
             leader_url, _ = await self._find_leader()
             if not leader_url:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Value Agreement",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
@@ -431,7 +418,7 @@ class PaxosTestRunner:
             value = "agreement_value"
             result, error = await self._put(leader_url, key, value)
             if error or not result.get("success"):
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Value Agreement",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
@@ -445,7 +432,7 @@ class PaxosTestRunner:
             for url in self.cluster_urls:
                 result, error = await self._get(url, key)
                 if error or not result.get("found") or result.get("value") != value:
-                    return TestResult(
+                    return DistributedTestResult(
                         test_name="Value Agreement",
                         test_type=TestType.FUNCTIONAL,
                         status=TestStatus.FAILED,
@@ -453,7 +440,7 @@ class PaxosTestRunner:
                         error_message=f"Node {url} has inconsistent value",
                     )
 
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Value Agreement",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.PASSED,
@@ -462,7 +449,7 @@ class PaxosTestRunner:
             )
 
         except Exception as e:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Value Agreement",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.ERROR,
@@ -470,14 +457,14 @@ class PaxosTestRunner:
                 error_message=f"Test framework error: {e}",
             )
 
-    async def _test_throughput(self) -> TestResult:
+    async def _test_throughput(self) -> DistributedTestResult:
         """Test write throughput."""
         start_time = time.time()
 
         try:
             leader_url, _ = await self._find_leader()
             if not leader_url:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Throughput",
                     test_type=TestType.PERFORMANCE,
                     status=TestStatus.FAILED,
@@ -501,7 +488,7 @@ class PaxosTestRunner:
             duration_ms = int((time.time() - start_time) * 1000)
 
             if ops_per_second >= 10:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Throughput",
                     test_type=TestType.PERFORMANCE,
                     status=TestStatus.PASSED,
@@ -509,7 +496,7 @@ class PaxosTestRunner:
                     details={"ops_per_second": round(ops_per_second, 2)},
                 )
             else:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Throughput",
                     test_type=TestType.PERFORMANCE,
                     status=TestStatus.FAILED,
@@ -518,7 +505,7 @@ class PaxosTestRunner:
                 )
 
         except Exception as e:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Throughput",
                 test_type=TestType.PERFORMANCE,
                 status=TestStatus.ERROR,
@@ -526,14 +513,14 @@ class PaxosTestRunner:
                 error_message=f"Test framework error: {e}",
             )
 
-    async def _test_latency(self) -> TestResult:
+    async def _test_latency(self) -> DistributedTestResult:
         """Test operation latency."""
         start_time = time.time()
 
         try:
             leader_url, _ = await self._find_leader()
             if not leader_url:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Latency",
                     test_type=TestType.PERFORMANCE,
                     status=TestStatus.FAILED,
@@ -551,7 +538,7 @@ class PaxosTestRunner:
                     latencies.append(op_latency)
 
             if not latencies:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Latency",
                     test_type=TestType.PERFORMANCE,
                     status=TestStatus.FAILED,
@@ -563,7 +550,7 @@ class PaxosTestRunner:
             p95 = latencies[int(len(latencies) * 0.95)]
 
             if p95 < 500:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Latency",
                     test_type=TestType.PERFORMANCE,
                     status=TestStatus.PASSED,
@@ -571,7 +558,7 @@ class PaxosTestRunner:
                     details={"p95_ms": round(p95, 2)},
                 )
             else:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Latency",
                     test_type=TestType.PERFORMANCE,
                     status=TestStatus.FAILED,
@@ -580,7 +567,7 @@ class PaxosTestRunner:
                 )
 
         except Exception as e:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Latency",
                 test_type=TestType.PERFORMANCE,
                 status=TestStatus.ERROR,
@@ -588,10 +575,10 @@ class PaxosTestRunner:
                 error_message=f"Test framework error: {e}",
             )
 
-    async def _test_proposer_failure(self) -> TestResult:
+    async def _test_proposer_failure(self) -> DistributedTestResult:
         """Test recovery from proposer failure."""
         start_time = time.time()
-        return TestResult(
+        return DistributedTestResult(
             test_name="Proposer Failure",
             test_type=TestType.CHAOS,
             status=TestStatus.PASSED,
@@ -600,10 +587,10 @@ class PaxosTestRunner:
             chaos_scenario="skipped",
         )
 
-    async def _test_acceptor_failure(self) -> TestResult:
+    async def _test_acceptor_failure(self) -> DistributedTestResult:
         """Test recovery from acceptor failure."""
         start_time = time.time()
-        return TestResult(
+        return DistributedTestResult(
             test_name="Acceptor Failure",
             test_type=TestType.CHAOS,
             status=TestStatus.PASSED,

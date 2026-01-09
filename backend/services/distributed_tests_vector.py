@@ -19,26 +19,13 @@ from enum import Enum
 import grpc
 
 from backend.config import get_settings
+from backend.models.test_result import TestType, TestStatus
 
 settings = get_settings()
 
 
-class TestType(str, Enum):
-    FUNCTIONAL = "functional"
-    PERFORMANCE = "performance"
-    CHAOS = "chaos"
-
-
-class TestStatus(str, Enum):
-    PENDING = "pending"
-    RUNNING = "running"
-    PASSED = "passed"
-    FAILED = "failed"
-    ERROR = "error"
-
-
 @dataclass
-class TestResult:
+class DistributedDistributedTestResult:
     """Result of a single test."""
     test_name: str
     test_type: TestType
@@ -162,14 +149,14 @@ class HNSWTestRunner:
         self.submission_id = submission_id
         self.grpc_manager = HNSWGrpcClientManager()
 
-    async def run_all_tests(self) -> List[TestResult]:
+    async def run_all_tests(self) -> List[DistributedTestResult]:
         """Run all tests."""
         results = []
         results.extend(await self.run_functional_tests())
         results.extend(await self.run_performance_tests())
         return results
 
-    async def run_functional_tests(self) -> List[TestResult]:
+    async def run_functional_tests(self) -> List[DistributedTestResult]:
         """Run functional tests."""
         tests = [
             self._test_create_index,
@@ -184,7 +171,7 @@ class HNSWTestRunner:
                 result = await test()
                 results.append(result)
             except Exception as e:
-                results.append(TestResult(
+                results.append(DistributedTestResult(
                     test_name=test.__name__.replace("_test_", "").replace("_", " ").title(),
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.ERROR,
@@ -193,7 +180,7 @@ class HNSWTestRunner:
                 ))
         return results
 
-    async def run_performance_tests(self) -> List[TestResult]:
+    async def run_performance_tests(self) -> List[DistributedTestResult]:
         """Run performance tests."""
         tests = [
             self._test_search_throughput,
@@ -205,7 +192,7 @@ class HNSWTestRunner:
                 result = await test()
                 results.append(result)
             except Exception as e:
-                results.append(TestResult(
+                results.append(DistributedTestResult(
                     test_name=test.__name__.replace("_test_", "").replace("_", " ").title(),
                     test_type=TestType.PERFORMANCE,
                     status=TestStatus.ERROR,
@@ -220,13 +207,13 @@ class HNSWTestRunner:
         norm = math.sqrt(sum(x*x for x in vec))
         return [x / norm for x in vec]
 
-    async def _test_create_index(self) -> TestResult:
+    async def _test_create_index(self) -> DistributedTestResult:
         """Test creating an HNSW index."""
         start_time = time.time()
 
         stub, proto, error = self.grpc_manager.get_hnsw_stub(self.cluster_urls[0])
         if error:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Create Index",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.FAILED,
@@ -245,7 +232,7 @@ class HNSWTestRunner:
             response = stub.CreateIndex(request, timeout=10)
 
             if response.success:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Create Index",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.PASSED,
@@ -253,7 +240,7 @@ class HNSWTestRunner:
                     details={"index_id": response.index_id}
                 )
             else:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Create Index",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
@@ -261,7 +248,7 @@ class HNSWTestRunner:
                     error_message=response.error
                 )
         except grpc.RpcError as e:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Create Index",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.FAILED,
@@ -269,13 +256,13 @@ class HNSWTestRunner:
                 error_message=f"gRPC error: {e.details() if hasattr(e, 'details') else str(e)}"
             )
 
-    async def _test_insert_vector(self) -> TestResult:
+    async def _test_insert_vector(self) -> DistributedTestResult:
         """Test inserting a vector."""
         start_time = time.time()
 
         stub, proto, error = self.grpc_manager.get_hnsw_stub(self.cluster_urls[0])
         if error:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Insert Vector",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.FAILED,
@@ -293,7 +280,7 @@ class HNSWTestRunner:
             response = stub.Insert(request, timeout=10)
 
             if response.success:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Insert Vector",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.PASSED,
@@ -301,7 +288,7 @@ class HNSWTestRunner:
                     details={"level": response.level}
                 )
             else:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Insert Vector",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
@@ -309,7 +296,7 @@ class HNSWTestRunner:
                     error_message=response.error
                 )
         except grpc.RpcError as e:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Insert Vector",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.FAILED,
@@ -317,13 +304,13 @@ class HNSWTestRunner:
                 error_message=f"gRPC error: {str(e)}"
             )
 
-    async def _test_search(self) -> TestResult:
+    async def _test_search(self) -> DistributedTestResult:
         """Test searching for nearest neighbors."""
         start_time = time.time()
 
         stub, proto, error = self.grpc_manager.get_hnsw_stub(self.cluster_urls[0])
         if error:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Search",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.FAILED,
@@ -340,7 +327,7 @@ class HNSWTestRunner:
             )
             response = stub.Search(request, timeout=10)
 
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Search",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.PASSED,
@@ -352,7 +339,7 @@ class HNSWTestRunner:
                 }
             )
         except grpc.RpcError as e:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Search",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.FAILED,
@@ -360,13 +347,13 @@ class HNSWTestRunner:
                 error_message=f"gRPC error: {str(e)}"
             )
 
-    async def _test_delete_vector(self) -> TestResult:
+    async def _test_delete_vector(self) -> DistributedTestResult:
         """Test deleting a vector."""
         start_time = time.time()
 
         stub, proto, error = self.grpc_manager.get_hnsw_stub(self.cluster_urls[0])
         if error:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Delete Vector",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.FAILED,
@@ -378,7 +365,7 @@ class HNSWTestRunner:
             request = proto.DeleteRequest(id="test_vector_1")
             response = stub.Delete(request, timeout=10)
 
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Delete Vector",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.PASSED if response.success else TestStatus.FAILED,
@@ -387,7 +374,7 @@ class HNSWTestRunner:
                 error_message=response.error if not response.success else None
             )
         except grpc.RpcError as e:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Delete Vector",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.FAILED,
@@ -395,13 +382,13 @@ class HNSWTestRunner:
                 error_message=f"gRPC error: {str(e)}"
             )
 
-    async def _test_batch_insert(self) -> TestResult:
+    async def _test_batch_insert(self) -> DistributedTestResult:
         """Test batch inserting vectors."""
         start_time = time.time()
 
         stub, proto, error = self.grpc_manager.get_hnsw_stub(self.cluster_urls[0])
         if error:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Batch Insert",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.FAILED,
@@ -423,7 +410,7 @@ class HNSWTestRunner:
             response = stub.BatchInsert(request, timeout=30)
 
             if response.success:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Batch Insert",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.PASSED,
@@ -431,7 +418,7 @@ class HNSWTestRunner:
                     details={"inserted_count": response.inserted_count}
                 )
             else:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Batch Insert",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
@@ -439,7 +426,7 @@ class HNSWTestRunner:
                     error_message=response.error
                 )
         except grpc.RpcError as e:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Batch Insert",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.FAILED,
@@ -447,13 +434,13 @@ class HNSWTestRunner:
                 error_message=f"gRPC error: {str(e)}"
             )
 
-    async def _test_search_throughput(self) -> TestResult:
+    async def _test_search_throughput(self) -> DistributedTestResult:
         """Test search throughput."""
         start_time = time.time()
 
         stub, proto, error = self.grpc_manager.get_hnsw_stub(self.cluster_urls[0])
         if error:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Search Throughput",
                 test_type=TestType.PERFORMANCE,
                 status=TestStatus.FAILED,
@@ -477,7 +464,7 @@ class HNSWTestRunner:
             duration_s = time.time() - start_time
             qps = successful_queries / duration_s
 
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Search Throughput",
                 test_type=TestType.PERFORMANCE,
                 status=TestStatus.PASSED,
@@ -489,7 +476,7 @@ class HNSWTestRunner:
                 }
             )
         except Exception as e:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Search Throughput",
                 test_type=TestType.PERFORMANCE,
                 status=TestStatus.ERROR,
@@ -497,13 +484,13 @@ class HNSWTestRunner:
                 error_message=str(e)
             )
 
-    async def _test_search_latency(self) -> TestResult:
+    async def _test_search_latency(self) -> DistributedTestResult:
         """Test search latency percentiles."""
         start_time = time.time()
 
         stub, proto, error = self.grpc_manager.get_hnsw_stub(self.cluster_urls[0])
         if error:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Search Latency",
                 test_type=TestType.PERFORMANCE,
                 status=TestStatus.FAILED,
@@ -529,7 +516,7 @@ class HNSWTestRunner:
                 p95 = latencies[int(len(latencies) * 0.95)]
                 p99 = latencies[int(len(latencies) * 0.99)]
 
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Search Latency",
                     test_type=TestType.PERFORMANCE,
                     status=TestStatus.PASSED,
@@ -542,7 +529,7 @@ class HNSWTestRunner:
                     }
                 )
             else:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Search Latency",
                     test_type=TestType.PERFORMANCE,
                     status=TestStatus.FAILED,
@@ -550,7 +537,7 @@ class HNSWTestRunner:
                     error_message="No successful queries"
                 )
         except Exception as e:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Search Latency",
                 test_type=TestType.PERFORMANCE,
                 status=TestStatus.ERROR,
@@ -672,14 +659,14 @@ class IVFTestRunner:
         self.submission_id = submission_id
         self.grpc_manager = IVFGrpcClientManager()
 
-    async def run_all_tests(self) -> List[TestResult]:
+    async def run_all_tests(self) -> List[DistributedTestResult]:
         """Run all tests."""
         results = []
         results.extend(await self.run_functional_tests())
         results.extend(await self.run_performance_tests())
         return results
 
-    async def run_functional_tests(self) -> List[TestResult]:
+    async def run_functional_tests(self) -> List[DistributedTestResult]:
         """Run functional tests."""
         tests = [
             self._test_create_index,
@@ -694,7 +681,7 @@ class IVFTestRunner:
                 result = await test()
                 results.append(result)
             except Exception as e:
-                results.append(TestResult(
+                results.append(DistributedTestResult(
                     test_name=test.__name__.replace("_test_", "").replace("_", " ").title(),
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.ERROR,
@@ -703,7 +690,7 @@ class IVFTestRunner:
                 ))
         return results
 
-    async def run_performance_tests(self) -> List[TestResult]:
+    async def run_performance_tests(self) -> List[DistributedTestResult]:
         """Run performance tests."""
         tests = [
             self._test_search_throughput,
@@ -714,7 +701,7 @@ class IVFTestRunner:
                 result = await test()
                 results.append(result)
             except Exception as e:
-                results.append(TestResult(
+                results.append(DistributedTestResult(
                     test_name=test.__name__.replace("_test_", "").replace("_", " ").title(),
                     test_type=TestType.PERFORMANCE,
                     status=TestStatus.ERROR,
@@ -729,13 +716,13 @@ class IVFTestRunner:
         norm = math.sqrt(sum(x*x for x in vec))
         return [x / norm for x in vec]
 
-    async def _test_create_index(self) -> TestResult:
+    async def _test_create_index(self) -> DistributedTestResult:
         """Test creating an IVF index."""
         start_time = time.time()
 
         stub, proto, error = self.grpc_manager.get_ivf_stub(self.cluster_urls[0])
         if error:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Create Index",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.FAILED,
@@ -753,7 +740,7 @@ class IVFTestRunner:
             response = stub.CreateIndex(request, timeout=10)
 
             if response.success:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Create Index",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.PASSED,
@@ -761,7 +748,7 @@ class IVFTestRunner:
                     details={"index_id": response.index_id}
                 )
             else:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Create Index",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
@@ -769,7 +756,7 @@ class IVFTestRunner:
                     error_message=response.error
                 )
         except grpc.RpcError as e:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Create Index",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.FAILED,
@@ -777,13 +764,13 @@ class IVFTestRunner:
                 error_message=f"gRPC error: {str(e)}"
             )
 
-    async def _test_train(self) -> TestResult:
+    async def _test_train(self) -> DistributedTestResult:
         """Test training the index with k-means."""
         start_time = time.time()
 
         stub, proto, error = self.grpc_manager.get_ivf_stub(self.cluster_urls[0])
         if error:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Train Index",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.FAILED,
@@ -808,7 +795,7 @@ class IVFTestRunner:
             response = stub.Train(request, timeout=30)
 
             if response.success:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Train Index",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.PASSED,
@@ -816,7 +803,7 @@ class IVFTestRunner:
                     details={"n_clusters": response.n_clusters, "inertia": response.inertia}
                 )
             else:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Train Index",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
@@ -824,7 +811,7 @@ class IVFTestRunner:
                     error_message=response.error
                 )
         except grpc.RpcError as e:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Train Index",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.FAILED,
@@ -832,13 +819,13 @@ class IVFTestRunner:
                 error_message=f"gRPC error: {str(e)}"
             )
 
-    async def _test_add_vector(self) -> TestResult:
+    async def _test_add_vector(self) -> DistributedTestResult:
         """Test adding a vector."""
         start_time = time.time()
 
         stub, proto, error = self.grpc_manager.get_ivf_stub(self.cluster_urls[0])
         if error:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Add Vector",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.FAILED,
@@ -856,7 +843,7 @@ class IVFTestRunner:
             response = stub.Add(request, timeout=10)
 
             if response.success:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Add Vector",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.PASSED,
@@ -864,7 +851,7 @@ class IVFTestRunner:
                     details={"assigned_cluster": response.assigned_cluster}
                 )
             else:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Add Vector",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
@@ -872,7 +859,7 @@ class IVFTestRunner:
                     error_message=response.error
                 )
         except grpc.RpcError as e:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Add Vector",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.FAILED,
@@ -880,13 +867,13 @@ class IVFTestRunner:
                 error_message=f"gRPC error: {str(e)}"
             )
 
-    async def _test_search(self) -> TestResult:
+    async def _test_search(self) -> DistributedTestResult:
         """Test searching for nearest neighbors."""
         start_time = time.time()
 
         stub, proto, error = self.grpc_manager.get_ivf_stub(self.cluster_urls[0])
         if error:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Search",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.FAILED,
@@ -903,7 +890,7 @@ class IVFTestRunner:
             )
             response = stub.Search(request, timeout=10)
 
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Search",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.PASSED,
@@ -915,7 +902,7 @@ class IVFTestRunner:
                 }
             )
         except grpc.RpcError as e:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Search",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.FAILED,
@@ -923,13 +910,13 @@ class IVFTestRunner:
                 error_message=f"gRPC error: {str(e)}"
             )
 
-    async def _test_batch_add(self) -> TestResult:
+    async def _test_batch_add(self) -> DistributedTestResult:
         """Test batch adding vectors."""
         start_time = time.time()
 
         stub, proto, error = self.grpc_manager.get_ivf_stub(self.cluster_urls[0])
         if error:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Batch Add",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.FAILED,
@@ -951,7 +938,7 @@ class IVFTestRunner:
             response = stub.BatchAdd(request, timeout=30)
 
             if response.success:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Batch Add",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.PASSED,
@@ -959,7 +946,7 @@ class IVFTestRunner:
                     details={"added_count": response.added_count}
                 )
             else:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Batch Add",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
@@ -967,7 +954,7 @@ class IVFTestRunner:
                     error_message=response.error
                 )
         except grpc.RpcError as e:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Batch Add",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.FAILED,
@@ -975,13 +962,13 @@ class IVFTestRunner:
                 error_message=f"gRPC error: {str(e)}"
             )
 
-    async def _test_search_throughput(self) -> TestResult:
+    async def _test_search_throughput(self) -> DistributedTestResult:
         """Test search throughput."""
         start_time = time.time()
 
         stub, proto, error = self.grpc_manager.get_ivf_stub(self.cluster_urls[0])
         if error:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Search Throughput",
                 test_type=TestType.PERFORMANCE,
                 status=TestStatus.FAILED,
@@ -1005,7 +992,7 @@ class IVFTestRunner:
             duration_s = time.time() - start_time
             qps = successful_queries / duration_s
 
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Search Throughput",
                 test_type=TestType.PERFORMANCE,
                 status=TestStatus.PASSED,
@@ -1017,7 +1004,7 @@ class IVFTestRunner:
                 }
             )
         except Exception as e:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Search Throughput",
                 test_type=TestType.PERFORMANCE,
                 status=TestStatus.ERROR,
@@ -1139,14 +1126,14 @@ class PQTestRunner:
         self.submission_id = submission_id
         self.grpc_manager = PQGrpcClientManager()
 
-    async def run_all_tests(self) -> List[TestResult]:
+    async def run_all_tests(self) -> List[DistributedTestResult]:
         """Run all tests."""
         results = []
         results.extend(await self.run_functional_tests())
         results.extend(await self.run_performance_tests())
         return results
 
-    async def run_functional_tests(self) -> List[TestResult]:
+    async def run_functional_tests(self) -> List[DistributedTestResult]:
         """Run functional tests."""
         tests = [
             self._test_create_index,
@@ -1161,7 +1148,7 @@ class PQTestRunner:
                 result = await test()
                 results.append(result)
             except Exception as e:
-                results.append(TestResult(
+                results.append(DistributedTestResult(
                     test_name=test.__name__.replace("_test_", "").replace("_", " ").title(),
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.ERROR,
@@ -1170,7 +1157,7 @@ class PQTestRunner:
                 ))
         return results
 
-    async def run_performance_tests(self) -> List[TestResult]:
+    async def run_performance_tests(self) -> List[DistributedTestResult]:
         """Run performance tests."""
         tests = [
             self._test_compression_ratio,
@@ -1182,7 +1169,7 @@ class PQTestRunner:
                 result = await test()
                 results.append(result)
             except Exception as e:
-                results.append(TestResult(
+                results.append(DistributedTestResult(
                     test_name=test.__name__.replace("_test_", "").replace("_", " ").title(),
                     test_type=TestType.PERFORMANCE,
                     status=TestStatus.ERROR,
@@ -1197,13 +1184,13 @@ class PQTestRunner:
         norm = math.sqrt(sum(x*x for x in vec))
         return [x / norm for x in vec]
 
-    async def _test_create_index(self) -> TestResult:
+    async def _test_create_index(self) -> DistributedTestResult:
         """Test creating a PQ index."""
         start_time = time.time()
 
         stub, proto, error = self.grpc_manager.get_pq_stub(self.cluster_urls[0])
         if error:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Create Index",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.FAILED,
@@ -1222,7 +1209,7 @@ class PQTestRunner:
             response = stub.CreateIndex(request, timeout=10)
 
             if response.success:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Create Index",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.PASSED,
@@ -1230,7 +1217,7 @@ class PQTestRunner:
                     details={"index_id": response.index_id, "dsub": response.dsub}
                 )
             else:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Create Index",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
@@ -1238,7 +1225,7 @@ class PQTestRunner:
                     error_message=response.error
                 )
         except grpc.RpcError as e:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Create Index",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.FAILED,
@@ -1246,13 +1233,13 @@ class PQTestRunner:
                 error_message=f"gRPC error: {str(e)}"
             )
 
-    async def _test_train(self) -> TestResult:
+    async def _test_train(self) -> DistributedTestResult:
         """Test training the quantizer."""
         start_time = time.time()
 
         stub, proto, error = self.grpc_manager.get_pq_stub(self.cluster_urls[0])
         if error:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Train Quantizer",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.FAILED,
@@ -1277,7 +1264,7 @@ class PQTestRunner:
             response = stub.Train(request, timeout=60)
 
             if response.success:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Train Quantizer",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.PASSED,
@@ -1285,7 +1272,7 @@ class PQTestRunner:
                     details={"total_error": response.total_error}
                 )
             else:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Train Quantizer",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
@@ -1293,7 +1280,7 @@ class PQTestRunner:
                     error_message=response.error
                 )
         except grpc.RpcError as e:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Train Quantizer",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.FAILED,
@@ -1301,13 +1288,13 @@ class PQTestRunner:
                 error_message=f"gRPC error: {str(e)}"
             )
 
-    async def _test_encode_decode(self) -> TestResult:
+    async def _test_encode_decode(self) -> DistributedTestResult:
         """Test encoding and decoding vectors."""
         start_time = time.time()
 
         stub, proto, error = self.grpc_manager.get_pq_stub(self.cluster_urls[0])
         if error:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Encode/Decode",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.FAILED,
@@ -1323,7 +1310,7 @@ class PQTestRunner:
             encode_response = stub.Encode(encode_request, timeout=10)
 
             if not encode_response.success:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Encode/Decode",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
@@ -1336,7 +1323,7 @@ class PQTestRunner:
             decode_response = stub.Decode(decode_request, timeout=10)
 
             if not decode_response.success:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Encode/Decode",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
@@ -1349,7 +1336,7 @@ class PQTestRunner:
             error_sum = sum((a - b) ** 2 for a, b in zip(original, reconstructed))
             rmse = math.sqrt(error_sum / len(original))
 
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Encode/Decode",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.PASSED,
@@ -1360,7 +1347,7 @@ class PQTestRunner:
                 }
             )
         except grpc.RpcError as e:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Encode/Decode",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.FAILED,
@@ -1368,13 +1355,13 @@ class PQTestRunner:
                 error_message=f"gRPC error: {str(e)}"
             )
 
-    async def _test_add_vector(self) -> TestResult:
+    async def _test_add_vector(self) -> DistributedTestResult:
         """Test adding a vector."""
         start_time = time.time()
 
         stub, proto, error = self.grpc_manager.get_pq_stub(self.cluster_urls[0])
         if error:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Add Vector",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.FAILED,
@@ -1392,7 +1379,7 @@ class PQTestRunner:
             response = stub.Add(request, timeout=10)
 
             if response.success:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Add Vector",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.PASSED,
@@ -1400,7 +1387,7 @@ class PQTestRunner:
                     details={"codes_length": len(response.codes)}
                 )
             else:
-                return TestResult(
+                return DistributedTestResult(
                     test_name="Add Vector",
                     test_type=TestType.FUNCTIONAL,
                     status=TestStatus.FAILED,
@@ -1408,7 +1395,7 @@ class PQTestRunner:
                     error_message=response.error
                 )
         except grpc.RpcError as e:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Add Vector",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.FAILED,
@@ -1416,13 +1403,13 @@ class PQTestRunner:
                 error_message=f"gRPC error: {str(e)}"
             )
 
-    async def _test_search(self) -> TestResult:
+    async def _test_search(self) -> DistributedTestResult:
         """Test searching for nearest neighbors."""
         start_time = time.time()
 
         stub, proto, error = self.grpc_manager.get_pq_stub(self.cluster_urls[0])
         if error:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Search",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.FAILED,
@@ -1440,7 +1427,7 @@ class PQTestRunner:
             )
             response = stub.Search(request, timeout=10)
 
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Search",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.PASSED,
@@ -1452,7 +1439,7 @@ class PQTestRunner:
                 }
             )
         except grpc.RpcError as e:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Search",
                 test_type=TestType.FUNCTIONAL,
                 status=TestStatus.FAILED,
@@ -1460,13 +1447,13 @@ class PQTestRunner:
                 error_message=f"gRPC error: {str(e)}"
             )
 
-    async def _test_compression_ratio(self) -> TestResult:
+    async def _test_compression_ratio(self) -> DistributedTestResult:
         """Test the compression ratio achieved by PQ."""
         start_time = time.time()
 
         stub, proto, error = self.grpc_manager.get_pq_stub(self.cluster_urls[0])
         if error:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Compression Ratio",
                 test_type=TestType.PERFORMANCE,
                 status=TestStatus.FAILED,
@@ -1479,7 +1466,7 @@ class PQTestRunner:
             response = stub.GetStats(request, timeout=10)
 
             stats = response.stats
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Compression Ratio",
                 test_type=TestType.PERFORMANCE,
                 status=TestStatus.PASSED,
@@ -1493,7 +1480,7 @@ class PQTestRunner:
                 }
             )
         except grpc.RpcError as e:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Compression Ratio",
                 test_type=TestType.PERFORMANCE,
                 status=TestStatus.FAILED,
@@ -1501,13 +1488,13 @@ class PQTestRunner:
                 error_message=f"gRPC error: {str(e)}"
             )
 
-    async def _test_search_throughput(self) -> TestResult:
+    async def _test_search_throughput(self) -> DistributedTestResult:
         """Test search throughput."""
         start_time = time.time()
 
         stub, proto, error = self.grpc_manager.get_pq_stub(self.cluster_urls[0])
         if error:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Search Throughput",
                 test_type=TestType.PERFORMANCE,
                 status=TestStatus.FAILED,
@@ -1531,7 +1518,7 @@ class PQTestRunner:
             duration_s = time.time() - start_time
             qps = successful_queries / duration_s
 
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Search Throughput",
                 test_type=TestType.PERFORMANCE,
                 status=TestStatus.PASSED,
@@ -1543,7 +1530,7 @@ class PQTestRunner:
                 }
             )
         except Exception as e:
-            return TestResult(
+            return DistributedTestResult(
                 test_name="Search Throughput",
                 test_type=TestType.PERFORMANCE,
                 status=TestStatus.ERROR,
