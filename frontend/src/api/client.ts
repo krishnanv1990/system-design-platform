@@ -91,8 +91,8 @@ export interface UserDataExport {
     status: string
     created_at: string
     design_text: string | null
-    schema_input: any
-    api_spec_input: any
+    schema_input: Record<string, unknown> | null
+    api_spec_input: Record<string, unknown> | null
   }>
   test_results: Array<{
     id: number
@@ -239,17 +239,18 @@ export const submissionsApi = {
     await api.delete(`/submissions/${id}`)
   },
 
-  getDeploymentStatus: async (id: number): Promise<any> => {
+  // Note: Returns dynamic deployment info - consuming code should define local interface
+  getDeploymentStatus: async (id: number) => {
     const response = await api.get(`/submissions/${id}/deployment`)
     return response.data
   },
 
-  teardown: async (id: number): Promise<any> => {
+  teardown: async (id: number): Promise<{ message: string; success?: boolean }> => {
     const response = await api.post(`/submissions/${id}/teardown`)
     return response.data
   },
 
-  extendTimeout: async (id: number, additionalMinutes: number = 30): Promise<any> => {
+  extendTimeout: async (id: number, additionalMinutes: number = 30): Promise<{ message: string; new_timeout?: string }> => {
     const response = await api.post(`/submissions/${id}/extend`, null, {
       params: { additional_minutes: additionalMinutes }
     })
@@ -320,23 +321,41 @@ export interface AdminGCPResources {
   resources_by_user: UserGCPResources[]
 }
 
+/**
+ * Cleanup candidate for admin cleanup
+ */
+export interface CleanupCandidate {
+  submission_id: number
+  user_email: string
+  created_at: string
+  age_hours: number
+  status: string
+}
+
+/**
+ * GCP Assets API
+ * Note: Response types are dynamic - consuming code should define local interfaces
+ */
 export const assetsApi = {
-  getSubmissionAssets: async (submissionId: number): Promise<any> => {
+  // Returns submission GCP assets (Cloud Run info, Terraform state, etc.)
+  getSubmissionAssets: async (submissionId: number) => {
     const response = await api.get(`/assets/submission/${submissionId}`)
     return response.data
   },
 
-  getSubmissionCode: async (submissionId: number): Promise<any> => {
+  // Returns submission source code and generated terraform
+  getSubmissionCode: async (submissionId: number) => {
     const response = await api.get(`/assets/submission/${submissionId}/code`)
     return response.data
   },
 
-  getAllAssets: async (): Promise<any> => {
+  // Returns admin-level assets summary across all submissions
+  getAllAssets: async () => {
     const response = await api.get('/assets/admin/all')
     return response.data
   },
 
-  getCleanupCandidates: async (hoursOld: number = 1): Promise<any> => {
+  getCleanupCandidates: async (hoursOld: number = 1): Promise<CleanupCandidate[]> => {
     const response = await api.get('/assets/admin/cleanup-candidates', {
       params: { hours_old: hoursOld },
     })
@@ -419,9 +438,9 @@ export interface ChatRequest {
   problem_id: number
   message: string
   conversation_history: ChatMessage[]
-  current_schema?: any
-  current_api_spec?: any
-  current_diagram?: any
+  current_schema?: Record<string, unknown>
+  current_api_spec?: Record<string, unknown>
+  current_diagram?: Record<string, unknown>
   difficulty_level?: DifficultyLevel
 }
 
@@ -454,9 +473,9 @@ export interface DesignSummaryRequest {
   problem_id: number
   difficulty_level: DifficultyLevel
   conversation_history: ChatMessage[]
-  current_schema?: any
-  current_api_spec?: any
-  current_diagram?: any
+  current_schema?: Record<string, unknown>
+  current_api_spec?: Record<string, unknown>
+  current_diagram?: Record<string, unknown>
 }
 
 /**
@@ -512,7 +531,7 @@ export const chatApi = {
   /**
    * Evaluate a diagram and get feedback
    */
-  evaluateDiagram: async (problemId: number, diagramData: any): Promise<any> => {
+  evaluateDiagram: async (problemId: number, diagramData: Record<string, unknown>): Promise<DiagramFeedback> => {
     const response = await api.post('/chat/evaluate-diagram', diagramData, {
       params: { problem_id: problemId },
     })
@@ -826,7 +845,7 @@ export const adminApi = {
   /**
    * Extend deployment timeout (admin only)
    */
-  extendDeployment: async (submissionId: number, additionalMinutes: number = 30): Promise<any> => {
+  extendDeployment: async (submissionId: number, additionalMinutes: number = 30): Promise<{ message: string; new_timeout?: string }> => {
     const response = await api.post(`/admin/deployments/${submissionId}/extend`, null, {
       params: { additional_minutes: additionalMinutes }
     })
