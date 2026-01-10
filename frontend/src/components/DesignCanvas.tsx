@@ -77,6 +77,7 @@ import { updateConnectedArrows, findNearestConnectionPoint, getConnectionPoint }
 import { sortByZIndex, assignZIndex, bringToFront, sendToBack } from "@/utils/zOrder"
 import { moveElements, calculateBounds } from "@/utils/alignment"
 import { getLineAngle, getScaledArrowHeadSize } from "@/utils/shapePaths"
+import { isPointInElement } from "@/utils/hitDetection"
 import { CANVAS_CONFIG, STROKE_COLORS, FILL_COLORS, ICON_LABELS } from "@/config/canvas"
 import {
   SelectionHandles,
@@ -293,20 +294,9 @@ export default function DesignCanvas({
       }
 
       // Check if clicking on an element
-      const clickedElement = [...sortedElements].reverse().find((el) => {
-        if (el.type === "arrow") {
-          const arrow = el as ArrowElement
-          const midX = (el.x + arrow.endX) / 2
-          const midY = (el.y + arrow.endY) / 2
-          return Math.abs(pos.x - midX) < 20 && Math.abs(pos.y - midY) < 20
-        }
-        return (
-          pos.x >= el.x &&
-          pos.x <= el.x + el.width &&
-          pos.y >= el.y &&
-          pos.y <= el.y + el.height
-        )
-      })
+      const clickedElement = [...sortedElements].reverse().find((el) =>
+        isPointInElement(pos, el, CANVAS_CONFIG.ARROW_HIT_TOLERANCE)
+      )
 
       if (clickedElement) {
         if (e.shiftKey) {

@@ -26,6 +26,7 @@ export const CANVAS_CONFIG = {
   // Arrow
   ARROW_HEAD_SIZE: 12,
   ARROW_HEAD_ANGLE: Math.PI / 6,
+  ARROW_HIT_TOLERANCE: 10,
   CONNECTION_SNAP_DISTANCE: 15,
 
   // Text
