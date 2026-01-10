@@ -1670,6 +1670,9 @@ export default function DesignCanvas({
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
+          role="img"
+          aria-label={`System design diagram with ${elements.length} elements${hasSelection ? `, ${selectionCount} selected` : ""}`}
+          tabIndex={0}
         >
           <g transform={`translate(${viewport.translateX}, ${viewport.translateY}) scale(${viewport.scale})`}>
             {/* Grid */}
