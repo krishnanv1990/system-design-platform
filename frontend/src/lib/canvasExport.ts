@@ -219,7 +219,7 @@ export async function exportAsSvg(svgElement: SVGSVGElement, backgroundColor: st
   clonedSvg.insertBefore(bgRect, clonedSvg.firstChild)
 
   // Remove the grid pattern for cleaner export
-  const gridRect = clonedSvg.querySelector('rect[fill="url(#grid)"]')
+  const gridRect = clonedSvg.querySelector('rect[fill="url(#canvas-grid)"]')
   if (gridRect) {
     gridRect.remove()
   }
@@ -250,7 +250,7 @@ export function svgToCanvas(
     clonedSvg.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
 
     // Remove grid pattern for cleaner export
-    const gridRect = clonedSvg.querySelector('rect[fill="url(#grid)"]')
+    const gridRect = clonedSvg.querySelector('rect[fill="url(#canvas-grid)"]')
     if (gridRect) {
       gridRect.setAttribute('fill', backgroundColor)
     }

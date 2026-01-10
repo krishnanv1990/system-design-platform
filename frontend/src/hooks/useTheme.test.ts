@@ -17,11 +17,12 @@ describe('useTheme', () => {
   }
 
   beforeEach(() => {
-    // Reset localStorage
-    vi.spyOn(window.localStorage, 'getItem').mockReturnValue(null)
-    vi.spyOn(window.localStorage, 'setItem').mockImplementation(() => {})
+    // Clear localStorage before each test
+    localStorage.clear()
     // Default to light mode
     window.matchMedia = mockMatchMedia(false)
+    // Clear document classes
+    document.documentElement.classList.remove('light', 'dark')
   })
 
   afterEach(() => {
@@ -45,7 +46,8 @@ describe('useTheme', () => {
   })
 
   it('uses stored theme from localStorage', () => {
-    vi.spyOn(window.localStorage, 'getItem').mockReturnValue('dark')
+    // Set theme in localStorage BEFORE rendering the hook
+    localStorage.setItem('theme', 'dark')
 
     const { result } = renderHook(() => useTheme())
 
@@ -81,7 +83,7 @@ describe('useTheme', () => {
 
     expect(result.current.theme).toBe('light')
     expect(result.current.resolvedTheme).toBe('light')
-    expect(localStorage.setItem).toHaveBeenCalledWith('theme', 'light')
+    expect(localStorage.getItem('theme')).toBe('light')
   })
 
   it('allows setting theme to dark', () => {
@@ -93,14 +95,26 @@ describe('useTheme', () => {
 
     expect(result.current.theme).toBe('dark')
     expect(result.current.resolvedTheme).toBe('dark')
-    expect(localStorage.setItem).toHaveBeenCalledWith('theme', 'dark')
+    expect(localStorage.getItem('theme')).toBe('dark')
   })
 
   it('applies theme class to document element', () => {
-    vi.spyOn(window.localStorage, 'getItem').mockReturnValue('dark')
+    localStorage.setItem('theme', 'dark')
 
     renderHook(() => useTheme())
 
     expect(document.documentElement.classList.contains('dark')).toBe(true)
+  })
+
+  it('allows setting theme to system', () => {
+    localStorage.setItem('theme', 'dark')
+    const { result } = renderHook(() => useTheme())
+
+    act(() => {
+      result.current.setTheme('system')
+    })
+
+    expect(result.current.theme).toBe('system')
+    expect(localStorage.getItem('theme')).toBe('system')
   })
 })

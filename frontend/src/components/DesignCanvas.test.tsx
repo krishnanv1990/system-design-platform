@@ -41,11 +41,11 @@ describe('DesignCanvas', () => {
 
     it('renders toolbar with tools', () => {
       render(<DesignCanvas value="" onChange={mockOnChange} />)
-      expect(screen.getByTitle('Select')).toBeInTheDocument()
-      expect(screen.getByTitle('Rectangle')).toBeInTheDocument()
-      expect(screen.getByTitle('Ellipse')).toBeInTheDocument()
-      expect(screen.getByTitle('Arrow')).toBeInTheDocument()
-      expect(screen.getByTitle('Text')).toBeInTheDocument()
+      expect(screen.getByTitle('Select (V)')).toBeInTheDocument()
+      expect(screen.getByTitle('Rectangle (R)')).toBeInTheDocument()
+      expect(screen.getByTitle('Ellipse (O)')).toBeInTheDocument()
+      expect(screen.getByTitle('Arrow (A)')).toBeInTheDocument()
+      expect(screen.getByTitle('Text (T)')).toBeInTheDocument()
     })
 
     it('renders component dropdown menu', async () => {
@@ -93,12 +93,6 @@ describe('DesignCanvas', () => {
       expect(screen.getByTitle('Redo (Ctrl+Y)')).toBeInTheDocument()
     })
 
-    it('renders help text with format info', () => {
-      render(<DesignCanvas value="" onChange={mockOnChange} />)
-      expect(screen.getByText(/Export: PNG, JPG, SVG, JSON/)).toBeInTheDocument()
-      expect(screen.getByText(/Import: PNG, JPG, SVG, GIF, WebP, JSON/)).toBeInTheDocument()
-    })
-
     it('shows view only mode text when readOnly', () => {
       render(<DesignCanvas value="" onChange={mockOnChange} readOnly />)
       expect(screen.getByText('View only mode')).toBeInTheDocument()
@@ -114,7 +108,7 @@ describe('DesignCanvas', () => {
   describe('Tool Selection', () => {
     it('select tool is active by default', () => {
       render(<DesignCanvas value="" onChange={mockOnChange} />)
-      const selectButton = screen.getByTitle('Select')
+      const selectButton = screen.getByTitle('Select (V)')
       // Default variant is applied to selected tool
       expect(selectButton).toBeInTheDocument()
     })
@@ -122,7 +116,7 @@ describe('DesignCanvas', () => {
     it('changes active tool when clicked', async () => {
       render(<DesignCanvas value="" onChange={mockOnChange} />)
 
-      const rectangleButton = screen.getByTitle('Rectangle')
+      const rectangleButton = screen.getByTitle('Rectangle (R)')
       await act(async () => {
         fireEvent.click(rectangleButton)
       })
@@ -283,21 +277,23 @@ describe('DesignCanvas', () => {
   })
 
   describe('Keyboard Shortcuts', () => {
-    it('displays undo shortcut hint', () => {
+    it('has undo button with shortcut hint', () => {
       render(<DesignCanvas value="" onChange={mockOnChange} />)
-      expect(screen.getByText(/Ctrl\+Z to undo/)).toBeInTheDocument()
+      const undoButton = screen.getByTitle(/Undo.*Ctrl\+Z/i)
+      expect(undoButton).toBeInTheDocument()
     })
 
-    it('displays redo shortcut hint', () => {
+    it('has redo button with shortcut hint', () => {
       render(<DesignCanvas value="" onChange={mockOnChange} />)
-      expect(screen.getByText(/Ctrl\+Y to redo/)).toBeInTheDocument()
+      const redoButton = screen.getByTitle(/Redo.*Ctrl\+Y/i)
+      expect(redoButton).toBeInTheDocument()
     })
   })
 
   describe('Canvas Grid', () => {
     it('renders grid pattern', () => {
       render(<DesignCanvas value="" onChange={mockOnChange} />)
-      const pattern = document.querySelector('pattern#grid')
+      const pattern = document.querySelector('pattern#canvas-grid')
       expect(pattern).toBeInTheDocument()
     })
   })

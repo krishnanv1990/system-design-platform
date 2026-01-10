@@ -329,29 +329,29 @@ describe('canvasExport', () => {
       Object.defineProperty(mockSvgElement, 'clientHeight', { value: 600, configurable: true })
     })
 
-    it('returns a Blob with SVG content', () => {
-      const blob = exportAsSvg(mockSvgElement)
+    it('returns a Blob with SVG content', async () => {
+      const blob = await exportAsSvg(mockSvgElement)
 
       expect(blob).toBeInstanceOf(Blob)
       expect(blob.type).toBe('image/svg+xml;charset=utf-8')
     })
 
     it('adds xmlns attribute to SVG', async () => {
-      const blob = exportAsSvg(mockSvgElement)
+      const blob = await exportAsSvg(mockSvgElement)
       const text = await blobToText(blob)
 
       expect(text).toContain('xmlns="http://www.w3.org/2000/svg"')
     })
 
     it('adds background rectangle with specified color', async () => {
-      const blob = exportAsSvg(mockSvgElement, '#ff0000')
+      const blob = await exportAsSvg(mockSvgElement, '#ff0000')
       const text = await blobToText(blob)
 
       expect(text).toContain('fill="#ff0000"')
     })
 
     it('uses white background by default', async () => {
-      const blob = exportAsSvg(mockSvgElement)
+      const blob = await exportAsSvg(mockSvgElement)
       const text = await blobToText(blob)
 
       expect(text).toContain('fill="#ffffff"')
@@ -360,17 +360,17 @@ describe('canvasExport', () => {
     it('removes grid pattern from exported SVG', async () => {
       // Add a grid rect to the SVG
       const gridRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect')
-      gridRect.setAttribute('fill', 'url(#grid)')
+      gridRect.setAttribute('fill', 'url(#canvas-grid)')
       mockSvgElement.appendChild(gridRect)
 
-      const blob = exportAsSvg(mockSvgElement)
+      const blob = await exportAsSvg(mockSvgElement)
       const text = await blobToText(blob)
 
-      expect(text).not.toContain('fill="url(#grid)"')
+      expect(text).not.toContain('fill="url(#canvas-grid)"')
     })
 
     it('sets explicit dimensions on exported SVG', async () => {
-      const blob = exportAsSvg(mockSvgElement)
+      const blob = await exportAsSvg(mockSvgElement)
       const text = await blobToText(blob)
 
       expect(text).toContain('width=')
