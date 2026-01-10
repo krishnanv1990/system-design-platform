@@ -236,13 +236,23 @@ export default function Submission() {
       try {
         localStorage.setItem(storageKey, JSON.stringify(data))
         setLastSaved(new Date())
-      } catch {
-        console.error("Failed to save draft to localStorage")
+      } catch (e) {
+        const error = e as DOMException
+        if (error.name === 'QuotaExceededError') {
+          console.error("localStorage quota exceeded")
+          toast({
+            variant: "destructive",
+            title: "Storage full",
+            description: "Draft not saved. Try clearing old drafts from other problems.",
+          })
+        } else {
+          console.error("Failed to save draft to localStorage:", error)
+        }
       }
     }, 1000)
 
     return () => clearTimeout(timeoutId)
-  }, [id, schemaInput, apiSpecInput, designText, isDirty])
+  }, [id, schemaInput, apiSpecInput, designText, isDirty, toast])
 
   // Warn on page unload (browser close/refresh)
   useEffect(() => {
@@ -450,16 +460,19 @@ export default function Submission() {
         } : undefined,
       })
 
-      // Clear draft on successful submission
-      if (id) {
-        localStorage.removeItem(getStorageKey(id))
-      }
-      setIsDirty(false)
-
       toast({
         title: "Submission created!",
         description: "Redirecting to results page...",
       })
+
+      // Mark as not dirty first so beforeunload handler doesn't warn
+      setIsDirty(false)
+
+      // Store pending draft clear in sessionStorage so Results page can clean up
+      // This ensures draft persists if navigation somehow fails
+      if (id) {
+        sessionStorage.setItem('pending_draft_clear', getStorageKey(id))
+      }
 
       navigate(`/submissions/${submission.id}/results`)
     } catch (err: any) {

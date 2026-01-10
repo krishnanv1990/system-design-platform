@@ -180,6 +180,15 @@ export default function Results() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [tearingDown, setTearingDown] = useState(false)
 
+  // Clear pending draft from Submission page on mount
+  useEffect(() => {
+    const pendingDraftKey = sessionStorage.getItem('pending_draft_clear')
+    if (pendingDraftKey) {
+      localStorage.removeItem(pendingDraftKey)
+      sessionStorage.removeItem('pending_draft_clear')
+    }
+  }, [])
+
   // Poll for updates while processing
   useEffect(() => {
     if (!id) return

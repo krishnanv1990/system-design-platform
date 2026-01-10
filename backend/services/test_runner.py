@@ -17,7 +17,9 @@ from backend.models.test_result import TestType, TestStatus, AnalysisStatus
 from backend.services.ai_service import AIService
 from backend.services.error_analyzer import error_analyzer
 from backend.config import get_settings
+import logging
 
+logger = logging.getLogger(__name__)
 settings = get_settings()
 
 # Path to test files - use environment variable or fallback to relative path
@@ -260,12 +262,14 @@ class TestRunner:
         start_time = datetime.utcnow()
 
         if not test_file or not test_file.exists():
+            warning_msg = f"Functional test file not found: {test_file}"
+            logger.warning(warning_msg)
             return [{
                 "test_type": TestType.FUNCTIONAL.value,
                 "test_name": "pytest_suite",
                 "status": TestStatus.SKIPPED.value,
                 "duration_ms": 0,
-                "details": {"error": "No test file found"},
+                "details": {"error": "No test file found", "warning": warning_msg},
             }]
 
         try:
@@ -354,12 +358,14 @@ class TestRunner:
         start_time = datetime.utcnow()
 
         if not locust_file or not locust_file.exists():
+            warning_msg = f"Locust performance test file not found: {locust_file}"
+            logger.warning(warning_msg)
             return [{
                 "test_type": TestType.PERFORMANCE.value,
                 "test_name": "load_test",
                 "status": TestStatus.SKIPPED.value,
                 "duration_ms": 0,
-                "details": {"error": f"No Locust file found at {locust_file}"},
+                "details": {"error": "No Locust file found", "warning": warning_msg},
             }]
 
         # Check if locust command is available
@@ -452,13 +458,15 @@ class TestRunner:
         start_time = datetime.utcnow()
 
         if not chaos_file or not chaos_file.exists():
+            warning_msg = f"Chaos experiment file not found: {chaos_file}"
+            logger.warning(warning_msg)
             return [{
                 "test_type": TestType.CHAOS.value,
                 "test_name": "chaos_experiment",
                 "status": TestStatus.SKIPPED.value,
                 "duration_ms": 0,
                 "chaos_scenario": "none",
-                "details": {"error": f"No chaos experiment file found at {chaos_file}"},
+                "details": {"error": "No chaos experiment file found", "warning": warning_msg},
             }]
 
         try:

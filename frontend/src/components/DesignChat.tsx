@@ -9,7 +9,7 @@
  */
 
 import { useState, useRef, useEffect } from "react"
-import { Send, Bot, User, Loader2, Sparkles, AlertCircle, CheckCircle, Lightbulb, Flag, GraduationCap } from "lucide-react"
+import { Send, Bot, User, Loader2, Sparkles, AlertCircle, CheckCircle, Lightbulb, Flag, GraduationCap, RotateCcw, XCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -40,6 +40,8 @@ interface Message extends ChatMessage {
   diagramFeedback?: DiagramFeedback
   suggestedImprovements?: string[]
   isOnTrack?: boolean
+  status?: 'sending' | 'sent' | 'failed'
+  error?: string
 }
 
 const WELCOME_MESSAGE: Message = {
@@ -99,11 +101,13 @@ export default function DesignChat({
     setInputValue("")
 
     // Add user message
+    const messageId = `user-${Date.now()}`
     const userMessage: Message = {
-      id: `user-${Date.now()}`,
+      id: messageId,
       role: "user",
       content: text,
       timestamp: new Date(),
+      status: 'sending',
     }
     setMessages((prev) => [...prev, userMessage])
     setIsLoading(true)
@@ -119,6 +123,11 @@ export default function DesignChat({
         difficulty_level: difficultyLevel,
       })
 
+      // Mark user message as sent
+      setMessages((prev) => prev.map((m) =>
+        m.id === messageId ? { ...m, status: 'sent' as const } : m
+      ))
+
       // Add assistant message
       const assistantMessage: Message = {
         id: `assistant-${Date.now()}`,
@@ -128,16 +137,33 @@ export default function DesignChat({
         diagramFeedback: response.diagram_feedback,
         suggestedImprovements: response.suggested_improvements,
         isOnTrack: response.is_on_track,
+        status: 'sent',
       }
       setMessages((prev) => [...prev, assistantMessage])
     } catch (err: any) {
-      setError(err.message || "Failed to send message")
-      // Remove the user message on error
-      setMessages((prev) => prev.filter((m) => m.id !== userMessage.id))
+      const errorMessage = err.message || "Failed to send message"
+      setError(errorMessage)
+      // Mark message as failed instead of removing it
+      setMessages((prev) => prev.map((m) =>
+        m.id === messageId ? { ...m, status: 'failed' as const, error: errorMessage } : m
+      ))
     } finally {
       setIsLoading(false)
       inputRef.current?.focus()
     }
+  }
+
+  // Retry a failed message
+  const retryMessage = (messageId: string) => {
+    const failedMessage = messages.find((m) => m.id === messageId)
+    if (!failedMessage) return
+
+    // Remove the failed message
+    setMessages((prev) => prev.filter((m) => m.id !== messageId))
+    setError(null)
+
+    // Resend the message
+    sendMessage(failedMessage.content)
   }
 
   const evaluateDiagram = () => {
@@ -218,6 +244,31 @@ export default function DesignChat({
             <span className="text-xs text-muted-foreground">
               {message.timestamp.toLocaleTimeString()}
             </span>
+            {/* Failed message indicator with retry button */}
+            {isUser && message.status === 'failed' && (
+              <div className="flex items-center gap-2">
+                <Badge variant="destructive" className="text-xs">
+                  <XCircle className="h-3 w-3 mr-1" />
+                  Failed
+                </Badge>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-2 text-xs"
+                  onClick={() => retryMessage(message.id)}
+                >
+                  <RotateCcw className="h-3 w-3 mr-1" />
+                  Retry
+                </Button>
+              </div>
+            )}
+            {/* Sending indicator */}
+            {isUser && message.status === 'sending' && (
+              <Badge variant="secondary" className="text-xs">
+                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                Sending
+              </Badge>
+            )}
             {!isUser && message.isOnTrack !== undefined && (
               <Badge
                 variant={message.isOnTrack ? "success" : "destructive"}
