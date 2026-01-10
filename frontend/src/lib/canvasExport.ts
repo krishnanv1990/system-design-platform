@@ -153,9 +153,45 @@ export function exportAsJson(elements: unknown[], version: number = 1): Blob {
 }
 
 /**
+ * Fetch an image and convert it to a data URI
+ */
+async function fetchAsDataUri(url: string): Promise<string> {
+  try {
+    const response = await fetch(url)
+    const blob = await response.blob()
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onloadend = () => resolve(reader.result as string)
+      reader.onerror = reject
+      reader.readAsDataURL(blob)
+    })
+  } catch {
+    // Return original URL if fetch fails (e.g., CORS issues)
+    return url
+  }
+}
+
+/**
+ * Embed external images as data URIs in an SVG element
+ */
+async function embedImagesInSvg(svgElement: SVGSVGElement): Promise<void> {
+  const images = svgElement.querySelectorAll('image')
+
+  for (const img of images) {
+    const href = img.getAttribute('href') || img.getAttributeNS('http://www.w3.org/1999/xlink', 'href')
+    if (href && !href.startsWith('data:')) {
+      const dataUri = await fetchAsDataUri(href)
+      img.setAttribute('href', dataUri)
+      // Remove xlink:href if present (deprecated but may exist)
+      img.removeAttributeNS('http://www.w3.org/1999/xlink', 'href')
+    }
+  }
+}
+
+/**
  * Export SVG element as SVG file
  */
-export function exportAsSvg(svgElement: SVGSVGElement, backgroundColor: string = '#ffffff'): Blob {
+export async function exportAsSvg(svgElement: SVGSVGElement, backgroundColor: string = '#ffffff'): Promise<Blob> {
   // Clone the SVG to avoid modifying the original
   const clonedSvg = svgElement.cloneNode(true) as SVGSVGElement
 
@@ -170,6 +206,10 @@ export function exportAsSvg(svgElement: SVGSVGElement, backgroundColor: string =
   clonedSvg.setAttribute('width', String(width))
   clonedSvg.setAttribute('height', String(height))
   clonedSvg.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
+  clonedSvg.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink')
+
+  // Embed images as data URIs for standalone SVG
+  await embedImagesInSvg(clonedSvg)
 
   // Add background
   const bgRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect')
@@ -331,7 +371,7 @@ export async function exportCanvas(
       blob = exportAsJson(elements)
       break
     case 'svg':
-      blob = exportAsSvg(svgElement, backgroundColor)
+      blob = await exportAsSvg(svgElement, backgroundColor)
       break
     case 'png':
       blob = await exportAsPng(svgElement, { scale, backgroundColor })
