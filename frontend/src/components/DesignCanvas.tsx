@@ -81,6 +81,7 @@ import { sortByZIndex, assignZIndex, bringToFront, sendToBack } from "@/utils/zO
 import { moveElements, calculateBounds } from "@/utils/alignment"
 import { getLineAngle, getScaledArrowHeadSize, getDiamondPath, getCylinderPath, getHexagonPath } from "@/utils/shapePaths"
 import { isPointInElement } from "@/utils/hitDetection"
+import { measureText, calculateTextElementDimensions } from "@/utils/textMeasure"
 import { CANVAS_CONFIG, STROKE_COLORS, FILL_COLORS, ICON_LABELS } from "@/config/canvas"
 import {
   SelectionHandles,
@@ -321,25 +322,29 @@ export default function DesignCanvas({
       }
     } else if (selectedTool === "text") {
       const snappedPos = applySnap(pos)
+      const defaultText = "Text"
+      const fontSize = CANVAS_CONFIG.DEFAULT_FONT_SIZE
+      const fontFamily = CANVAS_CONFIG.DEFAULT_FONT_FAMILY
+      const textDimensions = measureText(defaultText, fontSize, fontFamily)
       const newElement: TextElement = {
         id: generateId(),
         type: "text",
         x: snappedPos.x,
         y: snappedPos.y,
-        width: 100,
-        height: 24,
+        width: Math.max(textDimensions.width + 8, 40), // Add padding, minimum 40px
+        height: textDimensions.height + 4,
         fill: strokeColor,
         stroke: "transparent",
         strokeWidth: 0,
-        text: "Text",
-        fontSize: CANVAS_CONFIG.DEFAULT_FONT_SIZE,
-        fontFamily: CANVAS_CONFIG.DEFAULT_FONT_FAMILY,
+        text: defaultText,
+        fontSize,
+        fontFamily,
         zIndex: 0,
       }
       const withZIndex = assignZIndex(elements, newElement)
       setElements([...elements, withZIndex])
       setEditingId(withZIndex.id)
-      setTextInput("Text")
+      setTextInput(defaultText)
       select(withZIndex.id)
     } else if (Object.keys(ICON_LABELS).includes(selectedTool)) {
       const snappedPos = applySnap(pos)
@@ -917,7 +922,18 @@ export default function DesignCanvas({
         elements.map((el) => {
           if (el.id === editingId) {
             if (el.type === "text") {
-              return { ...el, text: textInput }
+              const textEl = el as TextElement
+              const textDimensions = measureText(
+                textInput,
+                textEl.fontSize,
+                textEl.fontFamily || CANVAS_CONFIG.DEFAULT_FONT_FAMILY
+              )
+              return {
+                ...el,
+                text: textInput,
+                width: Math.max(textDimensions.width + 8, 40),
+                height: textDimensions.height + 4,
+              }
             } else {
               return { ...el, label: textInput }
             }
