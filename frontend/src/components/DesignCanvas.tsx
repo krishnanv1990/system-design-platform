@@ -50,6 +50,9 @@ import {
   Clipboard,
   Scissors,
   HelpCircle,
+  Diamond,
+  Hexagon,
+  Cylinder,
 } from "lucide-react"
 import { useHistory } from "@/hooks/useHistory"
 import { useResize } from "@/hooks/useResize"
@@ -76,7 +79,7 @@ import { snapToGrid, snapPointToGrid } from "@/utils/snap"
 import { updateConnectedArrows, findNearestConnectionPoint, getConnectionPoint } from "@/utils/connectionPoints"
 import { sortByZIndex, assignZIndex, bringToFront, sendToBack } from "@/utils/zOrder"
 import { moveElements, calculateBounds } from "@/utils/alignment"
-import { getLineAngle, getScaledArrowHeadSize } from "@/utils/shapePaths"
+import { getLineAngle, getScaledArrowHeadSize, getDiamondPath, getCylinderPath, getHexagonPath } from "@/utils/shapePaths"
 import { isPointInElement } from "@/utils/hitDetection"
 import { CANVAS_CONFIG, STROKE_COLORS, FILL_COLORS, ICON_LABELS } from "@/config/canvas"
 import {
@@ -100,6 +103,9 @@ import type {
   ImageElement,
   RectangleElement,
   EllipseElement,
+  DiamondElement,
+  CylinderElement,
+  HexagonElement,
   ConnectionPointPosition,
 } from "@/types/canvas"
 
@@ -499,6 +505,45 @@ export default function DesignCanvas({
           lineStyle: 'solid',
           zIndex: 0,
         })
+      } else if (selectedTool === "diamond") {
+        setTempElement({
+          id: "temp",
+          type: "diamond",
+          x: width > 0 ? drawStart.x : snappedPos.x,
+          y: height > 0 ? drawStart.y : snappedPos.y,
+          width: Math.abs(width),
+          height: Math.abs(height),
+          fill: fillColor,
+          stroke: strokeColor,
+          strokeWidth: 2,
+          zIndex: 0,
+        })
+      } else if (selectedTool === "cylinder") {
+        setTempElement({
+          id: "temp",
+          type: "cylinder",
+          x: width > 0 ? drawStart.x : snappedPos.x,
+          y: height > 0 ? drawStart.y : snappedPos.y,
+          width: Math.abs(width),
+          height: Math.abs(height),
+          fill: fillColor,
+          stroke: strokeColor,
+          strokeWidth: 2,
+          zIndex: 0,
+        })
+      } else if (selectedTool === "hexagon") {
+        setTempElement({
+          id: "temp",
+          type: "hexagon",
+          x: width > 0 ? drawStart.x : snappedPos.x,
+          y: height > 0 ? drawStart.y : snappedPos.y,
+          width: Math.abs(width),
+          height: Math.abs(height),
+          fill: fillColor,
+          stroke: strokeColor,
+          strokeWidth: 2,
+          zIndex: 0,
+        })
       }
     }
 
@@ -757,6 +802,26 @@ export default function DesignCanvas({
         clearSelection()
         setSelectedTool("select")
         return
+      }
+
+      // Tool shortcuts (only when no modifier keys are pressed)
+      if (!ctrlOrMeta && !e.altKey) {
+        const toolShortcuts: Record<string, Tool> = {
+          'v': 'select',
+          'r': 'rectangle',
+          'o': 'ellipse',
+          'd': 'diamond',
+          'y': 'cylinder',
+          'h': 'hexagon',
+          'a': 'arrow',
+          't': 'text',
+        }
+        const tool = toolShortcuts[e.key.toLowerCase()]
+        if (tool) {
+          e.preventDefault()
+          setSelectedTool(tool)
+          return
+        }
       }
 
       // Arrow keys for moving
@@ -1095,6 +1160,62 @@ export default function DesignCanvas({
         )
       }
 
+      case "diamond": {
+        const diamond = element as DiamondElement
+        return (
+          <g {...commonProps}>
+            <path
+              d={getDiamondPath(diamond.x, diamond.y, diamond.width, diamond.height)}
+              fill={diamond.fill}
+              stroke={elementSelected ? CANVAS_CONFIG.SELECTION_STROKE : diamond.stroke}
+              strokeWidth={elementSelected ? 3 : diamond.strokeWidth}
+              strokeDasharray={isTemp ? "5,5" : undefined}
+            />
+            {renderSelectionUI()}
+          </g>
+        )
+      }
+
+      case "cylinder": {
+        const cylinder = element as CylinderElement
+        const paths = getCylinderPath(cylinder.x, cylinder.y, cylinder.width, cylinder.height)
+        return (
+          <g {...commonProps}>
+            <path
+              d={paths.body}
+              fill={cylinder.fill}
+              stroke={elementSelected ? CANVAS_CONFIG.SELECTION_STROKE : cylinder.stroke}
+              strokeWidth={elementSelected ? 3 : cylinder.strokeWidth}
+              strokeDasharray={isTemp ? "5,5" : undefined}
+            />
+            <path
+              d={paths.top}
+              fill={cylinder.fill}
+              stroke={elementSelected ? CANVAS_CONFIG.SELECTION_STROKE : cylinder.stroke}
+              strokeWidth={elementSelected ? 3 : cylinder.strokeWidth}
+              strokeDasharray={isTemp ? "5,5" : undefined}
+            />
+            {renderSelectionUI()}
+          </g>
+        )
+      }
+
+      case "hexagon": {
+        const hexagon = element as HexagonElement
+        return (
+          <g {...commonProps}>
+            <path
+              d={getHexagonPath(hexagon.x, hexagon.y, hexagon.width, hexagon.height)}
+              fill={hexagon.fill}
+              stroke={elementSelected ? CANVAS_CONFIG.SELECTION_STROKE : hexagon.stroke}
+              strokeWidth={elementSelected ? 3 : hexagon.strokeWidth}
+              strokeDasharray={isTemp ? "5,5" : undefined}
+            />
+            {renderSelectionUI()}
+          </g>
+        )
+      }
+
       case "arrow": {
         const arrow = element as ArrowElement
         const angle = getLineAngle(arrow.x, arrow.y, arrow.endX, arrow.endY)
@@ -1312,6 +1433,9 @@ export default function DesignCanvas({
     { id: "select", icon: MousePointer, label: "Select (V)" },
     { id: "rectangle", icon: Square, label: "Rectangle (R)" },
     { id: "ellipse", icon: Circle, label: "Ellipse (O)" },
+    { id: "diamond", icon: Diamond, label: "Diamond (D)" },
+    { id: "cylinder", icon: Cylinder, label: "Cylinder (Y)" },
+    { id: "hexagon", icon: Hexagon, label: "Hexagon (H)" },
     { id: "arrow", icon: ArrowRight, label: "Arrow (A)" },
     { id: "text", icon: Type, label: "Text (T)" },
   ]
