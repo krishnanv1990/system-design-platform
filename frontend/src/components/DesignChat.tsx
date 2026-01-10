@@ -9,7 +9,7 @@
  */
 
 import { useState, useRef, useEffect } from "react"
-import { Send, Bot, User, Loader2, Sparkles, AlertCircle, CheckCircle, Lightbulb, Flag, GraduationCap, RotateCcw, XCircle } from "lucide-react"
+import { Send, Bot, User, Loader2, Sparkles, AlertCircle, CheckCircle, Lightbulb, Flag, GraduationCap, RotateCcw, XCircle, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -77,6 +77,78 @@ export default function DesignChat({
   const [showSummary, setShowSummary] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+
+  // Chat history storage key
+  const chatStorageKey = `chat_history_${problemId}`
+
+  // Rate limit warning state
+  const [rateLimitWarning, setRateLimitWarning] = useState<{
+    remaining: number
+    limit: number
+    resetTime: string | null
+  } | null>(null)
+
+  // Listen for rate limit events
+  useEffect(() => {
+    const handleRateLimitWarning = (e: CustomEvent<{ remaining: number; limit: number; reset: number | null }>) => {
+      const { remaining, limit, reset } = e.detail
+      setRateLimitWarning({
+        remaining,
+        limit,
+        resetTime: reset ? new Date(reset * 1000).toLocaleTimeString() : null,
+      })
+      // Clear warning after 10 seconds
+      setTimeout(() => setRateLimitWarning(null), 10000)
+    }
+
+    const handleRateLimitExceeded = () => {
+      setError("Rate limit exceeded. Please wait a moment before sending more messages.")
+    }
+
+    window.addEventListener('rate-limit-warning', handleRateLimitWarning as EventListener)
+    window.addEventListener('rate-limit-exceeded', handleRateLimitExceeded)
+
+    return () => {
+      window.removeEventListener('rate-limit-warning', handleRateLimitWarning as EventListener)
+      window.removeEventListener('rate-limit-exceeded', handleRateLimitExceeded)
+    }
+  }, [])
+
+  // Load chat history from localStorage on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(chatStorageKey)
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        // Restore messages with proper Date objects
+        const restoredMessages = parsed.map((m: Message) => ({
+          ...m,
+          timestamp: new Date(m.timestamp),
+        }))
+        if (restoredMessages.length > 0) {
+          setMessages([WELCOME_MESSAGE, ...restoredMessages])
+        }
+      }
+    } catch {
+      // Invalid stored data, ignore
+    }
+  }, [chatStorageKey])
+
+  // Save chat history to localStorage when messages change
+  useEffect(() => {
+    // Filter out welcome message and only save user/assistant messages
+    const messagesToSave = messages.filter((m) => m.id !== "welcome")
+    if (messagesToSave.length > 0) {
+      try {
+        localStorage.setItem(chatStorageKey, JSON.stringify(messagesToSave))
+      } catch (e) {
+        const error = e as DOMException
+        if (error.name === 'QuotaExceededError') {
+          console.warn("localStorage quota exceeded - chat history not saved")
+        }
+      }
+    }
+  }, [messages, chatStorageKey])
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -172,6 +244,17 @@ export default function DesignChat({
       return
     }
     sendMessage("Please evaluate my current diagram and provide detailed feedback on my architecture.")
+  }
+
+  // Clear chat history
+  const clearHistory = () => {
+    if (window.confirm("Clear all chat history? This cannot be undone.")) {
+      setMessages([WELCOME_MESSAGE])
+      localStorage.removeItem(chatStorageKey)
+      setDesignSummary(null)
+      setShowSummary(false)
+      setError(null)
+    }
   }
 
   /**
@@ -492,6 +575,19 @@ export default function DesignChat({
                 )}
                 {isGeneratingSummary ? "Generating..." : "Complete Design"}
               </Button>
+              {/* Clear history button - only show if there's history */}
+              {messages.length > 1 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={clearHistory}
+                  disabled={isLoading}
+                  className="text-xs text-muted-foreground hover:text-destructive"
+                  title="Clear chat history"
+                >
+                  <Trash2 className="h-3 w-3" />
+                </Button>
+              )}
             </>
           )}
         </div>
@@ -510,6 +606,19 @@ export default function DesignChat({
             <div className="flex items-center gap-2">
               <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
               <span className="text-sm text-muted-foreground">Thinking...</span>
+            </div>
+          </div>
+        )}
+
+        {/* Rate limit warning */}
+        {rateLimitWarning && (
+          <div className="p-4">
+            <div className="p-3 rounded-lg bg-warning/10 border border-warning/20 text-warning text-sm flex items-center gap-2">
+              <AlertCircle className="h-4 w-4" />
+              <span>
+                Rate limit: {rateLimitWarning.remaining}/{rateLimitWarning.limit} requests remaining
+                {rateLimitWarning.resetTime && ` (resets at ${rateLimitWarning.resetTime})`}
+              </span>
             </div>
           </div>
         )}

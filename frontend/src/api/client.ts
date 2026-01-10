@@ -45,9 +45,31 @@ const createApiClient = (): AxiosInstance => {
     return config
   })
 
-  // Handle auth errors
+  // Handle auth errors and rate limit tracking
   client.interceptors.response.use(
-    (response) => response,
+    (response) => {
+      // Check for rate limit headers and warn if low
+      const remaining = response.headers['x-ratelimit-remaining']
+      const limit = response.headers['x-ratelimit-limit']
+      const reset = response.headers['x-ratelimit-reset']
+
+      if (remaining !== undefined && limit !== undefined) {
+        const remainingNum = parseInt(remaining)
+        const limitNum = parseInt(limit)
+
+        // Warn when less than 20% remaining
+        if (remainingNum < limitNum * 0.2 && remainingNum > 0) {
+          const resetTime = reset ? new Date(parseInt(reset) * 1000).toLocaleTimeString() : 'soon'
+          console.warn(`Rate limit warning: ${remainingNum}/${limitNum} requests remaining. Resets at ${resetTime}`)
+
+          // Dispatch custom event for UI components to listen to
+          window.dispatchEvent(new CustomEvent('rate-limit-warning', {
+            detail: { remaining: remainingNum, limit: limitNum, reset: reset ? parseInt(reset) : null }
+          }))
+        }
+      }
+      return response
+    },
     (error) => {
       if (error.response?.status === 401) {
         // Don't redirect if we're on the auth callback page (during login flow)
@@ -57,6 +79,12 @@ const createApiClient = (): AxiosInstance => {
           // Use hash-based URL for HashRouter compatibility
           window.location.href = '/#/login'
         }
+      } else if (error.response?.status === 429) {
+        // Rate limited - dispatch event
+        const reset = error.response.headers?.['x-ratelimit-reset']
+        window.dispatchEvent(new CustomEvent('rate-limit-exceeded', {
+          detail: { reset: reset ? parseInt(reset) : null }
+        }))
       }
       return Promise.reject(error)
     }
