@@ -186,6 +186,41 @@ export function disconnectArrowFrom(arrow: ArrowElement, elementId: string): Arr
 }
 
 /**
+ * Clean up arrow connections when elements are deleted
+ * Removes connection references from any arrows pointing to/from deleted elements
+ */
+export function cleanupConnectionsOnDelete(
+  elements: CanvasElement[],
+  deletedElementIds: Set<string> | string[]
+): CanvasElement[] {
+  const deletedIds = deletedElementIds instanceof Set
+    ? deletedElementIds
+    : new Set(deletedElementIds)
+
+  return elements.map((el) => {
+    if (el.type !== 'arrow') return el
+
+    const arrow = el as ArrowElement
+    let needsUpdate = false
+    let updatedArrow = { ...arrow }
+
+    // Check if start connection references a deleted element
+    if (arrow.startConnection && deletedIds.has(arrow.startConnection.elementId)) {
+      updatedArrow.startConnection = undefined
+      needsUpdate = true
+    }
+
+    // Check if end connection references a deleted element
+    if (arrow.endConnection && deletedIds.has(arrow.endConnection.elementId)) {
+      updatedArrow.endConnection = undefined
+      needsUpdate = true
+    }
+
+    return needsUpdate ? updatedArrow : el
+  })
+}
+
+/**
  * Get the best connection point position based on relative positions
  */
 export function getBestConnectionPoint(

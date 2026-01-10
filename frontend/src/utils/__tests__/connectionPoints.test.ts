@@ -8,6 +8,7 @@ import {
   getConnectionPoint,
   findNearestConnectionPoint,
   updateConnectedArrows,
+  cleanupConnectionsOnDelete,
 } from '../connectionPoints'
 import type { CanvasElement, RectangleElement, ArrowElement } from '@/types/canvas'
 
@@ -240,5 +241,136 @@ describe('updateConnectedArrows', () => {
     const result = updateConnectedArrows(elements, 'rect1')
 
     expect(result).toEqual(elements)
+  })
+})
+
+describe('cleanupConnectionsOnDelete', () => {
+  it('should clear startConnection when connected element is deleted', () => {
+    const rect = createRectangle('rect1', 100, 100)
+    const arrow: ArrowElement = {
+      ...createArrow('arrow1', 150, 100, 500, 300),
+      startConnection: {
+        elementId: 'rect1',
+        point: 'top',
+      },
+    }
+
+    // rect1 is being deleted, only arrow remains
+    const remainingElements: CanvasElement[] = [arrow]
+    const result = cleanupConnectionsOnDelete(remainingElements, new Set(['rect1']))
+
+    const updatedArrow = result.find(e => e.id === 'arrow1') as ArrowElement
+    expect(updatedArrow.startConnection).toBeUndefined()
+    // Position should remain unchanged
+    expect(updatedArrow.x).toBe(150)
+    expect(updatedArrow.y).toBe(100)
+  })
+
+  it('should clear endConnection when connected element is deleted', () => {
+    const arrow: ArrowElement = {
+      ...createArrow('arrow1', 0, 0, 300, 340),
+      endConnection: {
+        elementId: 'rect2',
+        point: 'left',
+      },
+    }
+
+    const remainingElements: CanvasElement[] = [arrow]
+    const result = cleanupConnectionsOnDelete(remainingElements, ['rect2'])
+
+    const updatedArrow = result.find(e => e.id === 'arrow1') as ArrowElement
+    expect(updatedArrow.endConnection).toBeUndefined()
+    expect(updatedArrow.endX).toBe(300)
+    expect(updatedArrow.endY).toBe(340)
+  })
+
+  it('should clear both connections when both connected elements are deleted', () => {
+    const arrow: ArrowElement = {
+      ...createArrow('arrow1', 200, 140, 300, 340),
+      startConnection: { elementId: 'rect1', point: 'right' },
+      endConnection: { elementId: 'rect2', point: 'left' },
+    }
+
+    const remainingElements: CanvasElement[] = [arrow]
+    const result = cleanupConnectionsOnDelete(remainingElements, new Set(['rect1', 'rect2']))
+
+    const updatedArrow = result.find(e => e.id === 'arrow1') as ArrowElement
+    expect(updatedArrow.startConnection).toBeUndefined()
+    expect(updatedArrow.endConnection).toBeUndefined()
+  })
+
+  it('should only clear connection to deleted element, preserving other connection', () => {
+    const rect2 = createRectangle('rect2', 300, 300)
+    const arrow: ArrowElement = {
+      ...createArrow('arrow1', 200, 140, 300, 340),
+      startConnection: { elementId: 'rect1', point: 'right' },
+      endConnection: { elementId: 'rect2', point: 'left' },
+    }
+
+    // Only rect1 is deleted, rect2 remains
+    const remainingElements: CanvasElement[] = [rect2, arrow]
+    const result = cleanupConnectionsOnDelete(remainingElements, new Set(['rect1']))
+
+    const updatedArrow = result.find(e => e.id === 'arrow1') as ArrowElement
+    expect(updatedArrow.startConnection).toBeUndefined()
+    expect(updatedArrow.endConnection).toEqual({ elementId: 'rect2', point: 'left' })
+  })
+
+  it('should not modify unconnected arrows', () => {
+    const arrow = createArrow('arrow1', 50, 50, 200, 200)
+
+    const remainingElements: CanvasElement[] = [arrow]
+    const result = cleanupConnectionsOnDelete(remainingElements, new Set(['rect1']))
+
+    const updatedArrow = result.find(e => e.id === 'arrow1') as ArrowElement
+    expect(updatedArrow).toBe(arrow) // Same object reference, not modified
+  })
+
+  it('should not modify arrows connected to non-deleted elements', () => {
+    const rect1 = createRectangle('rect1', 100, 100)
+    const arrow: ArrowElement = {
+      ...createArrow('arrow1', 150, 100, 500, 300),
+      startConnection: { elementId: 'rect1', point: 'top' },
+    }
+
+    // rect2 is deleted, but arrow is connected to rect1
+    const remainingElements: CanvasElement[] = [rect1, arrow]
+    const result = cleanupConnectionsOnDelete(remainingElements, new Set(['rect2']))
+
+    const updatedArrow = result.find(e => e.id === 'arrow1') as ArrowElement
+    expect(updatedArrow.startConnection).toEqual({ elementId: 'rect1', point: 'top' })
+  })
+
+  it('should handle array of deleted IDs', () => {
+    const arrow: ArrowElement = {
+      ...createArrow('arrow1', 200, 140, 300, 340),
+      startConnection: { elementId: 'rect1', point: 'right' },
+    }
+
+    const remainingElements: CanvasElement[] = [arrow]
+    const result = cleanupConnectionsOnDelete(remainingElements, ['rect1'])
+
+    const updatedArrow = result.find(e => e.id === 'arrow1') as ArrowElement
+    expect(updatedArrow.startConnection).toBeUndefined()
+  })
+
+  it('should handle multiple arrows with connections to deleted element', () => {
+    const arrow1: ArrowElement = {
+      ...createArrow('arrow1', 150, 100, 500, 300),
+      startConnection: { elementId: 'rect1', point: 'top' },
+    }
+    const arrow2: ArrowElement = {
+      ...createArrow('arrow2', 200, 140, 600, 400),
+      endConnection: { elementId: 'rect1', point: 'right' },
+    }
+
+    const remainingElements: CanvasElement[] = [arrow1, arrow2]
+    const result = cleanupConnectionsOnDelete(remainingElements, new Set(['rect1']))
+
+    const updatedArrow1 = result.find(e => e.id === 'arrow1') as ArrowElement
+    const updatedArrow2 = result.find(e => e.id === 'arrow2') as ArrowElement
+
+    expect(updatedArrow1.startConnection).toBeUndefined()
+    expect(updatedArrow2.endConnection).toBeUndefined()
   })
 })

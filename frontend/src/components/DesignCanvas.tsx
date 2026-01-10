@@ -76,7 +76,7 @@ import {
 } from "@/lib/canvasExport"
 import { parseAndValidateCanvas } from "@/lib/canvasSchema"
 import { snapToGrid, snapPointToGrid } from "@/utils/snap"
-import { updateConnectedArrows, findNearestConnectionPoint, getConnectionPoint } from "@/utils/connectionPoints"
+import { updateConnectedArrows, findNearestConnectionPoint, getConnectionPoint, cleanupConnectionsOnDelete } from "@/utils/connectionPoints"
 import { sortByZIndex, assignZIndex, bringToFront, sendToBack } from "@/utils/zOrder"
 import { moveElements, calculateBounds } from "@/utils/alignment"
 import { getLineAngle, getScaledArrowHeadSize, getDiamondPath, getCylinderPath, getHexagonPath } from "@/utils/shapePaths"
@@ -768,7 +768,8 @@ export default function DesignCanvas({
       if (ctrlOrMeta && e.key === "x") {
         e.preventDefault()
         const idsToDelete = cut(getSelectedElements(elements))
-        setElements(elements.filter(el => !idsToDelete.includes(el.id)))
+        const remainingElements = elements.filter(el => !idsToDelete.includes(el.id))
+        setElements(cleanupConnectionsOnDelete(remainingElements, idsToDelete))
         clearSelection()
         return
       }
@@ -796,7 +797,8 @@ export default function DesignCanvas({
       // Delete
       if (e.key === "Delete" || e.key === "Backspace") {
         if (hasSelection) {
-          setElements(elements.filter((el) => !selectedIds.has(el.id)))
+          const remainingElements = elements.filter((el) => !selectedIds.has(el.id))
+          setElements(cleanupConnectionsOnDelete(remainingElements, selectedIds))
           clearSelection()
         }
         return
@@ -1657,7 +1659,8 @@ export default function DesignCanvas({
               className="h-8 w-8 p-0"
               onClick={() => {
                 const idsToDelete = cut(getSelectedElements(elements))
-                setElements(elements.filter(el => !idsToDelete.includes(el.id)))
+                const remainingElements = elements.filter(el => !idsToDelete.includes(el.id))
+                setElements(cleanupConnectionsOnDelete(remainingElements, idsToDelete))
                 clearSelection()
               }}
               disabled={!hasSelection}
@@ -1748,7 +1751,8 @@ export default function DesignCanvas({
                 size="sm"
                 className="h-8 w-8 p-0 text-destructive hover:text-destructive"
                 onClick={() => {
-                  setElements(elements.filter((el) => !selectedIds.has(el.id)))
+                  const remainingElements = elements.filter((el) => !selectedIds.has(el.id))
+                  setElements(cleanupConnectionsOnDelete(remainingElements, selectedIds))
                   clearSelection()
                 }}
                 title="Delete selected"
