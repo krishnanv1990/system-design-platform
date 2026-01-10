@@ -77,7 +77,7 @@ import {
 import { parseAndValidateCanvas } from "@/lib/canvasSchema"
 import { snapToGrid, snapPointToGrid } from "@/utils/snap"
 import { updateConnectedArrows, findNearestConnectionPoint, getConnectionPoint, cleanupConnectionsOnDelete } from "@/utils/connectionPoints"
-import { sortByZIndex, assignZIndex, bringToFront, sendToBack } from "@/utils/zOrder"
+import { sortByZIndex, assignZIndex, assignZIndicesToMultiple, bringToFront, sendToBack } from "@/utils/zOrder"
 import { moveElements, calculateBounds } from "@/utils/alignment"
 import { getLineAngle, getScaledArrowHeadSize, getDiamondPath, getCylinderPath, getHexagonPath } from "@/utils/shapePaths"
 import { isPointInElement } from "@/utils/hitDetection"
@@ -757,9 +757,9 @@ export default function DesignCanvas({
         e.preventDefault()
         const pasted = paste()
         if (pasted.length > 0) {
-          const withZIndex = pasted.map((el, i) => assignZIndex([...elements, ...pasted.slice(0, i)], el))
+          const withZIndex = assignZIndicesToMultiple(elements, pasted)
           setElements([...elements, ...withZIndex])
-          selectMultiple(pasted.map(el => el.id))
+          selectMultiple(withZIndex.map(el => el.id))
         }
         return
       }
@@ -787,9 +787,9 @@ export default function DesignCanvas({
         copy(getSelectedElements(elements))
         const pasted = paste({ x: 20, y: 20 })
         if (pasted.length > 0) {
-          const withZIndex = pasted.map((el, i) => assignZIndex([...elements, ...pasted.slice(0, i)], el))
+          const withZIndex = assignZIndicesToMultiple(elements, pasted)
           setElements([...elements, ...withZIndex])
-          selectMultiple(pasted.map(el => el.id))
+          selectMultiple(withZIndex.map(el => el.id))
         }
         return
       }
@@ -1675,9 +1675,9 @@ export default function DesignCanvas({
               onClick={() => {
                 const pasted = paste()
                 if (pasted.length > 0) {
-                  const withZIndex = pasted.map((el, i) => assignZIndex([...elements, ...pasted.slice(0, i)], el))
+                  const withZIndex = assignZIndicesToMultiple(elements, pasted)
                   setElements([...elements, ...withZIndex])
-                  selectMultiple(pasted.map(el => el.id))
+                  selectMultiple(withZIndex.map(el => el.id))
                 }
               }}
               disabled={!canPaste}

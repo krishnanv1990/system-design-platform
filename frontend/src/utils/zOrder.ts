@@ -154,3 +154,18 @@ export function assignZIndex(
   const maxZ = getMaxZIndex(elements)
   return { ...newElement, zIndex: maxZ + 1 }
 }
+
+/**
+ * Assign z-indices to multiple new elements, ensuring they stack on top
+ * of existing elements and each other in order
+ */
+export function assignZIndicesToMultiple(
+  existingElements: CanvasElement[],
+  newElements: CanvasElement[]
+): CanvasElement[] {
+  const maxZ = getMaxZIndex(existingElements)
+  return newElements.map((el, index) => ({
+    ...el,
+    zIndex: maxZ + 1 + index,
+  }))
+}

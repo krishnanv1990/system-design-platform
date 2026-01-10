@@ -13,6 +13,7 @@ import {
   sendBackward,
   normalizeZIndices,
   assignZIndex,
+  assignZIndicesToMultiple,
 } from '../zOrder'
 import type { RectangleElement } from '@/types/canvas'
 
@@ -233,5 +234,78 @@ describe('assignZIndex', () => {
     const newElement = createRect('a', 0)
     const result = assignZIndex([], newElement)
     expect(result.zIndex).toBe(1)
+  })
+})
+
+describe('assignZIndicesToMultiple', () => {
+  it('should assign unique z-indices to multiple elements in sequence', () => {
+    const existingElements = [
+      createRect('a', 1),
+      createRect('b', 5),
+    ]
+    const newElements = [
+      createRect('c', 0),
+      createRect('d', 0),
+      createRect('e', 0),
+    ]
+    const result = assignZIndicesToMultiple(existingElements, newElements)
+
+    expect(result).toHaveLength(3)
+    expect(result[0].zIndex).toBe(6) // maxZ (5) + 1
+    expect(result[1].zIndex).toBe(7) // maxZ (5) + 2
+    expect(result[2].zIndex).toBe(8) // maxZ (5) + 3
+  })
+
+  it('should start from z-index 1 when no existing elements', () => {
+    const newElements = [
+      createRect('a', 0),
+      createRect('b', 0),
+    ]
+    const result = assignZIndicesToMultiple([], newElements)
+
+    expect(result[0].zIndex).toBe(1)
+    expect(result[1].zIndex).toBe(2)
+  })
+
+  it('should preserve original element IDs', () => {
+    const existingElements = [createRect('existing', 5)]
+    const newElements = [
+      createRect('new1', 0),
+      createRect('new2', 0),
+    ]
+    const result = assignZIndicesToMultiple(existingElements, newElements)
+
+    expect(result[0].id).toBe('new1')
+    expect(result[1].id).toBe('new2')
+  })
+
+  it('should preserve other element properties', () => {
+    const existingElements = [createRect('existing', 5)]
+    const newElement = {
+      ...createRect('new', 0),
+      width: 200,
+      height: 150,
+      fill: '#ff0000',
+    }
+    const result = assignZIndicesToMultiple(existingElements, [newElement])
+
+    expect(result[0].width).toBe(200)
+    expect(result[0].height).toBe(150)
+    expect(result[0].fill).toBe('#ff0000')
+    expect(result[0].zIndex).toBe(6)
+  })
+
+  it('should return empty array for empty input', () => {
+    const result = assignZIndicesToMultiple([createRect('a', 5)], [])
+    expect(result).toHaveLength(0)
+  })
+
+  it('should handle single element correctly', () => {
+    const existingElements = [createRect('a', 10)]
+    const newElements = [createRect('b', 0)]
+    const result = assignZIndicesToMultiple(existingElements, newElements)
+
+    expect(result).toHaveLength(1)
+    expect(result[0].zIndex).toBe(11)
   })
 })
