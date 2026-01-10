@@ -61,7 +61,7 @@ async def create_submission(
     # Generate unique namespace for this submission
     namespace = f"candidate-{current_user.id}-sub-{submission_data.problem_id}"
 
-    # Create submission
+    # Create submission with optional pre-validation results
     submission = Submission(
         problem_id=submission_data.problem_id,
         user_id=current_user.id,
@@ -70,6 +70,7 @@ async def create_submission(
         design_text=submission_data.design_text,
         namespace=namespace,
         status=SubmissionStatus.PENDING.value,
+        validation_feedback=submission_data.validation_feedback,  # Include pre-validated results
     )
 
     db.add(submission)

@@ -13,6 +13,7 @@ class SubmissionCreate(BaseModel):
     schema_input: Optional[Dict[str, Any]] = None
     api_spec_input: Optional[Dict[str, Any]] = None
     design_text: Optional[str] = None
+    validation_feedback: Optional[Dict[str, Any]] = None  # Pre-validated results from frontend
 
 
 class SubmissionResponse(BaseModel):

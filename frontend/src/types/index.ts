@@ -106,6 +106,14 @@ export interface SubmissionCreate {
   schema_input?: Record<string, unknown>
   api_spec_input?: Record<string, unknown>
   design_text?: string
+  validation_feedback?: {
+    is_valid: boolean
+    errors: string[]
+    warnings: string[]
+    suggestions: string[]
+    score: number | null
+    validated_at?: string
+  }
 }
 
 // Validation types

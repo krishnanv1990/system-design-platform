@@ -439,6 +439,15 @@ export default function Submission() {
         schema_input: schemaResult.data,
         api_spec_input: apiResult.data,
         design_text: sanitizeDesignText(designText),
+        // Include validation results if available
+        validation_feedback: validation ? {
+          is_valid: validation.is_valid,
+          errors: validation.errors,
+          warnings: validation.warnings,
+          suggestions: validation.suggestions,
+          score: validation.score,
+          validated_at: new Date().toISOString(),
+        } : undefined,
       })
 
       // Clear draft on successful submission

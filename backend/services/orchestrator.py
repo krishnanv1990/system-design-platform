@@ -23,8 +23,15 @@ from backend.services.cleanup_scheduler import cleanup_scheduler
 from backend.services.audit_service import AuditService
 from backend.models.audit_log import ActionType
 from backend.config import get_settings
+import logging
 
+logger = logging.getLogger(__name__)
 settings = get_settings()
+
+# Timeouts for deployment operations (in seconds)
+CLOUD_BUILD_TIMEOUT = 600  # 10 minutes for container build
+DEPLOYMENT_TIMEOUT = 900   # 15 minutes total deployment timeout
+CLOUD_RUN_DEPLOY_TIMEOUT = 300  # 5 minutes for Cloud Run service creation
 
 # Deployment mode options:
 # - "cloud_run" (Cloud Run deployment, 30-60 seconds) - DEFAULT
@@ -178,6 +185,8 @@ class SubmissionOrchestrator:
         Deploy to Google Cloud Run with real infrastructure.
         Creates a new Cloud Run service for each submission.
         Uses Google Cloud Python libraries for authentication.
+
+        Includes timeout handling to prevent indefinite hangs.
         """
         import asyncio
         import json
@@ -497,7 +506,7 @@ if __name__ == "__main__":
                     ),
                 ],
                 images=[image_tag],
-                timeout={"seconds": 300},
+                timeout={"seconds": CLOUD_BUILD_TIMEOUT},
             )
 
             operation = build_client.create_build(project_id=project_id, build=build)
@@ -508,8 +517,8 @@ if __name__ == "__main__":
             build_id = operation.metadata.build.id
 
             while True:
-                if time.time() - start_time > 300:
-                    raise Exception("Build timed out after 5 minutes")
+                if time.time() - start_time > CLOUD_BUILD_TIMEOUT:
+                    raise asyncio.TimeoutError(f"Container build timed out after {CLOUD_BUILD_TIMEOUT // 60} minutes")
 
                 # Get build status
                 build_result = build_client.get_build(project_id=project_id, id=build_id)
@@ -580,8 +589,8 @@ if __name__ == "__main__":
                     service_id=service_name,
                 )
 
-            # Wait for deployment
-            result = operation.result(timeout=300)
+            # Wait for deployment with timeout
+            result = operation.result(timeout=CLOUD_RUN_DEPLOY_TIMEOUT)
             endpoint_url = result.uri
 
             SubmissionOrchestrator._update_progress(
@@ -696,7 +705,13 @@ if __name__ == "__main__":
                 timeout_minutes=60,
             )
 
+        except asyncio.TimeoutError:
+            logger.error(f"Deployment timed out for submission {submission.id} after {DEPLOYMENT_TIMEOUT}s")
+            submission.status = SubmissionStatus.DEPLOY_FAILED.value
+            submission.error_message = f"Deployment timed out after {DEPLOYMENT_TIMEOUT // 60} minutes. Please try again or contact support."
+            db.commit()
         except Exception as e:
+            logger.error(f"Cloud Run deployment failed for submission {submission.id}: {e}")
             submission.status = SubmissionStatus.DEPLOY_FAILED.value
             submission.error_message = f"Cloud Run deployment failed: {str(e)}"
             db.commit()
@@ -830,7 +845,13 @@ if __name__ == "__main__":
             else:
                 raise Exception(result.get("error", "Warm pool deployment failed"))
 
+        except asyncio.TimeoutError:
+            logger.error(f"Warm pool deployment timed out for submission {submission.id}")
+            submission.status = SubmissionStatus.DEPLOY_FAILED.value
+            submission.error_message = "Deployment timed out. Please try again or contact support."
+            db.commit()
         except Exception as e:
+            logger.error(f"Warm pool deployment failed for submission {submission.id}: {e}")
             submission.status = SubmissionStatus.DEPLOY_FAILED.value
             submission.error_message = f"Warm pool deployment failed: {str(e)}"
             db.commit()
@@ -892,7 +913,13 @@ if __name__ == "__main__":
             else:
                 raise Exception(result.get("error", "Deployment failed"))
 
+        except asyncio.TimeoutError:
+            logger.error(f"Fast deployment timed out for submission {submission.id}")
+            submission.status = SubmissionStatus.DEPLOY_FAILED.value
+            submission.error_message = "Deployment timed out. Please try again or contact support."
+            db.commit()
         except Exception as e:
+            logger.error(f"Fast deployment failed for submission {submission.id}: {e}")
             submission.status = SubmissionStatus.DEPLOY_FAILED.value
             submission.error_message = f"Fast deployment failed: {str(e)}"
             db.commit()
