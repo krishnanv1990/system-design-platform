@@ -156,13 +156,22 @@ export default function DesignChat({
   }, [messages])
 
   // Convert messages to conversation history format
+  // Limit to last 20 messages to avoid exceeding token limits
+  const MAX_CONVERSATION_HISTORY = 20
+
   const getConversationHistory = (): ChatMessage[] => {
-    return messages
+    const history = messages
       .filter((m) => m.id !== "welcome")
       .map((m) => ({
         role: m.role,
         content: m.content,
       }))
+
+    // If history exceeds limit, take the last N messages
+    if (history.length > MAX_CONVERSATION_HISTORY) {
+      return history.slice(-MAX_CONVERSATION_HISTORY)
+    }
+    return history
   }
 
   const sendMessage = async (messageText?: string) => {

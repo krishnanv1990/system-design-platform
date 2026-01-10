@@ -183,29 +183,45 @@ class TestRunner:
             elif isinstance(details, str):
                 error_output = details
 
-            # Analyze the failure
-            analysis = await error_analyzer.analyze_failure(
-                test_type=result.get("test_type", "unknown"),
-                test_name=result.get("test_name", "unknown"),
-                status=result.get("status", "failed"),
-                error_output=str(error_output),
-                problem_description=problem_description,
-                design_text=design_text,
-                api_spec=api_spec,
-                endpoint_url=endpoint_url,
-            )
+            # Analyze the failure with retry logic
+            max_retries = 3
+            retry_delay = 1  # Start with 1 second
 
-            # Add analysis to result
-            result["error_category"] = analysis.get("category")
-            result["error_analysis"] = analysis
-            result["ai_analysis_status"] = analysis.get("status", AnalysisStatus.COMPLETED.value)
+            for attempt in range(max_retries):
+                try:
+                    analysis = await error_analyzer.analyze_failure(
+                        test_type=result.get("test_type", "unknown"),
+                        test_name=result.get("test_name", "unknown"),
+                        status=result.get("status", "failed"),
+                        error_output=str(error_output),
+                        problem_description=problem_description,
+                        design_text=design_text,
+                        api_spec=api_spec,
+                        endpoint_url=endpoint_url,
+                    )
+
+                    # Add analysis to result
+                    result["error_category"] = analysis.get("category")
+                    result["error_analysis"] = analysis
+                    result["ai_analysis_status"] = analysis.get("status", AnalysisStatus.COMPLETED.value)
+                    break  # Success, exit retry loop
+
+                except Exception as retry_err:
+                    if attempt < max_retries - 1:
+                        logger.warning(f"Error analysis attempt {attempt + 1} failed, retrying in {retry_delay}s: {retry_err}")
+                        await asyncio.sleep(retry_delay)
+                        retry_delay *= 2  # Exponential backoff
+                    else:
+                        raise retry_err  # Re-raise on final attempt
 
         except Exception as e:
-            # If analysis fails, mark it but don't fail the whole test
+            # If all retries fail, mark it but don't fail the whole test
+            logger.error(f"Error analysis failed after {max_retries} attempts: {e}")
             result["ai_analysis_status"] = AnalysisStatus.FAILED.value
             result["error_analysis"] = {
                 "error": str(e),
                 "status": AnalysisStatus.FAILED.value,
+                "retries_attempted": max_retries,
             }
 
     def _get_test_file_for_problem(self, problem_description: str) -> Optional[Path]:
