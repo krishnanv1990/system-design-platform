@@ -238,17 +238,14 @@ export default function Results() {
 
     loadData()
 
-    // Poll for updates
-    const interval = setInterval(() => {
-      if (
-        submission &&
-        !["completed", "failed", "validation_failed", "deploy_failed"].includes(submission.status)
-      ) {
-        loadData()
-      }
-    }, 5000)
+    // Poll for updates only when not in terminal state
+    const terminalStates = ["completed", "failed", "validation_failed", "deploy_failed"]
+    const isTerminal = submission && terminalStates.includes(submission.status)
 
-    return () => clearInterval(interval)
+    if (!isTerminal) {
+      const interval = setInterval(loadData, 5000)
+      return () => clearInterval(interval)
+    }
   }, [id, submission?.status])
 
   const handleTeardown = async () => {
